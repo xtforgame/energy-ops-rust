@@ -12,10 +12,12 @@
 pub mod audit;
 pub mod bindings;
 pub mod common;
+pub mod fake_tpr;
 pub mod gates;
 pub mod master_data;
 pub mod org;
 pub mod rating;
+pub mod tpr_client;
 pub mod workbench;
 pub mod workflow;
 

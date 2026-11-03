@@ -8,6 +8,14 @@ use std::sync::Arc;
 async fn main() -> std::io::Result<()> {
     let _ = dotenvy::dotenv();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // `energy-ops fake-tpr [port]`：起假的辨識服務（本機開發用）。
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("fake-tpr") {
+        let port = args.get(2).and_then(|p| p.parse().ok()).unwrap_or(18080);
+        let (url, _state, server) = eo_energy::fake_tpr::spawn(port, 1)?;
+        log::info!("fake taipower-recognition listening on {url}");
+        return server.await;
+    }
     let config = Config::from_env().unwrap_or_else(|e| {
         eprintln!("config error: {e}");
         std::process::exit(2);
