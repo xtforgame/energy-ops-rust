@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AdminContext } from 'react-admin';
