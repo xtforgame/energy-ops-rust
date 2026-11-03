@@ -4,3 +4,4 @@
 mod support;
 mod platform;
 mod energy_workflow_skeleton;
+mod energy_workflow_2c;
