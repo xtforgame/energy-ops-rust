@@ -6,7 +6,9 @@
 //! · 掛在 execution 底下的資源再過 `ExecutionAccess`（參與者或 view-all）。
 //! · 業務變更與稽核寫在同一個交易；授權變更用 `Rbac::commit` 提交。
 
+pub mod fake_tpr;
 pub mod gates;
+pub mod tpr_client;
 
 use eo_platform::core::CoreRef;
 use eo_platform::plugin::AppPluginSystem;
