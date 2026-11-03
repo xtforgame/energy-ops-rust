@@ -9,3 +9,4 @@ mod energy_default_flow;
 mod energy_contract_flows;
 mod energy_mode;
 mod energy_execution_list;
+mod energy_rating_bindings;
