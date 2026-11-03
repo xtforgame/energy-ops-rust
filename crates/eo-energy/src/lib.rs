@@ -9,11 +9,14 @@
 // 查詢結果多半就地解成 tuple 用一次，不另外宣告列型別；交易＋情境＋業務參數常超過七個。
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
+pub mod attachments;
 pub mod audit;
 pub mod bindings;
 pub mod common;
+pub mod demo_seed;
 pub mod fake_tpr;
 pub mod gates;
+pub mod ingest;
 pub mod master_data;
 pub mod org;
 pub mod rating;
@@ -46,11 +49,13 @@ macro_rules! energy_plugin {
 }
 
 /// 把能源的 plugin 註冊進 system。
-pub fn register(system: &mut AppPluginSystem, _core: &CoreRef) {
+pub fn register(system: &mut AppPluginSystem, core: &CoreRef) {
     system.register_new(org::OrgPlugin);
     system.register_new(audit::AuditPlugin);
     system.register_new(master_data::MasterDataPlugin);
     system.register_new(bindings::BindingsPlugin);
     system.register_new(workflow::WorkflowPlugin);
     system.register_new(workbench::WorkbenchPlugin);
+    system.register_new(attachments::AttachmentsPlugin);
+    system.register_new(ingest::IngestPlugin::new(std::sync::Arc::clone(core)));
 }

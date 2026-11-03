@@ -68,6 +68,9 @@ impl TestApp {
             web_dir: None,
             tpr_url: None,
             tpr_api_key: None,
+            tpr_batch_size: 10,
+            // 測試直接呼叫 tick，不讓背景任務搶著做。
+            recognition_tick_secs: 0,
             cookie_secure: false,
             bootstrap_admin: None,
             demo_seed: false,
@@ -174,6 +177,24 @@ impl TestApp {
 
     pub async fn delete(&self, user: &TestUser, path: &str) -> (StatusCode, Value) {
         Self::send(self.req(Some(user), Method::DELETE, path)).await
+    }
+}
+
+/// 測試結束就把自己的資料庫丟掉：留著的話 Postgres 的統計共享記憶體會隨資料庫數量長大，最後整套測試起不來。
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        let admin_url = env_or("EO_TEST_ADMIN_DATABASE_URL", ADMIN_DB_URL_DEFAULT);
+        let db = self.db_name.clone();
+        let _ = std::thread::spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return };
+            rt.block_on(async move {
+                if let Ok(admin) = sqlx::PgPool::connect(&admin_url).await {
+                    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {db} WITH (FORCE)")).execute(&admin).await;
+                    admin.close().await;
+                }
+            });
+        })
+        .join();
     }
 }
 

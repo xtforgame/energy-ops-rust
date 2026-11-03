@@ -22,6 +22,10 @@ pub struct Config {
     pub web_dir: Option<PathBuf>,
     pub tpr_url: Option<String>,
     pub tpr_api_key: Option<String>,
+    /// 一個辨識 job 最多放幾份檔（1–50）。
+    pub tpr_batch_size: usize,
+    /// 辨識對帳背景任務的間隔秒數；0 ＝ 不啟動。
+    pub recognition_tick_secs: u64,
     /// cookie 加 `Secure`（正式環境走 https 時開）。
     pub cookie_secure: bool,
     /// 開機時建立的初始超級使用者（帳號、密碼）；兩者都設才建。
@@ -52,6 +56,12 @@ impl Config {
             web_dir: env("EO_WEB_DIR").map(PathBuf::from),
             tpr_url: env("EO_TPR_URL"),
             tpr_api_key: env("EO_TPR_API_KEY"),
+            tpr_batch_size: env("EO_TPR_BATCH_SIZE")
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|n| *n >= 1)
+                .map(|n| n.min(50))
+                .unwrap_or(10),
+            recognition_tick_secs: env("EO_RECOGNITION_TICK_SECS").and_then(|v| v.parse().ok()).unwrap_or(60),
             cookie_secure: env("EO_COOKIE_SECURE").map(|v| v == "1" || v == "true").unwrap_or(false),
             bootstrap_admin: match (env("EO_BOOTSTRAP_ADMIN_USER"), env("EO_BOOTSTRAP_ADMIN_PASSWORD")) {
                 (Some(u), Some(p)) => Some((u, p)),

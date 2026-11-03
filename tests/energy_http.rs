@@ -342,6 +342,7 @@ async fn non_participant_cannot_open_execution() {
         format!("/executions/{exec}/graph"),
         format!("/executions/{exec}/actions"),
         format!("/executions/{exec}/lineage"),
+        format!("/executions/{exec}/attachments"),
     ] {
         let (s, v) = fx.app.get(&outsider, &fx.u(&p)).await;
         assert_eq!(s.as_u16(), 403, "{p} should be hidden from a non-participant: {v}");

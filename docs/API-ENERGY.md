@@ -158,3 +158,44 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 - 6：維持 App 5 行為（候選人在關卡進入 ready 時快照）。部門之後異動不影響已開出的關卡；要重新指派用 `tasks/{id}/reassign`。
 - 7：已改。清單列的 `stationId` 在 execution 沒有時退回 subject 推導的值。
 - 8：維持 App 5。稽核 registry 沒有「安裝流程定義」事件，install-defaults 只對策略與部門留紀錄。
+## 回應形狀：附件、電費單與收件
+
+### 附件
+
+- `GET E/executions/{id}/attachments` → `{ items: [{ id, originalFilename, mimeType, size, hash, status: active|superseded, uploadedByUserId, uploadedAt, supersedesAttachmentId, links: [{ id, taskId, role, seq, note }] }] }`（新到舊）。閘：`energy:attachment:download` ＋ execution 可視度（非參與者 403 `execution_not_visible`）。
+- `POST E/executions/{id}/attachments`：multipart 欄位 `file`，其餘 form 欄位 `taskId`、`role`（預設 `submitted`；`added` 另記 `flow.attachment_added`）、`note`、`supersedesAttachmentId`；或 JSON 直傳（見下）。回 `{ id, originalFilename, mimeType, size, hash, status, executionId, ingestBatchId, supersedesAttachmentId }`。錯誤：415 `unsupported_mime_type`（`details.allowed`）、400 `empty_file`／`filename_required`／`file_required`／`task_not_in_execution`／`supersedes_not_in_execution`、413 `file_too_large`、409 `too_many_files`／`execution_quota_exceeded`、502 `storage_verify_failed`（物件沒落地，不寫 DB）。
+- `GET E/attachments/{id}/download`：回檔案本體，`Content-Type` 為原 mime、`Content-Disposition` 同時帶 `filename` 與 `filename*=UTF-8''…`。`?redirect=1` 回 302，`Location` 是 15 分鐘的預簽 GET（帶 `response-content-disposition`）。兩種都記 `attachment.downloaded`（best-effort）。execution 的附件走可視度；收件批次的附件只看組織層 `energy:attachment:download`。別家的 403 `attachment_not_in_org`，查無 404。
+- `POST E/attachment-links/{linkId}/remove` body `{ reason }` → `{ ok: true }`。只解除連結，附件列與物件都留著；`reason` 空白 400 `reason_required`。閘：`energy:attachment:unlink` ＋ 可視度。
+- `POST E/uploads/sign` body `{ target: "batch"|"execution", batchId|executionId, mimeType, size, originalFilename? }` → `{ stagingKey, signedUrl, method: "PUT", headers: { "content-type": mimeType }, expiresInSeconds }`。閘與真正的上傳相同（batch：`energy:attachment:upload` ＋ 批次屬於本組織，查無 404 `batch_not_found`；execution：同上＋可視度）。415／400 `empty_file`／413 照上傳的規則先擋。瀏覽器把原檔 PUT 到 `signedUrl`（網址的主機就是設定的 `EO_S3_ENDPOINT`），再對原上傳端點送 JSON `{ stagingKey, originalFilename, mimeType, …其餘欄位 }`。`stagingKey` 必須以 `energy/staging/u<我的 userId>/<batch-<id>|exec-<id>>/` 開頭（否則 400 `staging_key_invalid`），物件不在 400 `staged_file_missing`；成功或失敗都會刪掉暫存物件。
+  - CORS：MinIO 社群版沒有 bucket 層級的 PutBucketCors，預設（`MINIO_API_CORS_ALLOW_ORIGIN` 未設＝`*`）已允許任何來源的 PUT；正式環境若收緊 CORS，要把前端來源加進 MinIO 的 `MINIO_API_CORS_ALLOW_ORIGIN`。直傳失敗時前端仍可退回 multipart。
+
+### 電費單
+
+單據列（`BillView`）：`{ id, stationId, customerNumberRaw, sourceAttachmentId, ocrExtracted, billingPeriodStart, billingPeriodEnd, totalAmount, generationKwh, issuedAt, dueDate, templateId, docType, recognizedDocType, reviewStatus: pendingMatch|pendingReview|reviewed, changedFields: string[], businessKey, documentNo, approvalState }`。三層值：`ocrRaw`（只在詳情）／`ocrExtracted`（辨識抽出值，永不被校對改）／其餘欄位是最終值。金額 `"98765.00"`、度數 `"4321.500"`。
+
+- `POST E/bills/ingest` body `{ ocrJson, sourceAttachmentId? }` → `{ billIds, matched, unmatched }`；一筆都抽不到 422 `nothing_extracted`。
+- `GET E/bills?reviewStatus&stationId&limit&from&to` → `{ items: [BillView & { executionId }] }`（`executionId` 是最新一筆流程，null ＝ 尚未送審；`from`/`to` 是計費期間起日的半開區間，格式錯 400 `invalid_date`）。
+- `GET E/bills/unmatched` → `{ items: [BillView] }`（例外件）。
+- `GET E/bills/{id}` → `BillView` ＋ `ocrRaw`、`station {id,name,customerNumber}|null`、`executions [{id,status,currentNodeKey,businessDate,workflowKey}]`（新到舊）、`ingest {batchId,itemId,originalFilename,attachmentId,submittedAt,submittedByName}|null`、`binding { bound, reason: null|no_station|no_binding|definition_not_published, docType, stationName?, flows: [{workflowKey,workflowName,version,matchedDocType,contractId,contractNo}] }`、`docTypeEditable`，以及模式判定（`mode`、`modeReason`、`canEditSubject`、`canAddAttachment`、`availableActions`、`executionId`）。
+- `PATCH E/bills/{id}` body 只收最終值：`customerNumberRaw`、`billingPeriodStart`、`billingPeriodEnd`、`totalAmount`、`generationKwh`、`issuedAt`、`dueDate`（皆可 null）、`docType`、`markReviewed`；其他鍵丟棄。回與 `GET` 相同的整包。模式不是 intake／revise → 403 `subject_not_editable`（`details.mode`）。改電號重新配案場、改電號或期間重算 `businessKey`；流程在跑時改電號／單別 409 `customer_number_locked_by_execution`／`doc_type_locked_by_execution`；沒有案場卻標已校對 409 `station_required_before_review`；單別值域外 400 `invalid_doc_type`。改金額跨過門檻另記 `bill.route_gate_removed`（critical）／`bill.route_gate_added`。
+- `GET E/bills/{id}/branch-preview?totalAmount=` → `{ available, reason, definitionId, definitionName, version, currentAmount, previewAmount, nodes: [{nodeKey,name,added}], removed: [{nodeKey,name}] }`；沒案場／沒綁定時 `{ available: false, reason: no_station|no_binding, nodes: [], threshold: null }`；金額不是數字 400 `invalid_amount`。
+- `GET E/bills/{id}/payouts` → `{ items: [PayoutView & { strategyName, strategyVersion }] }`（含被取代的）。
+- `POST E/bills/{id}/submit` body `{ businessDate? }` → `{ id, status, currentNodeKey, executionIds }`。錯誤：409 `bill_needs_station`、409 `bill_already_submitted`（`details.executionId`）、409 `duplicate_document`／`already_in_review`（`details`：`executionId, status, currentNodeName, submittedByName, submittedAt, subjectId, documentNo?`）、404 `no_binding_for_business_date`。
+- `POST E/bills/{id}/match` body `{ stationId }` → `{ id, reviewStatus, stationId }`；送件那一列若是 `unmatched` 一併轉 `extracted`。
+
+### 收件
+
+項目列（`ItemView`）：`{ id, batchId, originalFilename, docType, workflowKey, classifyConfidence, classifyReason, attachmentId, billId, installmentId, executionId, executionIds, status: uploaded|recognizing|classified|extracted|unclassified|unmatched|failed|submitted|discarded, errorMessage, amountMismatch, alreadyPaid, extracted, recognition: RecognitionSummary|null, recognitionErrorCode }`；批次詳情裡再加 `subjectType, subjectId, documentNo, businessKey, approvalState, stationId, reviewStatus, duplicateOfItemId, duplicateOfSeq`（同批重複：第一筆是本尊，`duplicateOfSeq` 是畫面上的第幾筆）。
+
+- `POST E/ingest-batches` body `{ fileCount? , files?: [{ originalFilename, attachmentId?, ocrRaw }], note? }` → 批次詳情。`fileCount` 1–50（400 `no_files`／`too_many_files`）。帶 `ocrRaw` 的檔案直接分類抽取（外部管線）；UI 只開批、再逐檔上傳。
+- `GET E/ingest-batches?limit` → `{ items: [{ id, submittedAt, submittedByUserId, submittedByName, fileCount, status, note, counts: {submitted,classified,extracted,unclassified,unmatched,discarded,failed}, pendingCount, billIds, workflowCounts }] }`，未完成的置頂。
+- `GET E/ingest-batches/{id}` → `{ id, submittedAt, submittedByUserId, submittedByName, fileCount, status: uploading|recognizing|ready|partial|completed|failed, note, pendingCount, items: [ItemView…] }`。讀取前先對這一批推一次辨識進度。
+- `POST E/ingest-batches/{id}/attachments`（multipart `file` 或直傳 JSON）→ `{ id, originalFilename, size, mimeType, itemId }`；閘 `energy:attachment:upload`。
+- `POST E/ingest-batches/{id}/recognize` body `{ passwords?: { "<itemId>": "…" } }` → `{ jobId, itemCount, chunks?, skipped?: nothing_to_recognize|tpr_not_configured|no_readable_files|<服務錯誤碼>, configured, batch }`。密碼不落地、不進稽核。
+- `PATCH E/ingest-items/{id}` body `{ docType?, workflowKey?, installmentId? }` → `{ id, status, docType, workflowKey, billId, installmentId }`。指定電費單類單別而沒有單時建一張空白單（`bill.created_manually`），item 轉 `unmatched`；指定 `workflowKey` 會釘住（送審不再依綁定解析）；`installmentId` 必須是本組織的期數。
+- `POST E/ingest-items/{id}/recognition` body `{ ocrRaw }` → 批次詳情（記 `ingest.recognition_supplied`）；缺 `ocrRaw` 400 `ocr_raw_required`。
+- `POST E/ingest-items/{id}/submit` body `{ businessDate? }` → `{ executionId, subjectType, subjectId, executionIds }`。錯誤：409 `item_needs_doc_type`／`item_needs_source_match`／`item_already_submitted`／`item_discarded`／`item_has_no_bill`／`bill_needs_station`／`duplicate_in_batch`（`details: {itemId, seq, originalFilename}`）／`duplicate_document`／`already_in_review`，422 `unsupported_doc_type`，404 `no_binding_for_business_date`。依綁定一次開所有流程（同一交易），每條都接上原檔。
+- `POST E/ingest-items/{id}/discard` body `{ reason? }` → `{ id, status }`；已送審 409 `item_already_submitted`。
+- `GET E/recognition/status` → `{ configured, available, reason?: tpr_not_configured|tpr_not_ready, batchSize, tickSeconds }`。
+
+辨識驅動：`recognize` 只送第一批（`EO_TPR_BATCH_SIZE`，預設 10、上限 50），其餘留在 `recognizing`；之後每次 tick（批次詳情被讀取時，或背景任務每 `EO_RECOGNITION_TICK_SECS` 秒，預設 60、0 ＝ 不啟動）只問服務一次，完成就寫回並送下一批。同一批同時只有一個 tick（批次 `data.driverLeaseUntil` 的原子租約，3 分鐘）。超過時間預算（每份 120 秒、最少 120 秒）或連不上 → 退回 `uploaded` 並記 `ingest.recognition_failed`；400／413／415 是永久錯誤，直接標 `failed`。停在 `uploading` 超過 10 分鐘的批次由背景任務重送。

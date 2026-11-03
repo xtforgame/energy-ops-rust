@@ -16,4 +16,8 @@ mod energy_rating_bindings;
 mod energy_master_data;
 mod energy_org_audit;
 mod energy_http;
+mod energy_demo_seed;
 mod tpr;
+mod energy_intake;
+mod energy_recognition;
+mod energy_attachments;

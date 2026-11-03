@@ -63,6 +63,7 @@ eo-platform.workspace = true
 eo-energy.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 serde.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
