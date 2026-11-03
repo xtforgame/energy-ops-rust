@@ -1,0 +1,9 @@
+//! 平台的 plugin。
+pub mod authn;
+pub mod database;
+pub mod health;
+pub mod multitenancy;
+pub mod rbac;
+pub mod static_web;
+pub mod storage;
+pub mod user;

@@ -953,7 +953,9 @@ dependencies = [
 name = "energy-ops"
 version = "0.1.0"
 dependencies = [
+ "actix-http",
  "actix-web",
+ "bytes",
  "chrono",
  "dotenvy",
  "env_logger",
@@ -961,6 +963,7 @@ dependencies = [
  "eo-energy",
  "eo-platform",
  "log",
+ "rand 0.9.5",
  "reqwest",
  "serde",
  "serde_json",

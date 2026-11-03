@@ -52,6 +52,7 @@ path = "src/main.rs"
 
 [dependencies]
 actix-web.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 log.workspace = true
 env_logger.workspace = true
@@ -62,10 +63,12 @@ eo-platform.workspace = true
 eo-energy.workspace = true
 
 [dev-dependencies]
-sqlx.workspace = true
 serde.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
+actix-http = "3"
+bytes.workspace = true
+rand.workspace = true
 
 [[test]]
 name = "all"
