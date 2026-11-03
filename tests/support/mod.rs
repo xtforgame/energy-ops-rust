@@ -3,6 +3,9 @@
 
 #![allow(dead_code)]
 
+#[macro_use]
+pub mod energy;
+
 use actix_web::{App, HttpServer};
 use chrono::{TimeZone, Utc};
 use eo_platform::clock::ManualClock;

@@ -3,3 +3,4 @@
 #[macro_use]
 mod support;
 mod platform;
+mod energy_workflow_skeleton;
