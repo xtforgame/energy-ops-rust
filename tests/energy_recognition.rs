@@ -345,10 +345,25 @@ async fn driver_ticks_once_and_leases() {
     let batch = r.new_batch(1).await;
     r.upload(batch, SURPLUS, "application/pdf").await;
     let job = r.recognize(batch, json!({})).await["jobId"].as_str().unwrap().to_string();
-    let (a, b) = tokio::join!(recognition::tick_batch(&core, batch), recognition::tick_batch(&core, batch));
-    let mut got = vec![a.unwrap(), b.unwrap()];
-    got.sort();
-    assert_eq!(got, vec!["leased", "running"]);
+    // 別人持有租約（還沒過期）時不動它。不用兩個並行 tick 去撞：它們不保證重疊，先到的放掉租約後
+    // 後到的會接著做，結果正確但不確定。
+    let until = (core.clock.now() + chrono::Duration::minutes(3)).to_rfc3339();
+    sqlx::query("UPDATE tbl_energy_ingest_batch SET data = jsonb_set(data, '{driverLeaseUntil}', to_jsonb($2::text)) WHERE id = $1")
+        .bind(batch)
+        .bind(&until)
+        .execute(&core.pool)
+        .await
+        .unwrap();
+    assert_eq!(recognition::tick_batch(&core, batch).await.unwrap(), "leased");
+    // 租約過期就能接手；執行中只問一次、不寫回。（不快轉時鐘：會超過辨識的時間預算。）
+    let expired = (core.clock.now() - chrono::Duration::seconds(1)).to_rfc3339();
+    sqlx::query("UPDATE tbl_energy_ingest_batch SET data = jsonb_set(data, '{driverLeaseUntil}', to_jsonb($2::text)) WHERE id = $1")
+        .bind(batch)
+        .bind(&expired)
+        .execute(&core.pool)
+        .await
+        .unwrap();
+    assert_eq!(recognition::tick_batch(&core, batch).await.unwrap(), "running");
     assert_eq!(r.statuses(batch).await, vec!["recognizing"]);
     assert_eq!(recognition::tick_batch(&core, batch).await.unwrap(), "consumed");
     assert_eq!(r.statuses(batch).await, vec!["extracted"]);
