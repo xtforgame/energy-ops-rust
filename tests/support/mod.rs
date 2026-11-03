@@ -68,6 +68,9 @@ impl TestApp {
             web_dir: None,
             tpr_url: None,
             tpr_api_key: None,
+            tpr_batch_size: 10,
+            // 測試直接呼叫 tick，不讓背景任務搶著做。
+            recognition_tick_secs: 0,
             cookie_secure: false,
             bootstrap_admin: None,
             demo_seed: false,

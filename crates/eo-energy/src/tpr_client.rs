@@ -19,7 +19,7 @@ pub struct TprError {
 }
 
 impl TprError {
-    fn new(code: &str, status: u16, message: impl Into<String>) -> Self {
+    pub fn new(code: &str, status: u16, message: impl Into<String>) -> Self {
         Self { code: code.into(), status, message: message.into() }
     }
 
@@ -134,6 +134,17 @@ impl TprClient {
     }
 
     pub async fn get_result(&self, job_id: &str) -> Result<CanonicalJobResult, TprError> {
+        let t = Duration::from_secs(30);
+        let path = format!("/api/v1/jobs/{}/result", urlencode(job_id));
+        let resp = Self::send(self.req(reqwest::Method::GET, &path, t), t).await?;
+        if !resp.status().is_success() {
+            return Err(Self::read_error(resp).await);
+        }
+        resp.json().await.map_err(|e| TprError::new("tpr_bad_response", 502, e.to_string()))
+    }
+
+    /// 結果的原始 JSON（整包存進 `ocrRaw`：形狀不 pin，服務改版不動 schema）。
+    pub async fn get_result_raw(&self, job_id: &str) -> Result<serde_json::Value, TprError> {
         let t = Duration::from_secs(30);
         let path = format!("/api/v1/jobs/{}/result", urlencode(job_id));
         let resp = Self::send(self.req(reqwest::Method::GET, &path, t), t).await?;
