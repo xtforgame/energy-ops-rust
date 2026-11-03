@@ -13,6 +13,31 @@ export interface AuthDeps {
   auth: Pick<typeof authApi, 'login' | 'logout' | 'session'>;
   me: Pick<typeof meApi, 'permissions'>;
   selection: Pick<SelectionStore, 'load' | 'getSelection' | 'reset'>;
+  /** 分頁層級的暫存（預設 sessionStorage）：記上一位登出的人與登入落點的記號。 */
+  storage?: () => Storage | undefined;
+}
+
+/** LandingRedirect 用的「這個 session 導過了」記號前綴。 */
+export const LANDING_MARK_PREFIX = 'energy-landing-done:';
+const LAST_USER_KEY = 'eo.auth.lastUserId';
+
+const defaultStorage = (): Storage | undefined => {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** 換人登入時，落點要重新判一次：拿掉上一個人留下的落點記號。 */
+export function clearLandingMarks(storage: Storage | undefined): void {
+  if (!storage) return;
+  const keys: string[] = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const k = storage.key(i);
+    if (k && k.startsWith(LANDING_MARK_PREFIX)) keys.push(k);
+  }
+  keys.forEach((k) => storage.removeItem(k));
 }
 
 const statusOf = (e: any): number | undefined => e?.status ?? e?.response?.status;
@@ -26,6 +51,7 @@ export function isPublicPath(hash: string = typeof window !== 'undefined' ? wind
 }
 
 export function createAuthProvider(deps: AuthDeps): AuthProvider {
+  const storage = () => (deps.storage ?? defaultStorage)();
   let session: SessionInfo | null = null;
   let sessionPromise: Promise<SessionInfo> | null = null;
 
@@ -60,10 +86,22 @@ export function createAuthProvider(deps: AuthDeps): AuthProvider {
         const reason = isApiError(e) ? e.code : '';
         throw new Error(reason === 'account_disabled' ? 'eo.auth.accountDisabled' : 'ra.auth.sign_in_error');
       }
-      await loadSession(true);
+      const s = await loadSession(true);
       await deps.selection.load(true).catch(() => undefined);
+      // react-admin 登入後預設回到登出前那一頁；換了一個人時那是上一個人的頁面，改回根路徑讓登入落點重新判。
+      const st = storage();
+      const last = st?.getItem(LAST_USER_KEY);
+      st?.removeItem(LAST_USER_KEY);
+      if (last && last !== String(s.user.id)) {
+        clearLandingMarks(st);
+        return { redirectTo: '/' };
+      }
+      return undefined;
     },
     logout: async () => {
+      const st = storage();
+      if (session) st?.setItem(LAST_USER_KEY, String(session.user.id));
+      clearLandingMarks(st);
       try {
         await deps.auth.logout();
       } catch {

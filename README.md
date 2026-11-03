@@ -1,5 +1,7 @@
 # energy-ops-rust
 
+完整說明見 [`docs/OVERVIEW.md`](docs/OVERVIEW.md)。
+
 能源營運租戶後台（地主／案場／合約／台電電費單 → 辨識 → 校對 → 逐關核可 → 算應付）的 Rust 版。
 後端是單一 binary（actix-web＋sqlx），以 ryxis-core 的 azldi plugin 方式管理 API；外部服務只有 Postgres 與 MinIO。
 前端在 `web/`（Vite＋React＋react-admin＋MUI），建置後由後端供應。
@@ -61,6 +63,7 @@ cd web && npm run e2e:crawlers           # 同第一行
 | `migrations/` | sqlx migration，編進 binary、開機自動套用 |
 | `tests/` | 整合測試（`tests/all.rs` 聚合）、layer guard |
 | `web/` | 前端 |
+| `docs/OVERVIEW.md` | **說明文件**（功能、架構、起法、測試、與原版的差異） |
 | `docs/PLAN.md` | 計畫與決定 |
 | `docs/API-ENERGY.md` | 能源 API 契約 |
 | `PROVENANCE.md` | 規格來源 commit 與 fixture |

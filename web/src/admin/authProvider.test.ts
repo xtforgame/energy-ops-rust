@@ -24,12 +24,14 @@ function setup(over: Partial<{ session: () => Promise<SessionInfo>; perms: AuthD
       getSelection: vi.fn(() => (over.selection === undefined ? sel() : over.selection)),
       reset: vi.fn(),
     },
+    storage: () => window.sessionStorage,
   };
   return { deps, ap: createAuthProvider(deps) };
 }
 
 beforeEach(() => {
   window.location.hash = '';
+  window.sessionStorage.clear();
 });
 
 describe('checkAuth', () => {
@@ -152,6 +154,34 @@ describe('login / logout', () => {
     (deps.auth.logout as any).mockRejectedValueOnce(new ApiError(401, 'unauthenticated', 'x'));
     await expect(ap.logout({})).resolves.toBeUndefined();
     expect(deps.selection.reset).toHaveBeenCalled();
+  });
+});
+
+describe('換人登入', () => {
+  const bob = { ...user, id: 2, name: 'Bob', email: 'bob@example.com' };
+
+  it('登出後換另一個人登入：回根路徑（不沿用上一個人的頁面），並清掉落點記號讓落點重判', async () => {
+    const { ap, deps } = setup();
+    await ap.checkAuth({});
+    window.sessionStorage.setItem('energy-landing-done:10', 'energyIngestConsole');
+    window.sessionStorage.setItem('other', 'keep');
+    await ap.logout({});
+    (deps.auth.session as any).mockResolvedValueOnce({ user: bob, superUser: false });
+    await expect(ap.login({ email: 'bob@example.com', password: 'pw' })).resolves.toEqual({ redirectTo: '/' });
+    expect(window.sessionStorage.getItem('energy-landing-done:10')).toBeNull();
+    expect(window.sessionStorage.getItem('other')).toBe('keep');
+  });
+
+  it('同一個人重新登入：不改導向（回到登出前那一頁）', async () => {
+    const { ap } = setup();
+    await ap.checkAuth({});
+    await ap.logout({});
+    await expect(ap.login({ email: 'ann@example.com', password: 'pw' })).resolves.toBeUndefined();
+  });
+
+  it('沒有登出紀錄（第一次登入）：照 react-admin 預設', async () => {
+    const { ap } = setup();
+    await expect(ap.login({ email: 'ann@example.com', password: 'pw' })).resolves.toBeUndefined();
   });
 });
 
