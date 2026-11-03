@@ -15,6 +15,9 @@
 //!
 //! 業務方法由衍生的 trait（如 `AppPlugin`）和系統（如 `AppPluginSystem`）處理。
 
+// 原樣搬自 ryxis-core；不為 clippy 改動它的寫法。
+#![allow(clippy::new_without_default, clippy::type_complexity)]
+
 mod plugin;
 
 pub use plugin::{Plugin, PluginRegistry};

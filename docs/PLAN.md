@@ -137,8 +137,18 @@
 | P5 前端 | energy_workbench；web 換 Vite 殼、typed API client、登入改接、多組織選擇器、成員與邀請、RBAC 管理頁（自 raadmin5 移植）；e2e | 瀏覽器從登入走完一張電費單 |
 | P6 加分 | presign 直傳 | 大檔上傳不經後端 |
 
-## 7. 待定
+## 7. 開工後定下的事（2026-11-04）
 
-- S3 客戶端 crate（`aws-sdk-s3` 完整但重；`rust-s3` 輕）— P0 開工時定。
-- JWT 簽章：HS256（單機簡單）或 EdDSA — P1 定。
-- 是否需要可撤銷的 session 表（登出即失效）— P1 定。
+| 議題 | 決定與理由 |
+|---|---|
+| session | 不用 JWT：隨機 token（cookie `eo_session` 或 Bearer），DB 只存 sha256（`tbl_user_session`）。登出即失效、改密碼撤其他 session、停用撤全部；閒置 14 天滑動、絕對 183 天 |
+| SQL | sqlx 的執行期查詢（`query_as` ＋ `FromRow`），不用 `query!` 巨集：省掉 `.sqlx` 離線快取與編譯時連 DB；欄位錯由整合測試抓 |
+| Postgres | `postgres:18`（本機已有 image）；MinIO 釘 `RELEASE.2025-04-22T22-12-26Z`（官方已停發 Docker Hub 社群版 image）；bucket 由 storage plugin 開機建立 |
+| S3 客戶端 | 自寫 SigV4（`storage.rs`，hmac＋sha2，path-style），put／get／head／delete／presign，不引 aws-sdk |
+| 快取 | 行程內 grant 快取，每個使用者一個 generation，commit 後失效；角色定義變了全部失效 |
+| 平台權限 | `platform:rbac:manage`（萬能鑰匙，取代 `ryxis:rbac:manage`）、`platform:org:manage`、`platform:member:manage`、`platform:project:manage`；角色 `platform:org-admin`、`platform:project-admin`；建組織者自動持有 org-admin |
+| 自訂角色 | 可屬於某組織（`owning_organization_id`），只有該組織看得到；組織只能建 complex 自訂 permission（simple 只有超級使用者能建） |
+| 邀請 | 組織與專案邀請合成 `tbl_invitation`；註冊只能憑邀請（`EO_ALLOW_SIGNUP` 可開放）；建組織限超級使用者（`EO_ALLOW_ORG_CREATE` 可開放） |
+| rustfmt | 共用工具鏈沒裝；gate 有裝才檢查 |
+
+能源 API 的路徑與形狀約定見 `docs/API-ENERGY.md`。
