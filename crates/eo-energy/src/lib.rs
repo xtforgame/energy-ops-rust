@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod bindings;
 pub mod common;
+pub mod demo_seed;
 pub mod fake_tpr;
 pub mod gates;
 pub mod master_data;
