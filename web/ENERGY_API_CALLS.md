@@ -1,27 +1,124 @@
-# 能源頁面 API 呼叫清單（舊路徑 → 第二階段對新後端用）
+# 能源頁面 API 對照（App 5 舊路徑 → 新後端）
 
 ## 說明
 
-`src/admin/domain-logic/components/energyOps/` 底下的頁面是從舊 App（App 5）搬來的。
+`src/admin/domain-logic/components/energyOps/` 底下的頁面是從 App 5 搬來的。第二階段起，所有能源呼叫都經過
+`src/api/energy.ts`，路徑改成新後端的組織前綴 **`E = /api/v1/orgs/{orgId}/energy`**（契約：`docs/API-ENERGY.md`）。
 
-- **第一階段（目前）**：所有能源 API 呼叫都已改成經過 `src/api/energyLegacy.ts`。
-  - `energyHttp.get/post/patch/put/delete`：介面與 axios 相同（回 `{ data }`），`withCredentials: true`，request interceptor 會把 `config.url` 丟進 `rewriteLegacyPath()`（第一階段原樣回傳）。
-  - `energyBase(orgId)` = `/api/energy-ops/organizations/${orgId}`
-  - `ENERGY_ROOT` = `/api/energy-ops`
-  - `attachmentDownloadUrl(id)` = `/api/energy-ops/attachments/${id}/download`（有經過 `rewriteLegacyPath`）
-  - `legacyTenantConsoleBase(orgId)` = `/api/tenant-console/organizations/${orgId}`
-  - `uploadViaStorage(endpoint, file, target, fields)`：組 `FormData` 後 `POST endpoint`。欄位依序是 `file`（檔案本體）、`originalFilename`、`mimeType`（瀏覽器沒給時依副檔名補）、`target`（只放 `target.target`，也就是 `'batch'` 或 `'execution'`；`organizationId`／`batchId`／`executionId` **不會**送出）、再加上 `fields` 的每個鍵（物件會 `JSON.stringify`）。
-  - 路徑還是舊 App 的 `/api/energy-ops/*`，**還沒對到新後端**。
-- **第二階段**：只改 `energyLegacy.ts`，也就是 `energyBase`／`rewriteLegacyPath`／`attachmentDownloadUrl`／`uploadViaStorage`／`legacyTenantConsoleBase`，把下面每個端點對到新後端 `/api/v1/orgs/{orgId}/energy/...`。呼叫端不用動。回應形狀和新後端不同時，要在 `energyLegacy.ts` 裡轉換（例如用 response interceptor 依路徑轉換），或另外開卡改呼叫端。
-- **要留意的兩支不分組織的路徑**：`GET/POST ${ENERGY_ROOT}/executions/{executionId}/attachments` 和 `GET ${ENERGY_ROOT}/attachments/{attachmentId}/download` 的路徑裡沒有 `orgId`。如果新後端一律走 `/api/v1/orgs/{orgId}/energy/...`，`rewriteLegacyPath` 拿不到 orgId，需要另外處理（例如從目前選定的組織取得）。
+- `energyBase(orgId)` = `/api/v1/orgs/${orgId}/energy`；`{orgId}` 一律是 `useSelection()?.organizationId`。
+- `energyHttp.get/post/patch/put/delete`：介面同 axios（回 `{ data }`），`withCredentials: true`。
+- **回應轉換表 `ENERGY_ROUTES`**：契約上的 80 條路由各一列（方法＋路徑樣式＋可選的 `adapt`）。response interceptor 依「方法＋路徑」
+  找到那一列，套 `adapt` 後交給頁面，所以頁面拿到的仍是 App 5 的形狀（例如清單是陣列、流程單清單有 `rows`）。
+  比對時靜態段多的優先（`/bills/unmatched` 贏過 `/bills/:billId`）。`responseType: 'blob'` 的下載不轉換。
+- `attachmentDownloadUrl(id, orgId?)` = `E/attachments/{id}/download`；沒傳組織時取目前選定的組織。
+- `uploadViaStorage(endpoint, file, target, fields)`：先 `POST E/uploads/sign`（`{target, batchId|executionId, mimeType, size, originalFilename}`），
+  拿到 `{stagingKey, signedUrl}` 就 `PUT` 原檔到簽名網址、再對原端點送 JSON `{stagingKey, originalFilename, mimeType, ...fields}`；
+  sign 回 404 `route_not_found`（或 501／405）才退回 multipart（欄位 `file, originalFilename, mimeType, target, ...fields`），
+  並在這一頁的生命週期內記住、不再問。sign 回其他錯誤（403、`batch_not_found`、413）照常丟給頁面。
+- `fetchRecognitionState(orgId)`：`GET E/recognition/status` → `on|off|down|unknown`。送件頁 `off` 時顯示「辨識服務未開」並且不送辨識；
+  端點未上線（404）當 `unknown`，畫面不顯示。
+- `installEnergyDefaults(orgId)`：`POST E/setup/install-defaults`；流程總覽在組織沒有任何流程定義時顯示「初始化能源設定」（需 `energy:workflow:manage`）。
+- 401：能源 axios 的錯誤 interceptor 呼叫 `notifyUnauthorized()`，與平台 `http` 共用 `onUnauthorized` 監聽者；
+  `layout/UnauthorizedWatcher` 收到就 `logout()` 回登入頁。
+- 錯誤形狀 `{code, message, details?}` 是物件；`apiErrorCode`／`apiErrorPayload` 原本就收物件，頁面的錯誤碼判斷不用改。
+- 守門測試：`src/api/energy.test.ts` 檢查 `src/admin` 底下沒有 `/api/energy-ops/`、`/api/tenant-console/` 字串。
 
-記號：
+記號：「狀態」欄的「待上線（收件組）」是附件、電費單、收件批次、辨識那一組，後端另一條分支在做；前端已照契約接好，
+在那之前打到會是 404 `route_not_found`（頁面照 App 5 的方式處理：多數吞掉、清單頁跳通知）。
 
-- 下文的 `{orgId}` 一律是 `useSelection()?.organizationId`。
-- 「呼叫端」的路徑都相對於 `web/`。
-- 「403 → denied」表示 `e.response.status === 403` 時頁面改畫「無權限」，其餘錯誤用 `apiErrorCode(e)` 跳通知。這是大多數載入呼叫的共同處理方式，下面只在有特別判斷的地方另外寫出 code。
-- `apiErrorCode(e)`／`apiErrorPayload(e)` 來自 `src/admin/dataProvider/apiError`。
-- `ALL_BILL_REVIEW_FIELDS` = `customerNumberRaw, billingPeriodStart, billingPeriodEnd, totalAmount, generationKwh, issuedAt, dueDate`（`src/common/plugins/EnergyOpsCommonPlugin/taipowerExtractor.ts`）。
+---
+
+## 對照總表（頁面實際呼叫的 55 個端點）
+
+| # | 舊（App 5） | 新 | 回應轉換 | 備註 | 狀態 | 呼叫端 |
+|---|---|---|---|---|---|---|
+| 1 | `GET /api/energy-ops/organizations/{orgId}/audit-events` | `GET E/audit-events` | `{items}` → 陣列 | — | 已上線 | `src/admin/domain-logic/components/energyOps/AuditPage.tsx:99`、`.../BillDetailBody.tsx:254` |
+| 2 | `GET /api/energy-ops/organizations/{orgId}/audit-actors` | `GET E/audit-actors` | `{items}` → 陣列 | — | 已上線 | `.../AuditPage.tsx:116` |
+| 3 | `GET /api/energy-ops/organizations/{orgId}/bills` | `GET E/bills` | `{items}` → 陣列 | — | 待上線（收件組） | `.../BillsPage.tsx:145` |
+| 4 | `GET /api/energy-ops/organizations/{orgId}/bills/unmatched` | `GET E/bills/unmatched` | `{items}` → 陣列 | — | 待上線（收件組） | `.../BillsMenuItem.tsx:38`、`.../BillsPage.tsx:173` |
+| 5 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}` | `GET E/bills/{billId}` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:219`、`.../IngestBatchDetailPage.tsx:238`、`.../IngestBatchDetailPage.tsx:305`、`.../IngestBatchDetailPage.tsx:524` |
+| 6 | `PATCH /api/energy-ops/organizations/{orgId}/bills/{billId}` | `PATCH E/bills/{billId}` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:378`、`.../BillDetailBody.tsx:387`、`.../BillDocTypeField.tsx:58`、`.../IngestBatchDetailPage.tsx:289` |
+| 7 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}/payouts` | `GET E/bills/{billId}/payouts` | `{items}` → 陣列 | — | 待上線（收件組） | `.../BillDetailBody.tsx:240` |
+| 8 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}/branch-preview` | `GET E/bills/{billId}/branch-preview` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:296` |
+| 9 | `POST /api/energy-ops/organizations/{orgId}/bills/{billId}/match` | `POST E/bills/{billId}/match` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:491`、`.../IngestBatchDetailPage.tsx:377` |
+| 10 | `POST /api/energy-ops/organizations/{orgId}/bills/{billId}/submit` | `POST E/bills/{billId}/submit` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:615`、`.../BillsPage.tsx:188` |
+| 11 | `GET /api/energy-ops/organizations/{orgId}/executions` | `GET E/executions` | `items` 另掛成 `rows` | — | 已上線 | `.../ExecutionsPage.tsx:173` |
+| 12 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}` | `GET E/executions/{executionId}` | — | — | 已上線 | `.../BillDetailBody.tsx:273`、`.../ExecutionDetailPage.tsx:102` |
+| 13 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/graph` | `GET E/executions/{executionId}/graph` | — | — | 已上線 | `.../ExecutionDetailPage.tsx:109`、`.../FlowGraph.tsx:340` |
+| 14 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/lineage` | `GET E/executions/{executionId}/lineage` | `{items}` → 陣列 | — | 已上線 | `.../BillDetailBody.tsx:256` |
+| 15 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/actions` | `GET E/executions/{executionId}/actions` | — | — | 已上線 | `.../BillDetailBody.tsx:261` |
+| 16 | `GET /api/energy-ops/executions/{executionId}/attachments` | `GET E/executions/{executionId}/attachments` | `{items}` → 陣列 | 組織取自 `useSelection()`（頁面傳入；沒傳時 `selectionStore`） | 待上線（收件組） | `.../BillDetailBody.tsx:252` |
+| 17 | `POST /api/energy-ops/executions/{executionId}/attachments` | `POST E/executions/{executionId}/attachments` | — | 組織取自 `useSelection()`（頁面傳入；沒傳時 `selectionStore`）；`uploadViaStorage`：先試 `POST E/uploads/sign`，404 route_not_found／501 才退回 multipart | 待上線（收件組） | `.../BillDetailBody.tsx:548` |
+| 18 | `GET /api/energy-ops/attachments/{attachmentId}/download` | `GET E/attachments/{attachmentId}/download` | — | 組織取自 `useSelection()`（頁面傳入；沒傳時 `selectionStore`） | 待上線（收件組） | `.../shared.tsx:506`（blob）、`.../BillDetailBody.tsx:966`（href）、`.../BillDetailBody.tsx:1387`（href）、`.../IngestBatchDetailPage.tsx:466`（href）、`.../IngestBatchDetailPage.tsx:930`（href） |
+| 19 | `POST /api/energy-ops/organizations/{orgId}/tasks/{taskId}/actions` | `POST E/tasks/{taskId}/actions` | — | — | 已上線 | `.../BillDetailBody.tsx:409`、`.../WorkbenchPage.tsx:160`、`.../WorkflowOverviewPage.tsx:133` |
+| 20 | `POST /api/energy-ops/organizations/{orgId}/tasks/{taskId}/claim` | `POST E/tasks/{taskId}/claim` | — | — | 已上線 | `.../BillDetailBody.tsx:446` |
+| 21 | `GET /api/energy-ops/organizations/{orgId}/workbench` | `GET E/workbench` | — | — | 已上線 | `.../WorkbenchPage.tsx:124` |
+| 22 | `GET /api/energy-ops/organizations/{orgId}/workflows` | `GET E/workflows` | — | — | 已上線 | `.../ExecutionsPage.tsx:208`、`.../WorkflowOverviewPage.tsx:77` |
+| 23 | `GET /api/energy-ops/organizations/{orgId}/workflows/{definitionId}/graph` | `GET E/workflows/{definitionId}/graph` | — | — | 已上線 | `.../WorkflowOverviewPage.tsx:103` |
+| 24 | `GET /api/energy-ops/organizations/{orgId}/workflows/{definitionId}/nodes/{nodeKey}/tasks` | `GET E/workflows/{definitionId}/nodes/{nodeKey}/tasks` | `{items}` → 陣列 | — | 已上線 | `.../WorkflowOverviewPage.tsx:113` |
+| 25 | `GET /api/energy-ops/organizations/{orgId}/unbound-stations` | `GET E/unbound-stations` | `{items}` → 陣列 | — | 已上線 | `.../WorkflowOverviewPage.tsx:93` |
+| 26 | `GET /api/energy-ops/organizations/{orgId}/stations` | `GET E/stations` | `{items}` → 陣列 | — | 已上線 | `.../BillDetailBody.tsx:472`、`.../IngestBatchDetailPage.tsx:357` |
+| 27 | `GET /api/energy-ops/organizations/{orgId}/station-list` | `GET E/station-list` | `{items}` → 陣列 | — | 已上線 | `.../BillsPage.tsx:162`、`.../DashboardPage.tsx:102` |
+| 28 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/overview` | `GET E/stations/{stationId}/overview` | — | — | 已上線 | `.../StationDetailPage.tsx:65` |
+| 29 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings` | `GET E/stations/{stationId}/bindings` | — | — | 已上線 | `.../StationDetailPage.tsx:77` |
+| 30 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/preview` | `GET E/stations/{stationId}/bindings/preview` | — | — | 已上線 | `.../BindingActions.tsx:97` |
+| 31 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings` | `POST E/stations/{stationId}/bindings` | — | — | 已上線 | `.../BindingActions.tsx:110` |
+| 32 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/switch` | `POST E/stations/{stationId}/bindings/switch` | — | — | 已上線 | `.../BindingActions.tsx:114` |
+| 33 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/end` | `POST E/stations/{stationId}/bindings/end` | — | — | 已上線 | `.../BindingActions.tsx:118` |
+| 34 | `GET /api/energy-ops/organizations/{orgId}/binding-options` | `GET E/binding-options` | `{items}` → 陣列 | — | 已上線 | `.../BindingActions.tsx:82` |
+| 35 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/geocode` | `GET E/stations/{stationId}/geocode` | `result.latitude/longitude` 轉數字 | — | 已上線 | `.../DashboardPage.tsx:113` |
+| 36 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/geocode` | `POST E/stations/{stationId}/geocode` | — | — | 已上線 | `.../DashboardPage.tsx:124` |
+| 37 | `GET /api/energy-ops/organizations/{orgId}/dashboard` | `GET E/dashboard` | — | — | 已上線 | `.../DashboardPage.tsx:93` |
+| 38 | `GET /api/energy-ops/organizations/{orgId}/calendar-events` | `GET E/calendar-events` | `{items}` → 陣列 | — | 已上線 | `.../CalendarPage.tsx:92` |
+| 39 | `GET /api/energy-ops/organizations/{orgId}/landowners` | `GET E/landowners` | `{items}` → 陣列 | — | 已上線 | `.../LandownersPage.tsx:49` |
+| 40 | `GET /api/energy-ops/organizations/{orgId}/landowners/{landownerId}/overview` | `GET E/landowners/{landownerId}/overview` | — | — | 已上線 | `.../LandownerDetailPage.tsx:48` |
+| 41 | `GET /api/energy-ops/organizations/{orgId}/me/landing` | `GET E/me/landing` | — | — | 已上線 | `.../LandingRedirect.tsx:41` |
+| 42 | `GET /api/energy-ops/organizations/{orgId}/departments` | `GET E/departments` | `{items}` → 陣列 | — | 已上線 | `.../DepartmentsPage.tsx:60` |
+| 43 | `POST /api/energy-ops/organizations/{orgId}/departments` | `POST E/departments` | — | — | 已上線 | `.../DepartmentsPage.tsx:80` |
+| 44 | `DELETE /api/energy-ops/organizations/{orgId}/departments/{departmentId}` | `DELETE E/departments/{departmentId}` | — | — | 已上線 | `.../DepartmentsPage.tsx:95` |
+| 45 | `POST /api/energy-ops/organizations/{orgId}/departments/{departmentId}/members` | `PUT E/departments/{departmentId}/members/{userId}` | — | body 改 `{ role }`（userId 進路徑）；頁面已改 | 已上線 | `.../DepartmentsPage.tsx:108` |
+| 46 | `DELETE /api/energy-ops/organizations/{orgId}/departments/{departmentId}/members/{userId}` | `DELETE E/departments/{departmentId}/members/{userId}` | — | — | 已上線 | `.../DepartmentsPage.tsx:121` |
+| 47 | `GET /api/tenant-console/organizations/{orgId}/members` | `GET E/members` | `{items}` → 陣列＋補 `id = userId` | `fetchMemberOptions`：沒 ASSIGN_ROLE 時退回平台 `GET /api/v1/orgs/{orgId}/members` | 已上線 | `.../DepartmentsPage.tsx:70` |
+| 48 | `GET /api/energy-ops/organizations/{orgId}/ingest-batches` | `GET E/ingest-batches` | `{items}` → 陣列 | — | 待上線（收件組） | `.../IngestConsolePage.tsx:100` |
+| 49 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches` | `POST E/ingest-batches` | — | — | 待上線（收件組） | `.../IngestConsolePage.tsx:125` |
+| 50 | `GET /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}` | `GET E/ingest-batches/{batchId}` | — | — | 待上線（收件組） | `.../IngestBatchDetailPage.tsx:196` |
+| 51 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}/attachments` | `POST E/ingest-batches/{batchId}/attachments` | — | `uploadViaStorage`：先試 `POST E/uploads/sign`，404 route_not_found／501 才退回 multipart | 待上線（收件組） | `.../IngestConsolePage.tsx:136` |
+| 52 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}/recognize` | `POST E/ingest-batches/{batchId}/recognize` | — | — | 待上線（收件組） | `.../IngestConsolePage.tsx:149` |
+| 53 | `PATCH /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}` | `PATCH E/ingest-items/{itemId}` | — | — | 待上線（收件組） | `.../IngestBatchDetailPage.tsx:270` |
+| 54 | `POST /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}/submit` | `POST E/ingest-items/{itemId}/submit` | — | — | 待上線（收件組） | `.../IngestBatchDetailPage.tsx:319` |
+| 55 | `POST /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}/discard` | `POST E/ingest-items/{itemId}/discard` | — | — | 待上線（收件組） | `.../BillDetailBody.tsx:633`、`.../IngestBatchDetailPage.tsx:339` |
+
+（呼叫端的 `.../` = `src/admin/domain-logic/components/energyOps/`）
+
+## 新後端另有、頁面目前沒有呼叫的端點
+
+都已列在 `ENERGY_ROUTES`（形狀原樣，清單類照樣 `{items}` → 陣列），之後開頁面時直接用 `energyHttp`：
+
+| 方法 | 新路徑 | 說明 |
+|---|---|---|
+| PATCH | `E/departments/{departmentId}` | 改部門名稱／排序 |
+| GET | `E/members` | 成員＋能源角色＋部門（部門頁挑選器已用） |
+| DELETE | `E/members/{userId}` | 移除成員（最後一位治理者 400 `cannot_remove_last_admin`） |
+| GET | `E/assignable-roles` | 回 `{items, canAssignPrivileged}`（原樣，不拆） |
+| POST | `E/role-assignments`、`E/role-assignments/revoke` | 能源角色指派／撤銷 |
+| POST | `E/executions` | 手動開單 `{stationKey, workflowKey, subjectType, subjectId, businessDate, attributes?}` |
+| GET | `E/executions/{executionId}/revertable` | 可否回退 |
+| POST | `E/executions/{executionId}/abort`、`/force-advance`、`/terminate` | 中斷申請、強制推進、終止（新） |
+| POST | `E/tasks/{taskId}/release`、`/abort-decision`、`/reassign` | 釋放、中斷審批、改派 |
+| POST | `E/side-effects/{sideEffectId}/release` | 解除回退鎖 |
+| GET | `E/delegations?all=1` | 代理清單（新），每列帶 `active`、`mine`、`delegatorName`、`delegateName` |
+| POST | `E/delegations`、`E/delegations/{delegationId}/revoke` | 設代理、收回（新；已收回 409 `delegation_already_revoked`） |
+| POST | `E/lineage` | 連血緣 |
+| POST | `E/setup/install-defaults` | 初始化能源設定（流程總覽空狀態已用） |
+| GET | `E/landowners/{landownerId}` | 單一地主 |
+| POST | `E/bills/ingest`、`E/ingest-items/{itemId}/recognition` | 收件組（待上線） |
+| POST | `E/attachment-links/{linkId}/remove` | 收件組（待上線） |
+| POST | `E/uploads/sign` | 收件組（待上線）；`uploadViaStorage` 自動偵測 |
+| GET | `E/recognition/status` | 收件組（待上線）；送件頁「辨識服務未開」的來源 |
+
+---
+
+## 頁面讀的回應形狀（App 5 形狀，轉換表保證不變）
 
 共用的回應形狀（下文直接引用名稱）：
 
@@ -30,77 +127,7 @@
 - **ActionBlocked**（`ActionBar.tsx`）：`{ code, nodeName?, assigneeHint? }`
 - **SubjectRef**（`routes.ts`，給 `subjectRoute`／`taskWorkRoute` 決定連結）：`{ kind ('energyBill'|'energyInstallment'), billId?, installmentId?, landownerId?, stationId? }`
 
----
-
-## 總表（依 method＋路徑去重）
-
-共 **55 個端點**、**77 個呼叫點**（`attachmentDownloadUrl` 的 `<a href>` 也算呼叫點）。
-
-| # | 端點（舊路徑） | 呼叫端 |
-|---|---|---|
-| 1 | `GET /api/energy-ops/organizations/{orgId}/audit-events` | `src/admin/domain-logic/components/energyOps/AuditPage.tsx:99`、`.../BillDetailBody.tsx:254` |
-| 2 | `GET /api/energy-ops/organizations/{orgId}/audit-actors` | `.../AuditPage.tsx:116` |
-| 3 | `GET /api/energy-ops/organizations/{orgId}/bills` | `.../BillsPage.tsx:145` |
-| 4 | `GET /api/energy-ops/organizations/{orgId}/bills/unmatched` | `.../BillsMenuItem.tsx:38`、`.../BillsPage.tsx:173` |
-| 5 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}` | `.../BillDetailBody.tsx:219`、`.../IngestBatchDetailPage.tsx:238`、`.../IngestBatchDetailPage.tsx:305`、`.../IngestBatchDetailPage.tsx:524` |
-| 6 | `PATCH /api/energy-ops/organizations/{orgId}/bills/{billId}` | `.../BillDetailBody.tsx:378`、`.../BillDetailBody.tsx:387`、`.../BillDocTypeField.tsx:58`、`.../IngestBatchDetailPage.tsx:289` |
-| 7 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}/payouts` | `.../BillDetailBody.tsx:240` |
-| 8 | `GET /api/energy-ops/organizations/{orgId}/bills/{billId}/branch-preview` | `.../BillDetailBody.tsx:296` |
-| 9 | `POST /api/energy-ops/organizations/{orgId}/bills/{billId}/match` | `.../BillDetailBody.tsx:491`、`.../IngestBatchDetailPage.tsx:377` |
-| 10 | `POST /api/energy-ops/organizations/{orgId}/bills/{billId}/submit` | `.../BillDetailBody.tsx:615`、`.../BillsPage.tsx:188` |
-| 11 | `GET /api/energy-ops/organizations/{orgId}/executions` | `.../ExecutionsPage.tsx:173` |
-| 12 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}` | `.../BillDetailBody.tsx:273`、`.../ExecutionDetailPage.tsx:102` |
-| 13 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/graph` | `.../ExecutionDetailPage.tsx:109`、`.../FlowGraph.tsx:340` |
-| 14 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/lineage` | `.../BillDetailBody.tsx:256` |
-| 15 | `GET /api/energy-ops/organizations/{orgId}/executions/{executionId}/actions` | `.../BillDetailBody.tsx:261` |
-| 16 | `GET /api/energy-ops/executions/{executionId}/attachments` | `.../BillDetailBody.tsx:252` |
-| 17 | `POST /api/energy-ops/executions/{executionId}/attachments`（multipart，`uploadViaStorage`） | `.../BillDetailBody.tsx:548` |
-| 18 | `GET /api/energy-ops/attachments/{attachmentId}/download` | `.../shared.tsx:506`（blob）、`.../BillDetailBody.tsx:966`（href）、`.../BillDetailBody.tsx:1387`（href）、`.../IngestBatchDetailPage.tsx:466`（href）、`.../IngestBatchDetailPage.tsx:930`（href） |
-| 19 | `POST /api/energy-ops/organizations/{orgId}/tasks/{taskId}/actions` | `.../BillDetailBody.tsx:409`、`.../WorkbenchPage.tsx:160`、`.../WorkflowOverviewPage.tsx:133` |
-| 20 | `POST /api/energy-ops/organizations/{orgId}/tasks/{taskId}/claim` | `.../BillDetailBody.tsx:446` |
-| 21 | `GET /api/energy-ops/organizations/{orgId}/workbench` | `.../WorkbenchPage.tsx:124` |
-| 22 | `GET /api/energy-ops/organizations/{orgId}/workflows` | `.../ExecutionsPage.tsx:208`、`.../WorkflowOverviewPage.tsx:77` |
-| 23 | `GET /api/energy-ops/organizations/{orgId}/workflows/{definitionId}/graph` | `.../WorkflowOverviewPage.tsx:103` |
-| 24 | `GET /api/energy-ops/organizations/{orgId}/workflows/{definitionId}/nodes/{nodeKey}/tasks` | `.../WorkflowOverviewPage.tsx:113` |
-| 25 | `GET /api/energy-ops/organizations/{orgId}/unbound-stations` | `.../WorkflowOverviewPage.tsx:93` |
-| 26 | `GET /api/energy-ops/organizations/{orgId}/stations` | `.../BillDetailBody.tsx:472`、`.../IngestBatchDetailPage.tsx:357` |
-| 27 | `GET /api/energy-ops/organizations/{orgId}/station-list` | `.../BillsPage.tsx:162`、`.../DashboardPage.tsx:102` |
-| 28 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/overview` | `.../StationDetailPage.tsx:65` |
-| 29 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings` | `.../StationDetailPage.tsx:77` |
-| 30 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/preview` | `.../BindingActions.tsx:97` |
-| 31 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings` | `.../BindingActions.tsx:110` |
-| 32 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/switch` | `.../BindingActions.tsx:114` |
-| 33 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/bindings/end` | `.../BindingActions.tsx:118` |
-| 34 | `GET /api/energy-ops/organizations/{orgId}/binding-options` | `.../BindingActions.tsx:82` |
-| 35 | `GET /api/energy-ops/organizations/{orgId}/stations/{stationId}/geocode` | `.../DashboardPage.tsx:113` |
-| 36 | `POST /api/energy-ops/organizations/{orgId}/stations/{stationId}/geocode` | `.../DashboardPage.tsx:124` |
-| 37 | `GET /api/energy-ops/organizations/{orgId}/dashboard` | `.../DashboardPage.tsx:93` |
-| 38 | `GET /api/energy-ops/organizations/{orgId}/calendar-events` | `.../CalendarPage.tsx:92` |
-| 39 | `GET /api/energy-ops/organizations/{orgId}/landowners` | `.../LandownersPage.tsx:49` |
-| 40 | `GET /api/energy-ops/organizations/{orgId}/landowners/{landownerId}/overview` | `.../LandownerDetailPage.tsx:48` |
-| 41 | `GET /api/energy-ops/organizations/{orgId}/me/landing` | `.../LandingRedirect.tsx:41` |
-| 42 | `GET /api/energy-ops/organizations/{orgId}/departments` | `.../DepartmentsPage.tsx:60` |
-| 43 | `POST /api/energy-ops/organizations/{orgId}/departments` | `.../DepartmentsPage.tsx:80` |
-| 44 | `DELETE /api/energy-ops/organizations/{orgId}/departments/{departmentId}` | `.../DepartmentsPage.tsx:95` |
-| 45 | `POST /api/energy-ops/organizations/{orgId}/departments/{departmentId}/members` | `.../DepartmentsPage.tsx:108` |
-| 46 | `DELETE /api/energy-ops/organizations/{orgId}/departments/{departmentId}/members/{userId}` | `.../DepartmentsPage.tsx:121` |
-| 47 | `GET /api/tenant-console/organizations/{orgId}/members`（舊成員 API，第二階段改平台 API） | `.../DepartmentsPage.tsx:70` |
-| 48 | `GET /api/energy-ops/organizations/{orgId}/ingest-batches` | `.../IngestConsolePage.tsx:100` |
-| 49 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches` | `.../IngestConsolePage.tsx:125` |
-| 50 | `GET /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}` | `.../IngestBatchDetailPage.tsx:196` |
-| 51 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}/attachments`（multipart，`uploadViaStorage`） | `.../IngestConsolePage.tsx:136` |
-| 52 | `POST /api/energy-ops/organizations/{orgId}/ingest-batches/{batchId}/recognize` | `.../IngestConsolePage.tsx:149` |
-| 53 | `PATCH /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}` | `.../IngestBatchDetailPage.tsx:270` |
-| 54 | `POST /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}/submit` | `.../IngestBatchDetailPage.tsx:319` |
-| 55 | `POST /api/energy-ops/organizations/{orgId}/ingest-items/{itemId}/discard` | `.../BillDetailBody.tsx:633`、`.../IngestBatchDetailPage.tsx:339` |
-
-（表中 `.../` = `src/admin/domain-logic/components/energyOps/`）
-
-沒有 API 呼叫的檔：`ActionBar.tsx`、`BillDetailDrawer.tsx`（內容是 `BillDetailBody`）、`FieldDiffGrid.tsx`、`fieldColors.ts`、`MyWorkConsolePage.tsx`（內嵌 `WorkbenchPage`／`ExecutionsPage`）、`RecognitionNote.tsx`、`RecognizingIndicator.tsx`、`ReviewConsolePage.tsx`、`roleDisplay.ts`、`routes.ts`、`StationMap.tsx`（吃 `DashboardPage` 傳進來的 `station-list`）。
-
----
-
-## 依檔案分節的明細
+## 依檔案分節的明細（路徑寫的是 App 5 舊路徑，新路徑見上表）
 
 ### src/admin/domain-logic/components/energyOps/AuditPage.tsx
 
@@ -483,15 +510,7 @@
 
 ## 已移除／改由平台 API 取代
 
-下列舊 App 的呼叫在第一階段已拿掉，**不在**上面的清單裡：
-
-- **舊 App 的成員頁**：已由平台的 `/api/v1/orgs/{orgId}/members` 與 `/api/v1/orgs/{orgId}/rbac/grants` 取代。
-  - `GET /api/tenant-console/organizations/{orgId}/members`
-  - `POST /api/tenant-console/organizations/{orgId}/members`
-  - `DELETE /api/tenant-console/organizations/{orgId}/members/...`
-  - `GET /api/tenant-console/organizations/{orgId}/grants`
-  - `POST /api/energy-ops/organizations/{orgId}/role-assignments`
-  - `POST /api/energy-ops/organizations/{orgId}/role-assignments/revoke`
-  - `GET /api/energy-ops/organizations/{orgId}/assignable-roles`
-- **舊 Supabase 直傳**：`/api/energy-ops/uploads/sign`（簽名網址）已拿掉。`uploadViaStorage` 暫時改成 multipart 直接送到原端點（`.../ingest-batches/{batchId}/attachments`、`/api/energy-ops/executions/{executionId}/attachments`），第二階段依新後端的物件儲存 API 調整。
-- **還沒改的一支**：`DepartmentsPage.tsx:70` 仍呼叫舊的 `GET /api/tenant-console/organizations/{orgId}/members`（指派部門成員的下拉）。**第二階段**改用 `GET /api/v1/orgs/{orgId}/members`，回 `items[].userId/name/email`；呼叫端目前讀的是陣列的 `id`／`name`，要把 `items[].userId` 對到 `id`。
+- **舊 App 的成員頁**：由平台的 `/api/v1/orgs/{orgId}/members` 與 `/api/v1/orgs/{orgId}/rbac/grants` 取代（第一階段）。
+- **`/api/tenant-console/organizations/{orgId}/members`**（部門頁挑選器）：改 `E/members`，沒權限退回平台成員清單（第二階段）。
+- **`/api/energy-ops/uploads/sign`（Supabase 直傳）**：改 `E/uploads/sign`，PUT 到新後端物件儲存的簽名網址；沒上線時退回 multipart（第二階段）。
+- `ENERGY_ROOT`、`rewriteLegacyPath`、`legacyTenantConsoleBase` 已刪除；`src/api/energyLegacy.ts` 換成 `src/api/energy.ts`。

@@ -137,3 +137,16 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 - `GET E/delegations?all=1`：預設列「我設的與替我設的」（`all=1` 且有 `energy:delegation:manage` 時列全組織），每列帶 `active`、`mine`、`delegatorName`、`delegateName`。`POST E/delegations/{id}/revoke` 已收回的回 409 `delegation_already_revoked`。
 - `POST E/executions/{id}/terminate` body `{ reason }`；已結束（completed／aborted／terminated）的回 409 `execution_not_running`。
 - 錯誤碼沿用 App 5：跨組織指到別家的資源回 403 `<resource>_not_in_org`（execution、task、department、station、landowner、definition、version），本組織查無回 404 `<resource>_not_found`。
+
+## 前端第二階段對接時發現的落差（待後端確認；契約本身未改）
+
+對 `rust-port`＠815dfdd 實跑（2026-11-04）。前端都已在 `web/src/api/energy.ts` 吸收或照下面的假設接好。
+
+1. **`GET E/workflows` 不是 `{ items }`**：回 `{ definitions, stuckDays }`（與 App 5 相同）。和「清單一律 `{ items }`」的約定不一致；前端照實讀 `definitions`。要統一的話請一併改這裡，前端轉換表加一行即可。
+2. **`GET E/workflows/{id}/nodes/{nodeKey}/tasks` 的 `claimable` 與 `actionBlocked` 互相矛盾**：不是候選人時列上是 `claimable: true` 且 `actionBlocked.code = "notCandidate"`；同一個 task 在 `GET E/executions/{id}/actions` 是 `claimable: false`。工作台列與流程總覽抽屜共用這份 DTO，應該照 `node_actions` 的判法（被擋就不能認領）。
+3. **附件那一節（`E/executions/{id}/attachments`、`E/attachments/{id}/download`、`E/attachment-links/{id}/remove`、`E/uploads/sign`）在 rust-port 尚未有路由**（404 `route_not_found`），前端把它們和收件組一起標成「待上線」。
+4. **`POST E/uploads/sign` 的形狀契約沒寫**。前端照 App 5：body `{ target: "batch"|"execution", batchId|executionId, mimeType, size, originalFilename }`，回 `{ stagingKey, signedUrl }`（也接受 `uploadUrl`／`url`，可選 `method`、`headers`），之後瀏覽器 `PUT` 原檔（`content-type` = mimeType）到簽名網址，再對原上傳端點送 JSON `{ stagingKey, originalFilename, mimeType, ...欄位 }`。端點不存在時要回 404 `route_not_found` 或 501，前端才會退回 multipart；其他錯誤碼（403、404 `batch_not_found`、413）會直接顯示給使用者。簽名網址指向 MinIO 時要開 CORS（瀏覽器直接 PUT）。
+5. **`GET E/recognition/status` 的形狀契約沒寫**。前端讀法：`configured: false`（或 `enabled: false`、`status: "not_configured"`）→「辨識服務未開」；`available: false`（或 `reachable: false`、`status: "unavailable"`）→「暫時連不上」；`configured: true`／`available: true`／`status: "ok"` → 正常；其他或 404 → 不顯示。建議回 `{ configured, available, reason? }`。
+6. **候選池在關卡 ready 時快照**：task 進 ready 之後才加進部門的人，仍是 `notCandidate`（工作台看不到、不能認領）。照 App 5 語意是對的，但畫面沒有提示；之後要不要給「重新解析候選池」的管理動作另議。
+7. **`GET E/executions` 清單列的頂層 `stationId` 是 null**（`subject.stationId` 有值；以 `stationKey` 開的單）。前端只讀 `subject.*`，不受影響；`stationId` 篩選條件若是比這個欄位會漏。
+8. **`POST E/setup/install-defaults` 的稽核**：只看到「發佈了新的計算策略版本」與三筆「新增了部門」，四個流程定義的安裝沒有稽核事件。
