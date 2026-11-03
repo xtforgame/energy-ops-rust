@@ -30,6 +30,26 @@ cargo test --workspace        # 單元＋整合（整合測試每條自己開一
 ./scripts/gate.sh             # 完整關卡：clippy、全部測試、前端 vitest 與 build
 ```
 
+### e2e crawler（真瀏覽器驗收，不在 gate 裡）
+
+移植自 az 的 `scripts/crawler-energy-ops-*`：puppeteer 走真的畫面（登入、選組織、收件、校對、逐關核可…），
+每一條斷言印一行 ✅／❌。每支在重建過的專用資料庫 `eo_e2e` 上跑（示範資料重灌），
+各自起一個假辨識服務與一個後端（`web/dist` 由後端供應），跑完收掉，最後印總表。
+
+```sh
+docker compose up -d
+web/e2e/run-crawlers.sh                  # 全部（約十幾分鐘）
+web/e2e/run-crawlers.sh flowgraph mywork # 指定幾支
+cd web && npm run e2e:crawlers           # 同第一行
+```
+
+- 只會 DROP／CREATE `E2E_DB`（預設 `eo_e2e`，必須以 `eo_e2e` 開頭）；物件放在 MinIO 的 `e2e/<crawler>-<時間>/` 前綴下。
+- `E2E_SKIP_BUILD=1` 不重建後端與 `web/dist`；`CARGO_TARGET_DIR` 指定 binary 所在；`CRAWLER_HEADFUL=1` 開著瀏覽器看。
+- 截圖與各支的 `crawler.log`、`backend.log` 在 `web/e2e/shots/<crawler>/`（不進版控），總表在 `web/e2e/shots/summary.txt`。
+- `binding executions queue roles journey` 從收件台真的走一遍（單據留白）；其餘另外灌四份範本電費單
+  （`EO_DEMO_SAMPLE_BILLS=1`，PDF 在 `tests/fixtures/samples/`）。
+- 共用的 harness 在 `web/e2e/lib/energyOpsHarness.ts`（API 與原版同名，示範影片腳本也用它），各支在 `web/e2e/crawlers/`。
+
 ## 結構
 
 | 路徑 | 內容 |
