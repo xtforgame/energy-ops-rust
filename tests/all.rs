@@ -20,3 +20,4 @@ mod energy_demo_seed;
 mod tpr;
 mod energy_intake;
 mod energy_recognition;
+mod energy_attachments;

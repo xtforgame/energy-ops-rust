@@ -180,6 +180,24 @@ impl TestApp {
     }
 }
 
+/// 測試結束就把自己的資料庫丟掉：留著的話 Postgres 的統計共享記憶體會隨資料庫數量長大，最後整套測試起不來。
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        let admin_url = env_or("EO_TEST_ADMIN_DATABASE_URL", ADMIN_DB_URL_DEFAULT);
+        let db = self.db_name.clone();
+        let _ = std::thread::spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return };
+            rt.block_on(async move {
+                if let Ok(admin) = sqlx::PgPool::connect(&admin_url).await {
+                    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {db} WITH (FORCE)")).execute(&admin).await;
+                    admin.close().await;
+                }
+            });
+        })
+        .join();
+    }
+}
+
 /// 斷言狀態碼，失敗時印出回應。
 #[macro_export]
 macro_rules! expect_status {
