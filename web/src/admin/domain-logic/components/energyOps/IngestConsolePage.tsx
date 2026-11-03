@@ -1,11 +1,13 @@
 import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableHead, TableBody, TableRow, TableCell,
-  Stack, Chip, LinearProgress, IconButton, Tooltip,
+  Stack, Chip, LinearProgress, IconButton, Tooltip, Alert,
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { energyHttp, energyBase, uploadViaStorage } from '@/api/energyLegacy';
+import {
+  energyHttp, energyBase, uploadViaStorage, fetchRecognitionState, type RecognitionState,
+} from '@/api/energy';
 import { useNotify, useTranslate, usePermissions } from 'react-admin';
 import { useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
@@ -82,7 +84,7 @@ const IngestConsolePage: React.FC = () => {
   const canUpload = permissions == null
     || permissions.includes('*')
     || permissions.includes('energy:flow:act')
-    || permissions.includes('ryxis:rbac:manage');
+    || permissions.includes('platform:rbac:manage');
 
   const [loading, setLoading] = React.useState(false);
   const [denied, setDenied] = React.useState(false);
@@ -90,6 +92,8 @@ const IngestConsolePage: React.FC = () => {
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState<{ done: number; total: number } | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  /** 辨識服務的狀態由後端的 status 端點說（沒設定就是「服務未開」）。 */
+  const [recognition, setRecognition] = React.useState<RecognitionState>('unknown');
 
   const base = energyBase(orgId);
 
@@ -106,6 +110,13 @@ const IngestConsolePage: React.FC = () => {
   }, [orgId, notify]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  React.useEffect(() => {
+    let alive = true;
+    setRecognition('unknown');
+    fetchRecognitionState(orgId).then((st) => { if (alive) setRecognition(st); });
+    return () => { alive = false; };
+  }, [orgId]);
 
   /**
    * 收件的三步：**開批 → 逐檔上傳原始檔 → 送去辨識**。
@@ -144,7 +155,10 @@ const IngestConsolePage: React.FC = () => {
         setProgress({ done: i + 1, total: list.length });
       }
 
-      if (uploaded > 0) {
+      if (uploaded > 0 && recognition === 'off') {
+        // 服務沒設定：不送辨識（送了也只會被拒），直接說清楚。
+        notify('energy.intake.recognizeDisabled', { type: 'warning' });
+      } else if (uploaded > 0) {
         try {
           const { data: outcome } = await energyHttp.post(`${base}/ingest-batches/${batchId}/recognize`);
           // 服務沒設定／連不上時**明說** —— 檔案已經在了，
@@ -197,6 +211,16 @@ const IngestConsolePage: React.FC = () => {
           這裡**唯一的輸入元素是一顆選檔按鈕**。
           不要在這裡加「單別」「案場」「期間」—— 那些都是在問一個他
           **還不知道答案**的問題，而那些答案該由辨識結果回答。 */}
+      {recognition === 'off' && (
+        <Alert severity="warning" sx={{ mb: 2 }} data-testid="recognition-off">
+          {translate('energy.intake.recognitionOff')}
+        </Alert>
+      )}
+      {recognition === 'down' && (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="recognition-down">
+          {translate('energy.intake.recognitionDown')}
+        </Alert>
+      )}
       {canUpload && (
       <Card>
         <CardContent>

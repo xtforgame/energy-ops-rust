@@ -2,7 +2,7 @@ import * as React from 'react';
 import {
   Box, Stack, Chip, Select, MenuItem, Typography, Alert,
 } from '@mui/material';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { BILL_DOC_TYPES } from 'common/plugins/EnergyOpsCommonPlugin/documentIngest';
 import { apiErrorCode } from '../../../dataProvider/apiError';

@@ -10,7 +10,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import InboxIcon from '@mui/icons-material/MoveToInbox';
 import LinkIcon from '@mui/icons-material/Link';
-import { energyHttp, energyBase, attachmentDownloadUrl, ENERGY_ROOT, uploadViaStorage } from '@/api/energyLegacy';
+import { energyHttp, energyBase, attachmentDownloadUrl, uploadViaStorage } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
@@ -249,7 +249,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
       setAttachments([]); setAudit([]); setLineage([]); setActions([]); setBlocked(null); return;
     }
     const eid = execution.id;
-    energyHttp.get(`${ENERGY_ROOT}/executions/${eid}/attachments`)
+    energyHttp.get(`${energyBase(orgId)}/executions/${eid}/attachments`)
       .then(({ data }) => setAttachments(Array.isArray(data) ? data : [])).catch(() => setAttachments([]));
     energyHttp.get(`${base}/audit-events`, { params: { targetType: 'energyWorkflowExecution', targetId: String(eid) } })
       .then(({ data }) => setAudit(Array.isArray(data) ? data : [])).catch(() => setAudit([]));
@@ -545,8 +545,8 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
     setUploading(true);
     try {
       // energy-ops-next：直傳 Storage（大檔不經 API 請求本體，見 auth/directUpload.ts）。
-      await uploadViaStorage(`${ENERGY_ROOT}/executions/${execution.id}/attachments`, file, {
-        target: 'execution', executionId: execution.id,
+      await uploadViaStorage(`${base}/executions/${execution.id}/attachments`, file, {
+        target: 'execution', executionId: execution.id, organizationId: orgId,
       }, { role });
       notify('energy.review.attachmentAdded', { type: 'success' });
       load();
@@ -963,7 +963,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                 <Button
                   variant="outlined"
                   startIcon={<DownloadIcon />}
-                  href={attachmentDownloadUrl(sourceAttachmentId)}
+                  href={attachmentDownloadUrl(sourceAttachmentId, orgId)}
                   target="_blank"
                   rel="noreferrer"
                   data-testid="review-open-source"
@@ -1384,7 +1384,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                         <TableCell align="right">
                           <IconButton
                             size="small"
-                            href={attachmentDownloadUrl(a.id)}
+                            href={attachmentDownloadUrl(a.id, orgId)}
                             target="_blank"
                             rel="noreferrer"
                           >

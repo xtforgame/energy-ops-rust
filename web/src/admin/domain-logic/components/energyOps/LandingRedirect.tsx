@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
 

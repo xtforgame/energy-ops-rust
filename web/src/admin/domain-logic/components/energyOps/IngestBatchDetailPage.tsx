@@ -10,7 +10,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import LinkIcon from '@mui/icons-material/Link';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
-import { energyHttp, energyBase, attachmentDownloadUrl } from '@/api/energyLegacy';
+import { energyHttp, energyBase, attachmentDownloadUrl } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import FieldDiffGrid, { billFieldLabelKey, type ReviewField } from './FieldDiffGrid';
 import BillDocTypeField from './BillDocTypeField';
@@ -463,7 +463,7 @@ const IngestBatchDetailPage: React.FC = () => {
               variant="outlined"
               size="small"
               startIcon={<DownloadIcon />}
-              href={attachmentDownloadUrl(item.attachmentId)}
+              href={attachmentDownloadUrl(item.attachmentId, orgId)}
               target="_blank"
               rel="noreferrer"
               data-testid="ingest-open-source"
@@ -927,7 +927,7 @@ const IngestBatchDetailPage: React.FC = () => {
                       <IconButton
                         size="small"
                         data-testid="batch-download"
-                        href={attachmentDownloadUrl(i.attachmentId)}
+                        href={attachmentDownloadUrl(i.attachmentId, orgId)}
                         target="_blank"
                         rel="noreferrer"
                       >

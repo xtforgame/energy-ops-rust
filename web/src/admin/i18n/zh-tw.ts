@@ -382,6 +382,8 @@ const customChineseTWMessages: TranslationMessages = {
       recognizeLater: '檔案已保留，但辨識服務目前無法使用 —— 稍後會自動重試。',
       recognizeBudget: '檔案已保留，但本月的辨識預算已用完，沒有送出辨識。請管理員到平台的租戶管理台調高預算，之後會自動重試。',
       recognizeDisabled: '檔案已保留，但辨識服務目前沒有開放給這個網站，沒有送出辨識。請聯絡管理員。',
+      recognitionOff: '辨識服務未開：檔案照樣可以收，但不會自動辨識。請管理員設定辨識服務。',
+      recognitionDown: '辨識服務暫時連不上：檔案照樣可以收，服務恢復後會補辨識。',
       recognizing: '辨識中（%{done} / %{total}）',
       // 有真的分母時才用這一句（批次層）——沒有就只說「辨識中」，不要編進度。
       recognizingCount: '辨識中（第 %{done} / %{total} 份）',
@@ -575,6 +577,10 @@ const customChineseTWMessages: TranslationMessages = {
       // drawer / 摘要區只列得下前幾筆 —— 「看全部」帶著同樣的篩選去 P2。
       seeAll: '看全部',
       needsReasonHint: '退回要填理由 —— 請到單據頁操作。',
+      installDefaults: '初始化能源設定',
+      emptyAdmin: '這個組織還沒有任何流程定義。按「初始化能源設定」安裝內建流程（電費單核可、保證金請款、用電電費單、開立發票）、預設計算策略與三個部門。',
+      empty: '這個組織還沒有任何流程定義，請管理員初始化能源設定。',
+      installed: '已安裝 %{definitions} 個流程定義、%{departments} 個部門。',
     },
     batches: {
       when: '送件時間',

@@ -81,6 +81,11 @@ export function onUnauthorized(fn: UnauthorizedListener): () => void {
   };
 }
 
+/** 其他客戶端（能源的 axios）拿到 401 時也走同一組監聽者。 */
+export function notifyUnauthorized(e: ApiError) {
+  unauthorizedListeners.forEach((fn) => fn(e));
+}
+
 export function buildUrl(path: string, query?: Query): string {
   if (!query) return path;
   const qs = new URLSearchParams();
@@ -129,7 +134,7 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   const data = await readBody(res);
   if (!res.ok) {
     const err = normalizeError(res.status, data, res.statusText);
-    if (err.status === 401) unauthorizedListeners.forEach((fn) => fn(err));
+    if (err.status === 401) notifyUnauthorized(err);
     throw err;
   }
   return data as T;

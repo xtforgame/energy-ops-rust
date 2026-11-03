@@ -5,7 +5,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Box, Typography, Stack, CircularProgress, Alert } from '@mui/material';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useTranslate } from 'react-admin';
 import { jvTokens } from './shared';
 

@@ -4,7 +4,7 @@ import {
   Stack, Tooltip, IconButton, TextField, Chip,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';

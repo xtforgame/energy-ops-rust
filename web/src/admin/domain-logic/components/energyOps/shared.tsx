@@ -8,7 +8,8 @@
  * 警示用 `jvTokens.warn`（燒橘 #B4522C），**不是紅色**。
  */
 import * as React from 'react';
-import { energyHttp, attachmentDownloadUrl } from '@/api/energyLegacy';
+import { energyHttp, attachmentDownloadUrl } from '@/api/energy';
+import { useSelectedOrgId } from '@/platform/selection/store';
 import {
   Box, Alert, Chip, CircularProgress, Typography, TableRow, TableCell,
   Button, Dialog, DialogTitle, DialogContent, DialogActions,
@@ -117,7 +118,7 @@ export const WaitingDays: React.FC<{ days?: number | null }> = ({ days }) => {
  * `AcEnergyOpsController.hasViewAllExecutions()` 用**同一組** permission，
  * 否則會出現「選單看得到、點進去 403」。
  *
- * `ryxis:rbac:manage` 是**加入**不是取代（陷阱 #11：那是 console 的萬能鑰匙，
+ * `platform:rbac:manage` 是**加入**不是取代（陷阱 #11：那是 console 的萬能鑰匙，
  * 取代掉會把現有管理者擋在自己的 console 外面）。
  *
  * `permissions` 還沒載入時（null/undefined）回 `false` —— **保守的那一邊**：
@@ -129,7 +130,7 @@ export const useCanViewAllExecutions = (): boolean => {
   if (!permissions) return false;
   return permissions.includes('*')
     || permissions.includes('energy:flow:view-all')
-    || permissions.includes('ryxis:rbac:manage');
+    || permissions.includes('platform:rbac:manage');
 };
 
 /**
@@ -465,6 +466,7 @@ export const SourcePreviewFrame: React.FC<{
   label, attachmentId = null, boxes = [], focusField = null, boxLabel, maxHeight = 720,
 }) => {
   const translate = useTranslate();
+  const orgId = useSelectedOrgId();
   const [blob, setBlob] = React.useState<Blob | null>(null);
   const [imgUrl, setImgUrl] = React.useState<string | null>(null);
   const [mime, setMime] = React.useState<string>('');
@@ -503,7 +505,7 @@ export const SourcePreviewFrame: React.FC<{
       try {
         // 走**授權下載端點**（`ATTACHMENTS.md §4.2`）——
         // 前端不碰 storage key，也拿不到直連 URL。
-        const res = await energyHttp.get(attachmentDownloadUrl(attachmentId), {
+        const res = await energyHttp.get(attachmentDownloadUrl(attachmentId, orgId), {
           responseType: 'blob',
         });
         if (revoked) return;
@@ -522,7 +524,7 @@ export const SourcePreviewFrame: React.FC<{
       revoked = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [attachmentId]);
+  }, [attachmentId, orgId]);
 
   const isPdf = /pdf/i.test(mime);
   const loaded = !!blob;

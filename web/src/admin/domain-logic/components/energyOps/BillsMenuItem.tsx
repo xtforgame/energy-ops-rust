@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Badge } from '@mui/material';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { MenuItemLink, useTranslate } from 'react-admin';
 import { useSelection } from '@/platform/selection/store';
 import { jvTokens } from './shared';

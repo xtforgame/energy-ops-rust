@@ -3,7 +3,7 @@ import {
   Stack, Button, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, MenuItem, Typography, Alert,
 } from '@mui/material';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { BILL_DOC_TYPES } from 'common/plugins/EnergyOpsCommonPlugin/documentIngest';
 import { apiErrorCode } from '../../../dataProvider/apiError';

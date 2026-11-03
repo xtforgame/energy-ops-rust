@@ -4,7 +4,7 @@ import {
   Stack, Tooltip, IconButton, TextField, MenuItem, Chip, Tabs, Tab, TableSortLabel, Box, Alert,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';

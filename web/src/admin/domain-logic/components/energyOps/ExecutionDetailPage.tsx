@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';

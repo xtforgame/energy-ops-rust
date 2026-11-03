@@ -8,7 +8,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
-import { energyHttp, energyBase, legacyTenantConsoleBase } from '@/api/energyLegacy';
+import { energyHttp, energyBase, fetchMemberOptions } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
@@ -66,10 +66,7 @@ const DepartmentsPage: React.FC = () => {
       setLoading(false);
     }
     // 指派對話框要有人可選；沒權限讀成員就留空（手動輸入 id），不擋整頁。
-    try {
-      const { data } = await energyHttp.get(`${legacyTenantConsoleBase(orgId)}/members`);
-      setMembers(Array.isArray(data) ? data : []);
-    } catch { setMembers([]); }
+    setMembers(await fetchMemberOptions(orgId));
   }, [orgId, notify]);
 
   React.useEffect(() => { load(); }, [load]);
@@ -105,8 +102,8 @@ const DepartmentsPage: React.FC = () => {
     setAssignError(null);
     if (!assignUserId) { setAssignError(translate('tc.departments.pickUser')); return; }
     try {
-      await energyHttp.post(`${base}/departments/${assignTarget.id}/members`, {
-        userId: Number(assignUserId), role: assignRole,
+      await energyHttp.put(`${base}/departments/${assignTarget.id}/members/${Number(assignUserId)}`, {
+        role: assignRole,
       });
       notify('tc.departments.memberAssigned', { type: 'success' });
       setAssignTarget(null); setAssignUserId(''); setAssignRole('member');
@@ -288,7 +285,7 @@ const DepartmentsPage: React.FC = () => {
               helperText={members.length ? undefined : translate('tc.departments.userIdHelp')}
             >
               {members.map((m) => (
-                <MenuItem key={m.id} value={String(m.id)}>{m.name || `#${m.id}`}</MenuItem>
+                <MenuItem key={m.id} value={String(m.id)} data-testid={`member-option-${m.id}`}>{m.name || `#${m.id}`}</MenuItem>
               ))}
             </TextField>
             <TextField

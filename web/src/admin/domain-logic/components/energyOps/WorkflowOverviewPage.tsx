@@ -5,8 +5,8 @@ import {
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
-import { energyHttp, energyBase } from '@/api/energyLegacy';
-import { useNotify, useTranslate } from 'react-admin';
+import { energyHttp, energyBase, installEnergyDefaults } from '@/api/energy';
+import { useNotify, useTranslate, usePermissions } from 'react-admin';
 import { useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
@@ -70,6 +70,14 @@ const WorkflowOverviewPage: React.FC = () => {
 
   const base = energyBase(orgId);
 
+  // 「初始化能源設定」只給能管流程定義的人（後端閘 energy:workflow:manage）。
+  const { permissions } = usePermissions<string[]>();
+  const canInstall = !!permissions && (permissions.includes('*')
+    || permissions.includes('energy:workflow:manage')
+    || permissions.includes('platform:rbac:manage'));
+  const [installing, setInstalling] = React.useState(false);
+  const [loaded, setLoaded] = React.useState(false);
+
   const load = React.useCallback(async () => {
     if (!orgId) { setDefs([]); setDenied(false); return; }
     setLoading(true); setDenied(false);
@@ -77,6 +85,7 @@ const WorkflowOverviewPage: React.FC = () => {
       const { data } = await energyHttp.get(`${base}/workflows`);
       const rows: DefinitionRow[] = data?.definitions ?? [];
       setDefs(rows);
+      setLoaded(true);
       // 預設選第一個 —— 不要讓使用者先點一次才看得到圖。
       setSelected((prev) => (prev && rows.some((r) => r.id === prev) ? prev : (rows[0]?.id ?? null)));
     } catch (e: any) {
@@ -138,6 +147,20 @@ const WorkflowOverviewPage: React.FC = () => {
   };
 
   const current = defs.find((d) => d.id === selected) ?? null;
+
+  const install = async () => {
+    setInstalling(true);
+    try {
+      const r = await installEnergyDefaults(orgId);
+      notify('energy.workflows.installed', {
+        type: 'success',
+        messageArgs: { definitions: r.definitions?.length ?? 0, departments: r.departments?.length ?? 0 },
+      });
+      load();
+    } catch (e: any) {
+      notify(apiErrorCode(e) || 'install failed', { type: 'error' });
+    } finally { setInstalling(false); }
+  };
 
   return (
     <EnergyPageFrame orgId={orgId} denied={denied} loading={loading}>
@@ -204,6 +227,29 @@ const WorkflowOverviewPage: React.FC = () => {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {/* ---- 組織還沒有任何流程定義：給管理員一鍵裝內建的 ---- */}
+      {loaded && !loading && defs.length === 0 && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          data-testid="workflows-empty"
+          action={canInstall ? (
+            <Button
+              color="inherit"
+              size="small"
+              variant="outlined"
+              disabled={installing}
+              onClick={install}
+              data-testid="install-defaults"
+            >
+              {translate('energy.workflows.installDefaults')}
+            </Button>
+          ) : undefined}
+        >
+          {translate(canInstall ? 'energy.workflows.emptyAdmin' : 'energy.workflows.empty')}
+        </Alert>
       )}
 
       {/* ---- 上半：流程清單 ---- */}
