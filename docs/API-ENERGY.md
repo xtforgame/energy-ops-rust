@@ -65,6 +65,9 @@
 | GET | `E/workflows` | FLOW_VIEW |
 | GET | `E/workflows/{definitionId}/graph` | FLOW_VIEW |
 | GET | `E/workflows/{definitionId}/nodes/{nodeKey}/tasks` | FLOW_VIEW |
+| POST | `E/setup/install-defaults`（新：App 5 只在 demo seed 裝） | `energy:workflow:manage` |
+
+`setup/install-defaults` 冪等地替組織安裝內建流程定義（`bill-approval` 七節點版、`deposit-request`、`utility-bill`、`invoice-issue`，直接發佈）、預設計算策略（`station-payout` v1「售電分潤 10%」）與定義引用的三個部門（`sales`／`accounting`／`finance`，空的）。同 key 已有任何版本就略過（新版本要走換版，不是重裝）。不建綁定：綁定是案場層的設定，走 `stations/{id}/bindings`。回 `{definitions, strategies, departments}`（這次真的新裝的）。
 
 ## 附件
 
@@ -122,3 +125,15 @@
 
 閘的常數（照 App 5 `AcEnergyOpsController.ts:88-104`）：
 GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage；FLOW_ACT＝flow:act；FLOW_VIEW＝flow:view ∪ flow:view-all；FLOW_ADMIN＝flow:admin；ABORT_APPROVE＝flow:abort-approve（皆 `energy:` 前綴）。
+
+## 回應形狀（本期已實作的部分）
+
+- 清單一律 `{ items }`；流程單清單另帶 `{ tab, scope, total, page, pageSize }`；`assignable-roles` 另帶 `canAssignPrivileged`。
+- 會改資料的 task 端點（`claim`、`actions`）回 `{ ok, row }`：`row` 是更新後的那一列（與工作台列同一份 DTO），前端就地替換。其餘動作回 `{ ok: true }`。
+- `PUT E/departments/{id}/members/{userId}` body `{ role?: "manager"|"member" }`（預設 member），回 `{ userId, name, role }`；`DELETE` 回 `{ removed }`。
+- `GET E/members` 每列 `{ userId, name, email, orgRole, energyRoles: [{uniqueName, name}], departments: [{id, key, name, role}] }`。`DELETE E/members/{userId}` 撤掉該員在本組織的所有授權、成員關係與部門成員列；撤完若組織已無人持有 `energy:govern:org` 或 `platform:rbac:manage` 就整筆拒絕（400 `cannot_remove_last_admin`）。
+- `GET E/executions/{idOrNo}`：純數字當 id，否則當單號（單號在 subject 上，同單號多列時已通過的優先）。回執行摘要＋`tasks`＋模式判定（`mode`、`modeReason`、`canEditSubject`、`canAddAttachment`、`availableActions`、`executionId`）。
+- `GET E/executions/{id}/actions?nodeKey=` 回 `{ availableActions, actionBlocked, taskId, claimable, claimedByMe }`（動作已依「我」能不能做過濾）。
+- `GET E/delegations?all=1`：預設列「我設的與替我設的」（`all=1` 且有 `energy:delegation:manage` 時列全組織），每列帶 `active`、`mine`、`delegatorName`、`delegateName`。`POST E/delegations/{id}/revoke` 已收回的回 409 `delegation_already_revoked`。
+- `POST E/executions/{id}/terminate` body `{ reason }`；已結束（completed／aborted／terminated）的回 409 `execution_not_running`。
+- 錯誤碼沿用 App 5：跨組織指到別家的資源回 403 `<resource>_not_in_org`（execution、task、department、station、landowner、definition、version），本組織查無回 404 `<resource>_not_found`。
