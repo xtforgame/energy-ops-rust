@@ -1,0 +1,44 @@
+# 開發與測試用的外部服務：Postgres 與 MinIO。後端本身是單一 binary，不在這裡跑。
+# image 釘版號：MinIO 已停止在 Docker Hub 發佈新的社群版 image。
+# 埠刻意避開本機常見的 5432／9000（與其他專案並存）；改埠用環境變數。
+name: energy-ops-rust
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: energy
+      POSTGRES_PASSWORD: energy
+      POSTGRES_DB: energy_ops
+    ports:
+      - "${EO_PG_PORT:-56432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U energy -d energy_ops"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: energyminio
+      MINIO_ROOT_PASSWORD: energyminio-secret
+    ports:
+      - "${EO_MINIO_PORT:-56900}:9000"
+      - "${EO_MINIO_CONSOLE_PORT:-56901}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # bucket 由後端 storage plugin 開機時建立（冪等），這裡不另起初始化容器。
+
+volumes:
+  pg-data:
+  minio-data:

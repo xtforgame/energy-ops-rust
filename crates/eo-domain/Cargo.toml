@@ -1,0 +1,13 @@
+[package]
+name = "eo-domain"
+version.workspace = true
+edition.workspace = true
+
+# 純邏輯：不碰 IO、不依賴 web 框架或資料庫。
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true
+regex.workspace = true

@@ -1,0 +1,72 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+actix-web = "4"
+actix-multipart = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+log = "0.4"
+env_logger = "0.11"
+dotenvy = "0.15"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde-with-str", "db-postgres"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "json", "chrono", "rust_decimal", "uuid"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "charset", "json", "multipart", "stream"] }
+bcrypt = "0.17"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+percent-encoding = "2"
+futures = "0.3"
+bytes = "1"
+rand = "0.9"
+regex = "1"
+eo-domain = { path = "crates/eo-domain" }
+eo-platform = { path = "crates/eo-platform" }
+eo-energy = { path = "crates/eo-energy" }
+
+[package]
+name = "energy-ops"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[lib]
+name = "energy_ops"
+path = "src/lib.rs"
+
+[[bin]]
+name = "energy-ops"
+path = "src/main.rs"
+
+[dependencies]
+actix-web.workspace = true
+tokio.workspace = true
+log.workspace = true
+env_logger.workspace = true
+dotenvy.workspace = true
+serde_json.workspace = true
+eo-domain.workspace = true
+eo-platform.workspace = true
+eo-energy.workspace = true
+
+[dev-dependencies]
+sqlx.workspace = true
+serde.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
+
+[[test]]
+name = "all"
+path = "tests/all.rs"
