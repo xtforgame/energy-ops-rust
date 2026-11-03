@@ -101,6 +101,7 @@ pub fn mock_geocoder(address: &str) -> Option<GeocodeResult> {
 mod tests {
     use super::*;
 
+    /// 來源：無對應 TS 測試；補驗 geocoder.ts 的 mockGeocoder／isUsablePrecision。
     #[test]
     fn mock_geocoder_never_guesses() {
         let r = mock_geocoder("屏東縣枋寮鄉中山路1號").expect("fixture");

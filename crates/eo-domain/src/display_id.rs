@@ -77,6 +77,7 @@ mod tests {
         assert_eq!(get_display_id(Some(&DisplayIdSource::default())), "");
     }
 
+    /// 來源：無對應 TS 測試；補驗 displayId.ts 的 isDbId／normalizeDocumentNo。
     #[test]
     fn db_id_vs_document_no() {
         assert!(is_db_id(Some(" 42 ")));

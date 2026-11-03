@@ -193,6 +193,7 @@ pub fn is_integer(n: f64) -> bool {
 mod tests {
     use super::*;
 
+    /// 來源：無對應 TS 測試；補驗 JS 的 Number.prototype.toString。
     #[test]
     fn number_formatting_matches_js() {
         assert_eq!(number_to_string(127848.0), "127848");
@@ -205,6 +206,7 @@ mod tests {
         assert_eq!(number_to_string(-0.0), "0");
     }
 
+    /// 來源：無對應 TS 測試；補驗 JS 的 Number(string)。
     #[test]
     fn string_to_number_matches_js() {
         assert_eq!(string_to_number(""), 0.0);

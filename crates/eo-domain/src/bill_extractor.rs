@@ -215,6 +215,7 @@ mod tests {
         assert!(mock_bill_extractor(&Value::Null).is_empty());
     }
 
+    /// 來源：無對應 TS 測試；補驗 billExtractor.ts 的 extractedBillSchema。
     #[test]
     fn validate_follows_zod() {
         let ok = ExtractedBill { customer_number: Some("x".into()), ..Default::default() };

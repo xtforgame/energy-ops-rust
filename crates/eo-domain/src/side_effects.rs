@@ -39,6 +39,7 @@ pub fn subject_label(subject_type: Option<&str>, subject_id: Option<&str>) -> St
 mod tests {
     use super::*;
 
+    /// 來源：無對應 TS 測試；補驗 sideEffects.ts 的 sideEffectLabel／subjectLabel。
     #[test]
     fn labels_fall_back_to_the_raw_key() {
         assert_eq!(side_effect_label(Some("payment.sent")), "付款已送出");

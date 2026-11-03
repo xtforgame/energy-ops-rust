@@ -30,6 +30,7 @@ pub fn ext_for_mime(mime_type: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    /// 來源：無對應 TS 測試；補驗 AttachmentService.ts 的 ALLOWED_MIME_TYPES／EXT_BY_MIME。
     #[test]
     fn heic_is_an_attachment_but_not_recognizable() {
         assert!(is_allowed_mime("image/heic"));

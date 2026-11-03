@@ -419,6 +419,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// 來源：無對應 TS 測試；補驗 schemas.ts 的 departmentKeySchema／createDepartmentSchema／updateDepartmentSchema。
     #[test]
     fn department_key_rules() {
         assert!(is_valid_department_key("sales-2"));
@@ -430,6 +431,7 @@ mod tests {
         assert!(parse_body::<UpdateDepartmentInput>(&json!({})).is_err());
     }
 
+    /// 來源：無對應 TS 測試；補驗 schemas.ts 的 startExecutionSchema。
     #[test]
     fn start_execution_requires_business_date() {
         let body = json!({
@@ -444,6 +446,7 @@ mod tests {
         assert!(matches!(parse_body::<StartExecutionInput>(&bad), Err(SchemaError::Shape(_))));
     }
 
+    /// 來源：無對應 TS 測試；補驗 schemas.ts 的 correctBillSchema。
     #[test]
     fn correct_bill_tells_null_from_absent() {
         let c: CorrectBillInput = parse_body(&json!({ "totalAmount": null, "docType": "renewableSurplus" })).unwrap();
@@ -453,6 +456,7 @@ mod tests {
         assert!(parse_body::<CorrectBillInput>(&json!({ "dueDate": "2026-13" })).is_err());
     }
 
+    /// 來源：無對應 TS 測試；補驗 schemas.ts 的 setDepartmentMemberSchema。
     #[test]
     fn member_role_defaults_to_member() {
         let m: SetDepartmentMemberInput = parse_body(&json!({ "userId": "7" })).unwrap();

@@ -87,6 +87,7 @@ impl ResourceTypeRegistry {
 mod tests {
     use super::*;
 
+    /// 來源：無對應 TS 測試；補驗 resourceIdentifier.ts 的 build／parseResourceIdentifier。
     #[test]
     fn build_and_parse_roundtrip() {
         let mut reg = ResourceTypeRegistry::new();

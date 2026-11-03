@@ -372,6 +372,7 @@ mod tests {
         assert_eq!(empty, ExtractedDepositRequest::default());
     }
 
+    /// 來源：無對應 TS 測試；補驗 documentIngest.ts 的 docTypeLookupChain／isRecognizableMime／isBillDocType。
     #[test]
     fn lookup_chain_goes_fine_to_coarse() {
         assert_eq!(

@@ -58,6 +58,7 @@ mod tests {
         );
     }
 
+    /// 來源：無對應 TS 測試；補驗 AttachmentService.ts 的 contentDisposition／encodeFilenameForMetadata。
     #[test]
     fn quotes_and_astral_chars_in_fallback() {
         let h = content_disposition("a\"b\\c 😀.pdf");

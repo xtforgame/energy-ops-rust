@@ -80,6 +80,7 @@ mod tests {
         assert_eq!(normalize_customer_number(None), None);
     }
 
+    /// 來源：無對應 TS 測試；補驗 businessKey.ts 的 billBusinessKey。
     #[test]
     fn bill_key_requires_all_three() {
         assert_eq!(
@@ -90,6 +91,7 @@ mod tests {
         assert_eq!(bill_business_key(Some("01"), Some("2026/01/01"), Some("2026-01-31")), None);
     }
 
+    /// 來源：無對應 TS 測試；補驗 businessKey.ts 的 businessKeyOf／installmentBusinessKey。
     #[test]
     fn dispatch_by_subject_type() {
         let row = json!({ "contract_id": 7, "seq": 3 });
