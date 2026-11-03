@@ -152,3 +152,15 @@
 | rustfmt | 共用工具鏈沒裝；gate 有裝才檢查 |
 
 能源 API 的路徑與形狀約定見 `docs/API-ENERGY.md`。
+
+## 8. 完成狀態（2026-11-04）
+
+P0～P6 都已完成，在 branch `rust-port`：
+
+- 平台：plugin 框架、session 登入、多組織（org／project／lobby／個人組織）、邀請、完整 RBAC（三層 scope、complex、自訂角色與 permission、grant／revoke、最後一位管理者防呆、行程內快取）。
+- 能源：稽核、部門與角色指派、主檔、效期綁定、計費、流程引擎（五種動作、並行、回退鎖、中斷、代理、轉移、強制推進、終止、血緣）、工作台、附件、收件、電費單、辨識驅動（背景任務）、presign 直傳、示範資料（`EO_DEMO_SEED=1`）。
+- 前端：Vite＋react-admin，平台頁與能源頁都接新 API；`npm run e2e`、`npm run e2e:energy` 是對真後端的瀏覽器劇本。
+- 測試：Rust 265 條（含 eo-domain 116 條）、前端 vitest 168 條；`./scripts/gate.sh` 約 30 秒。
+
+刻意與 App 5 不同的地方記在 `docs/API-ENERGY.md` 末尾各節與各模組開頭的註解；本輪另外修掉的原版缺陷：
+部門依 key 查沒限定組織、工作台「被退回」區永遠是空的、geocode 稽核在交易外、節點待辦的 `claimable` 語意不一致、副作用可以重複套用（連按兩下記兩筆付款）。
