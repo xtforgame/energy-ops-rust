@@ -134,7 +134,8 @@ pub async fn decorate(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[ExecutionRow]) -> ApiR
                 display_id: get_display_id(Some(&DisplayIdSource { id: Some(IdLike::Number(e.id)), document_no: document_no.clone() })),
                 document_no,
                 status: e.status.clone(),
-                station_id: e.station_id,
+                // 手動開單只帶電號時 execution 沒有 station_id，退回 subject 推導的那一個。
+                station_id: e.station_id.or_else(|| subject.get("stationId").and_then(Value::as_i64)),
                 workflow_key: def.map(|d| d.0.clone()),
                 workflow_name: def.map(|d| d.1.clone()),
                 definition_id: e.definition_id,

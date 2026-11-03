@@ -167,7 +167,9 @@ async fn task_rows_survive_non_numeric_subjects() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0]["subject"].is_null(), "非數字 subjectId → 沒有單據摘要，但不可以炸");
     assert_eq!(rows[0]["nodeName"], "承辦確認");
-    assert_eq!((rows[0]["claimable"].clone(), rows[0]["claimedByMe"].clone()), (json!(true), json!(false)));
+    // 這列沒有候選人，擁有者認領不了：claimable 是「我認領得了嗎」，不是「task 是不是 ready」
+    // （App 5 在這支回 true、在 executions/{id}/actions 回 false，這裡統一成後者）。
+    assert_eq!((rows[0]["claimable"].clone(), rows[0]["claimedByMe"].clone()), (json!(false), json!(false)));
     drop(tx);
     let t = task_on(&f, &f.bill.to_string(), "財務放行", "reserved", Some(f.owner.id)).await;
     let mut tx = f.app.core.pool.begin().await.unwrap();

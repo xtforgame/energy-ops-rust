@@ -137,7 +137,8 @@ pub async fn decorate_tasks(tx: &mut Tx<'_>, ctx: &Ctx, user_id: i64, tasks: &[T
             "nodeName": node_name.get(&(exec.definition_id, t.node_key.clone())),
             "state": t.state,
             "claimedByMe": t.assignee_user_id == Some(user_id),
-            "claimable": t.state == "ready",
+            // 「我認領得了嗎」：ready 且我是候選人（與 executions/{id}/actions 同一個語意）。
+            "claimable": t.state == "ready" && blocked.is_none(),
             "waitingDays": days_since(now, t.created_at),
             "subject": subjects.task_summary(exec),
             "availableActions": actions,

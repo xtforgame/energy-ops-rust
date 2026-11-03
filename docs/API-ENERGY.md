@@ -150,3 +150,11 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 6. **候選池在關卡 ready 時快照**：task 進 ready 之後才加進部門的人，仍是 `notCandidate`（工作台看不到、不能認領）。照 App 5 語意是對的，但畫面沒有提示；之後要不要給「重新解析候選池」的管理動作另議。
 7. **`GET E/executions` 清單列的頂層 `stationId` 是 null**（`subject.stationId` 有值；以 `stationKey` 開的單）。前端只讀 `subject.*`，不受影響；`stationId` 篩選條件若是比這個欄位會漏。
 8. **`POST E/setup/install-defaults` 的稽核**：只看到「發佈了新的計算策略版本」與三筆「新增了部門」，四個流程定義的安裝沒有稽核事件。
+
+### 處理結果（2026-11-04，後端）
+
+- 1：`GET E/workflows` 維持 `{definitions, stuckDays}`（App 5 的形狀，前端已直接使用），這裡記為例外。
+- 2：已改。節點待辦清單的 `claimable` 與 `executions/{id}/actions` 同語意＝ready 且我是候選人。
+- 6：維持 App 5 行為（候選人在關卡進入 ready 時快照）。部門之後異動不影響已開出的關卡；要重新指派用 `tasks/{id}/reassign`。
+- 7：已改。清單列的 `stationId` 在 execution 沒有時退回 subject 推導的值。
+- 8：維持 App 5。稽核 registry 沒有「安裝流程定義」事件，install-defaults 只對策略與部門留紀錄。
