@@ -302,6 +302,11 @@ impl TestApp {
         .unwrap()
     }
 
+    pub fn clock_now(&self) -> chrono::DateTime<chrono::Utc> {
+        use eo_platform::clock::Clock;
+        self.clock.now()
+    }
+
     pub fn e(&self, org: i64, p: &str) -> String {
         format!("/api/v1/orgs/{org}/energy{p}")
     }
