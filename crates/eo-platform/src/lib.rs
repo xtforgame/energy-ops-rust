@@ -11,3 +11,4 @@ pub mod plugins;
 pub mod rbac;
 pub mod storage;
 pub mod tenancy;
+pub mod upload;
