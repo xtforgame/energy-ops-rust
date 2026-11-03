@@ -6,10 +6,12 @@ import {
 } from '@mui/material';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import DeleteIcon from '@mui/icons-material/Delete';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { useGetIdentity, useTranslate } from 'react-admin';
 import { orgApi } from '../../api/platform';
 import type { Id, OrgMember } from '../../api/types';
 import { roleDisplayName } from '../../admin/domain-logic/components/energyOps/roleDisplay';
+import { fetchAssignableRoles, ManageEnergyRolesDialog } from './ManageEnergyRolesDialog';
 import {
   ConfirmDialog, ErrorAlert, fmtDate, Loading, PageHeader, RequireSelection, useAction, useAsync, useFields,
 } from './common';
@@ -91,7 +93,9 @@ export const MembersTable: React.FC<{
   members: OrgMember[];
   meId?: Id;
   onRemove?: (m: OrgMember) => void;
-}> = ({ members, meId, onRemove }) => {
+  /** 有給才畫「管理權限」（指派能源角色）的按鈕。 */
+  onManageRoles?: (m: OrgMember) => void;
+}> = ({ members, meId, onRemove, onManageRoles }) => {
   const translate = useTranslate();
   return (
     <Table size="small" data-testid="members-table">
@@ -102,7 +106,7 @@ export const MembersTable: React.FC<{
           <TableCell>{translate('eo.members.membership')}</TableCell>
           <TableCell>{translate('eo.members.roles')}</TableCell>
           <TableCell>{translate('eo.members.joinedAt')}</TableCell>
-          {onRemove && <TableCell align="right" />}
+          {(onRemove || onManageRoles) && <TableCell align="right" />}
         </TableRow>
       </TableHead>
       <TableBody>
@@ -122,9 +126,16 @@ export const MembersTable: React.FC<{
               </Box>
             </TableCell>
             <TableCell>{fmtDate(m.joinedAt)}</TableCell>
-            {onRemove && (
+            {(onRemove || onManageRoles) && (
               <TableCell align="right">
-                {m.userId !== meId && (
+                {onManageRoles && (
+                  <Tooltip title={translate('tc.grant.title', { name: m.name || `#${m.userId}` })}>
+                    <IconButton size="small" onClick={() => onManageRoles(m)} data-testid={`member-grant-${m.userId}`}>
+                      <VpnKeyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                {onRemove && m.userId !== meId && (
                   <Tooltip title={translate('eo.members.remove')}>
                     <IconButton size="small" onClick={() => onRemove(m)} data-testid={`member-remove-${m.userId}`}>
                       <DeleteIcon fontSize="small" />
@@ -150,6 +161,9 @@ const OrgMembers: React.FC<{ orgId: Id; orgName: string; personal: boolean }> = 
   const list = useAsync(() => orgApi.members(orgId), [orgId]);
   const [addOpen, setAddOpen] = React.useState(false);
   const [removing, setRemoving] = React.useState<OrgMember | null>(null);
+  // 能源組織才有可指派的角色；拿不到（不是能源組織或沒有指派權）就不畫入口。
+  const energyRoles = useAsync(() => fetchAssignableRoles(orgId), [orgId], !personal);
+  const [granting, setGranting] = React.useState<OrgMember | null>(null);
   return (
     <Box p={2}>
       <PageHeader
@@ -170,8 +184,21 @@ const OrgMembers: React.FC<{ orgId: Id; orgName: string; personal: boolean }> = 
             members={list.data.items}
             meId={identity?.id as Id | undefined}
             onRemove={personal ? undefined : setRemoving}
+            onManageRoles={energyRoles.data ? setGranting : undefined}
           />
         </Card>
+      )}
+      {energyRoles.data && granting && (
+        <ManageEnergyRolesDialog
+          open
+          onClose={() => setGranting(null)}
+          orgId={orgId}
+          orgName={orgName}
+          roles={energyRoles.data}
+          granteeUserId={granting.userId}
+          granteeName={granting.name}
+          onDone={list.reload}
+        />
       )}
       <AddMemberDialog orgId={orgId} open={addOpen} onClose={() => setAddOpen(false)} onDone={list.reload} />
       <ConfirmDialog

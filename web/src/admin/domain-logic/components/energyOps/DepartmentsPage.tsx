@@ -229,7 +229,7 @@ const DepartmentsPage: React.FC = () => {
                         </IconButton>
                       </Tooltip>
                       <Tooltip title={translate('tc.departments.delete')}>
-                        <IconButton size="small" onClick={() => removeDepartment(d)}>
+                        <IconButton size="small" data-testid="department-delete" onClick={() => removeDepartment(d)}>
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

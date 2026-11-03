@@ -226,7 +226,9 @@ export async function loginAs(page: Page, email: string, password = DEMO_PW) {
   await retryOnDetach('loginAs', async () => {
     await page.goto(`${APP}#/login`, { waitUntil: 'networkidle2' });
     await page.evaluate(async () => {
-      await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
+      // 沒有 session 時不打登出（那一發必然 401，會混進 crawler 的「非預期 401」檢查）
+      const s = await fetch('/api/v1/auth/session', { credentials: 'include' }).catch(() => null);
+      if (s?.ok) await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
       localStorage.clear();
     });
     await page.goto(`${APP}#/login`, { waitUntil: 'networkidle2' });
