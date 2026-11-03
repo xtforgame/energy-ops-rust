@@ -6,3 +6,5 @@ mod platform;
 mod energy_workflow_skeleton;
 mod energy_workflow_2c;
 mod energy_default_flow;
+mod energy_contract_flows;
+mod energy_mode;

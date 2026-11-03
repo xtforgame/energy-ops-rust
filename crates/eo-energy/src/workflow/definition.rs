@@ -77,6 +77,7 @@ pub struct ContractCoverage {
     pub contract_id: i64,
     pub contract_no: String,
     pub coverage_id: i64,
+    pub stage: String,
     pub params: Value,
 }
 
@@ -87,8 +88,8 @@ pub async fn effective_contracts(
     station_id: i64,
     business_date: NaiveDate,
 ) -> ApiResult<Vec<ContractCoverage>> {
-    let rows: Vec<(i64, i64, String, Value, Option<NaiveDate>, Option<NaiveDate>, NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
-        "SELECT cs.id, c.id, c.contract_no, cs.params, cs.valid_from, cs.valid_to, c.valid_from, c.valid_to
+    let rows: Vec<(i64, i64, String, Value, Option<NaiveDate>, Option<NaiveDate>, NaiveDate, Option<NaiveDate>, String)> = sqlx::query_as(
+        "SELECT cs.id, c.id, c.contract_no, cs.params, cs.valid_from, cs.valid_to, c.valid_from, c.valid_to, c.stage
            FROM mn_energy_contract_station cs
            JOIN tbl_energy_contract c ON c.id = cs.contract_id AND c.organization_id = $2 AND c.deleted_at IS NULL
           WHERE cs.station_id = $1 AND cs.deleted_at IS NULL
@@ -105,7 +106,7 @@ pub async fn effective_contracts(
             let to = r.5.or(r.7);
             in_effect(from, to, business_date)
         })
-        .map(|r| ContractCoverage { coverage_id: r.0, contract_id: r.1, contract_no: r.2, params: r.3 })
+        .map(|r| ContractCoverage { coverage_id: r.0, contract_id: r.1, contract_no: r.2, params: r.3, stage: r.8 })
         .collect())
 }
 
@@ -156,6 +157,14 @@ async fn pick_flows(
         });
     }
     Ok(out)
+}
+
+/// 開流程時把契約與這一組配對的參數整包快照進屬性（計算用的是這一份，不是「現在的參數」）。
+pub fn contract_attributes(base: Value, flow: &ResolvedFlow) -> Value {
+    let Some(c) = &flow.contract else { return base };
+    let mut out = if base.is_object() { base } else { json!({}) };
+    out["contract"] = json!({ "id": c.contract_id, "contractNo": c.contract_no, "stage": c.stage, "params": c.params });
+    out
 }
 
 /// 「這張單要開哪些流程」：契約優先（多份取聯集）、案場保底。順序穩定。
