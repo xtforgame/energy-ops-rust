@@ -1,0 +1,523 @@
+{
+  "RENEWABLE_DOC": {
+    "sourceFileId": "S2",
+    "sourceFileName": "電費單(有餘電需開發票).pdf",
+    "status": "succeeded",
+    "record": {
+      "fields": {
+        "billNumber": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "accountNumber": {
+          "value": "00-60-1600-79-5",
+          "rawValue": "00-60-1600-79-5",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "00-60-1600-79-5",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.12994,
+              "y": 0.19751,
+              "width": 0.14195,
+              "height": 0.01273
+            }
+          }
+        },
+        "siteName": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "companyTaxId": {
+          "value": "42617111",
+          "rawValue": "42617111",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "42617111",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "billingStartDate": {
+          "value": "2026-06-09",
+          "rawValue": "115年06月09日",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "115 06 09 115 08 10",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.17621,
+              "y": 0.37972,
+              "width": 0.11908,
+              "height": 0.01273
+            }
+          }
+        },
+        "billingEndDate": {
+          "value": "2026-08-10",
+          "rawValue": "115年08月10日",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "115 06 09 115 08 10",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "contractNumber": {
+          "value": "00-PV-106-0014",
+          "rawValue": "00-PV-106-0014",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "00-PV-106-0014",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.42139,
+              "y": 0.19751,
+              "width": 0.13245,
+              "height": 0.01273
+            }
+          }
+        },
+        "purchaseKwh": {
+          "value": 21072,
+          "rawValue": "21,072",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "21,080x(1-0.0397%)-0= 21,072度",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.14189,
+              "y": 0.59032,
+              "width": 0.27533,
+              "height": 0.01273
+            }
+          }
+        },
+        "purchaseEnergyFee": {
+          "value": 127848,
+          "rawValue": "127,848元",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "127,848元",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "businessTax": {
+          "value": 6392,
+          "rawValue": "6,392元",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "6,392元",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.8404,
+              "y": 0.3672,
+              "width": 0.06373,
+              "height": 0.01273
+            }
+          }
+        },
+        "electricityFeeTotal": {
+          "value": 134240,
+          "rawValue": "134,240",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "134,240 ,請開立發票向本公司請款,本公司將於收到發票次日起7個工作日內匯撥。",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.23732,
+              "y": 0.21891,
+              "width": 0.06597,
+              "height": 0.01273
+            }
+          }
+        },
+        "meterRentalSubtotal": {
+          "value": -496,
+          "rawValue": "-496元",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "-496元",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.84959,
+              "y": 0.38109,
+              "width": 0.05474,
+              "height": 0.01273
+            }
+          }
+        },
+        "payableTotal": {
+          "value": 133744,
+          "rawValue": "133,744元",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "133,744元",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "templateId": {
+          "value": "renewable_purchase",
+          "rawValue": "renewable_purchase",
+          "status": "extracted",
+          "evidence": null
+        },
+        "documentId": {
+          "value": "sha256:bdb4305e73254df2c5e1bebb8a231623215eae5a8fa16f89ef58aaec6fbe75d7",
+          "rawValue": "sha256:bdb4305e73254df2c5e1bebb8a231623215eae5a8fa16f89ef58aaec6fbe75d7",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "unknown",
+            "rawText": "sha256:bdb4305e73254df2c5e1bebb8a231623215eae5a8fa16f89ef58aaec6fbe75d7",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "sourcePageCount": {
+          "value": 1,
+          "rawValue": "1",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "unknown",
+            "rawText": "1",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "dueDate": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "consumptionKwh": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "taxBeforeAmount": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        }
+      },
+      "extractionMethod": "pdf_text",
+      "reviewStatus": "partial",
+      "templateId": "renewable_purchase"
+    },
+    "issues": [
+      {
+        "code": "single_engine_rentalNote",
+        "message": "「電表租費註記」僅由單一 OCR 來源取得，請留意覆核。",
+        "fields": [
+          "rentalNote"
+        ],
+        "blocking": false
+      }
+    ]
+  },
+  "HIGH_VOLTAGE_DOC": {
+    "sourceFileId": "S3",
+    "sourceFileName": "逆變器電費單(僅設備發電使用電費).pdf",
+    "status": "succeeded",
+    "record": {
+      "fields": {
+        "billNumber": {
+          "value": "E-g9115080101559",
+          "rawValue": "E-g9115080101559",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "E-g9115080101559",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.78778,
+              "y": 0.18377,
+              "width": 0.15753,
+              "height": 0.01157
+            }
+          }
+        },
+        "accountNumber": {
+          "value": "11-72-0328-95-9",
+          "rawValue": "11-72-0328-95-9",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "11-72-0328-95-9",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.06926,
+              "y": 0.23173,
+              "width": 0.15344,
+              "height": 0.01273
+            }
+          }
+        },
+        "siteName": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "companyTaxId": {
+          "value": "42617111",
+          "rawValue": "42617111",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "用戶營利事業統一編號: 42617111 電價調整金額 85.0 元",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.29855,
+              "y": 0.34449,
+              "width": 0.08022,
+              "height": 0.01157
+            }
+          }
+        },
+        "billingStartDate": {
+          "value": "2026-07-01",
+          "rawValue": "115/07/01",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "115/07/01",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.1921,
+              "y": 0.73682,
+              "width": 0.18052,
+              "height": 0.01157
+            }
+          }
+        },
+        "billingEndDate": {
+          "value": "2026-07-31",
+          "rawValue": "115/07/31",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "115/07/31",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.1921,
+              "y": 0.73682,
+              "width": 0.18052,
+              "height": 0.01157
+            }
+          }
+        },
+        "contractNumber": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "purchaseKwh": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "purchaseEnergyFee": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "businessTax": {
+          "value": 240,
+          "rawValue": "240.0",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "240.0",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.66305,
+              "y": 0.38095,
+              "width": 0.04414,
+              "height": 0.01157
+            }
+          }
+        },
+        "electricityFeeTotal": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "meterRentalSubtotal": {
+          "value": null,
+          "rawValue": "",
+          "status": "not_applicable",
+          "evidence": null
+        },
+        "payableTotal": {
+          "value": 5035,
+          "rawValue": "5,035 元",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "5,035 元",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.65615,
+              "y": 0.40453,
+              "width": 0.07157,
+              "height": 0.01273
+            }
+          }
+        },
+        "templateId": {
+          "value": "high_voltage",
+          "rawValue": "high_voltage",
+          "status": "extracted",
+          "evidence": null
+        },
+        "documentId": {
+          "value": "sha256:2fea70b3e8a2f947f66cb2c28f128047c19cddb2cacaa99035e388fa095dd50c",
+          "rawValue": "sha256:2fea70b3e8a2f947f66cb2c28f128047c19cddb2cacaa99035e388fa095dd50c",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "unknown",
+            "rawText": "sha256:2fea70b3e8a2f947f66cb2c28f128047c19cddb2cacaa99035e388fa095dd50c",
+            "source": "pdf_text",
+            "resolution": "pdf_text"
+          }
+        },
+        "sourcePageCount": {
+          "value": 2,
+          "rawValue": "2",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "unknown",
+            "rawText": "2",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.36883,
+              "y": 0.4174,
+              "width": 0.00997,
+              "height": 0.01157
+            }
+          }
+        },
+        "dueDate": {
+          "value": "2026-08-20",
+          "rawValue": "115/08/20",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "115/08/20",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.33028,
+              "y": 0.23173,
+              "width": 0.09303,
+              "height": 0.01273
+            }
+          }
+        },
+        "consumptionKwh": {
+          "value": 800,
+          "rawValue": "800",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 2,
+            "region": "pdf_text",
+            "rawText": "{\"days\":\"31\",\"kwh\":\"800\",\"dailyAverageKwh\":\"25.81\",\"evidence\":\"本期 31 800 25.81\"}",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.77321,
+              "y": 0.07138,
+              "width": 0.0262,
+              "height": 0.01042
+            }
+          }
+        },
+        "taxBeforeAmount": {
+          "value": 4795,
+          "rawValue": "4795.0",
+          "status": "extracted",
+          "evidence": {
+            "pageNumber": 1,
+            "region": "pdf_text",
+            "rawText": "4795.0",
+            "source": "pdf_text",
+            "resolution": "pdf_text",
+            "box": {
+              "x": 0.65301,
+              "y": 0.36879,
+              "width": 0.05412,
+              "height": 0.01157
+            }
+          }
+        }
+      },
+      "extractionMethod": "pdf_text",
+      "reviewStatus": "auto_ready",
+      "templateId": "high_voltage"
+    },
+    "issues": []
+  }
+}
