@@ -3,9 +3,12 @@
 //! 只放主檔（地主／案場／契約／期數／行事曆／部門／流程定義／計算策略／綁定），
 //! 外加一筆跑完的保證金請款；真實帳單一張都不放（要看單據就從收件台上傳）。
 //!
+//! `EO_DEMO_SAMPLE_BILLS=1` 時另外灌四份範本電費單（`run_sample_bills`），給 e2e crawler 一組固定的起點。
+//!
 //! 冪等：每一筆都以穩定識別碼判斷是否已存在（組織 uniqueName、email、部門 key、電號、契約編號…），
 //! 已存在就略過，所以重跑不會累積、也不會改動別人後來手動調過的資料。
 
+use crate::attachments::service::{self as attachments, AttachmentStore, Owner, UploadInput};
 use crate::common::{Ctx, RequestMeta, Tx};
 use crate::workflow::engine::tasks::{claim, perform_action, ActionInput};
 use crate::workflow::{install_builtin_definitions, start_execution, StartExecution};
@@ -811,4 +814,164 @@ async fn step(tx: &mut Tx<'_>, ctx: &Ctx, execution_id: i64, node_key: &str, act
         perform_action(tx, ctx, task, ActionInput { action_key: (*a).into(), ..Default::default() }).await?;
     }
     Ok(())
+}
+
+/// 範本電費單那一段的備註；同一個組織已有這一批就不再灌（冪等）。
+pub const SAMPLE_BATCH_NOTE: &str = "展示資料（範本 PDF）";
+
+/// 四份範本各自扮演的狀態（每一張的電號、期間、金額都是紙上的值）：
+/// 有餘電那張是主線（已校對、送審停在承辦確認）；僅設備發電那張校對完卻沒送出；
+/// 含電表租費那張金額被人改過、流程已跑完（候選池情境）；無餘電那張只產單、不動它
+/// （四個電號都種成了案場，所以它配得到屏東枋寮二號；例外件要由 crawler 自己上傳）。
+const SAMPLES: [(&str, SampleRole); 4] = [
+    ("電費單(有餘電需開發票).pdf", SampleRole::Main),
+    ("逆變器電費單(僅設備發電使用電費).pdf", SampleRole::Reviewed),
+    ("逆變器電費單(含電表租費&設備發電使用電費).pdf", SampleRole::Corrected),
+    ("電費單(無餘電需付款).pdf", SampleRole::Plain),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SampleRole {
+    Main,
+    Reviewed,
+    Corrected,
+    Plain,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SampleBillsReport {
+    pub batch_id: Option<i64>,
+    pub bill_ids: Vec<i64>,
+    /// 主線那張的執行（停在承辦確認）。
+    pub main_execution_id: Option<i64>,
+    /// 候選池情境那張的執行（manager 認領並推完、operator 只在候選池）。
+    pub candidate_execution_id: Option<i64>,
+    /// 這一次真的灌了（已存在而略過時為 false）。
+    pub created: bool,
+}
+
+/// 灌四份範本電費單：走與使用者相同的路（開批 → 上傳原檔 → 套辨識結果 → 產單），再擺出各自的狀態。
+/// 辨識結果取自 `canonical-samples.json`（假辨識服務回的也是它）。重跑安全：已有這一批就整段略過。
+pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std::path::Path) -> ApiResult<SampleBillsReport> {
+    let org_id = report.org_id;
+    let existing: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM tbl_energy_ingest_batch WHERE organization_id = $1 AND note = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1")
+            .bind(org_id)
+            .bind(SAMPLE_BATCH_NOTE)
+            .fetch_optional(&core.pool)
+            .await?;
+    if let Some(batch_id) = existing {
+        return Ok(SampleBillsReport { batch_id: Some(batch_id), ..Default::default() });
+    }
+    let id_of = |prefix: &str| {
+        report.accounts.iter().find(|a| a.email == email_of(prefix)).map(|a| a.user_id).ok_or_else(|| ApiError::internal(format!("demo seed: account {prefix} missing")))
+    };
+    // 發起人用 admin（業務部一般成員）：manager／operator 都不能是發起人，否則候選池只剩一個人。
+    let admin = user_ctx(core, id_of("admin")?, org_id).await?;
+    let manager = user_ctx(core, id_of("manager")?, org_id).await?;
+    let finance = user_ctx(core, id_of("finance")?, org_id).await?;
+    let accounting = user_ctx(core, id_of("accounting")?, org_id).await?;
+
+    let mut tx = core.pool.begin().await?;
+    let batch = crate::ingest::service::create_batch(&mut tx, &admin, SAMPLES.len() as i32, Some(SAMPLE_BATCH_NOTE)).await?;
+    tx.commit().await?;
+
+    let mut out = SampleBillsReport { batch_id: Some(batch.id), created: true, ..Default::default() };
+    let mut main_bill = None;
+    let mut corrected_bill = None;
+    for (file, role) in SAMPLES {
+        let bytes = std::fs::read(dir.join(file)).map_err(|e| ApiError::internal(format!("demo seed: 讀不到範本 {}: {e}", dir.join(file).display())))?;
+        let ocr = crate::fake_tpr::canonical_sample(file).ok_or_else(|| ApiError::internal(format!("demo seed: canonical sample {file} missing")))?;
+        let store: &dyn AttachmentStore = &core.storage;
+        let att = attachments::upload(
+            &admin,
+            store,
+            UploadInput {
+                owner: Owner::Batch(batch.id),
+                bytes: bytes.into(),
+                original_filename: file.into(),
+                mime_type: "application/pdf".into(),
+                task_id: None,
+                role: Some("source".into()),
+                note: None,
+                supersedes_attachment_id: None,
+            },
+        )
+        .await?;
+        let mut tx = core.pool.begin().await?;
+        let item = crate::ingest::service::register_uploaded_file(&mut tx, &admin, batch.id, att.id, file).await?;
+        let item = crate::ingest::service::apply_recognition_to_item(&mut tx, &admin, item.id, &ocr).await?;
+        if let Some(bill_id) = item.bill_id {
+            out.bill_ids.push(bill_id);
+            match role {
+                SampleRole::Main | SampleRole::Reviewed => {
+                    sqlx::query("UPDATE tbl_energy_bill SET review_status = 'reviewed' WHERE id = $1").bind(bill_id).execute(&mut *tx).await?;
+                }
+                // 只改最終值；ocr_extracted 那一層永遠是機器讀到的值（校對台要拿它對照）。
+                SampleRole::Corrected => {
+                    sqlx::query("UPDATE tbl_energy_bill SET total_amount = 4800.00 WHERE id = $1").bind(bill_id).execute(&mut *tx).await?;
+                }
+                SampleRole::Plain => {}
+            }
+            if role == SampleRole::Main {
+                main_bill = Some(bill_id);
+            }
+            if role == SampleRole::Corrected {
+                corrected_bill = Some(bill_id);
+            }
+        }
+        crate::ingest::service::recompute_batch_status(&mut tx, batch.id).await?;
+        tx.commit().await?;
+    }
+
+    // 候選池情境：業務部全員都是承辦確認的候選人；manager 認領並推完，operator 從頭到尾沒碰。一定要跑完，
+    // 留在承辦確認會和主線那張擠在同一關。
+    if let Some(bill_id) = corrected_bill {
+        let mut tx = core.pool.begin().await?;
+        let exec = start_execution(
+            &mut tx,
+            &admin,
+            StartExecution {
+                station_key: "07-42-8560-90-1".into(),
+                workflow_key: defs::utility_bill().key,
+                subject_type: "energyBill".into(),
+                subject_id: bill_id.to_string(),
+                business_date: date("2026-07-31"),
+                attributes: json!({ "bill": { "totalAmount": 4800 } }),
+                definition: None,
+                station_id: None,
+            },
+        )
+        .await?;
+        step(&mut tx, &manager, exec.id, "clerk-review", &["submit"]).await?;
+        step(&mut tx, &manager, exec.id, "manager-approve", &["approve"]).await?;
+        step(&mut tx, &finance, exec.id, "finance-release", &["release"]).await?;
+        step(&mut tx, &accounting, exec.id, "payment", &["markPaid", "submit"]).await?;
+        tx.commit().await?;
+        out.candidate_execution_id = Some(exec.id);
+    }
+
+    // 主線：用紙上的金額（127,848，≥ 加簽門檻）開核可流程，停在承辦確認等人認領。
+    if let Some(bill_id) = main_bill {
+        let mut tx = core.pool.begin().await?;
+        let exec = start_execution(
+            &mut tx,
+            &admin,
+            StartExecution {
+                station_key: "00-60-1600-79-5".into(),
+                workflow_key: defs::default_bill_approval().key,
+                subject_type: "energyBill".into(),
+                subject_id: bill_id.to_string(),
+                business_date: date("2026-08-10"),
+                attributes: json!({ "bill": { "totalAmount": 127848 } }),
+                definition: None,
+                station_id: None,
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        out.main_execution_id = Some(exec.id);
+    }
+    Ok(out)
 }

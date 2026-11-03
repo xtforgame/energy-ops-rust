@@ -32,6 +32,10 @@ pub struct Config {
     pub bootstrap_admin: Option<(String, String)>,
     /// 灌示範資料。
     pub demo_seed: bool,
+    /// 示範資料另外灌四份範本電費單（含它們的流程）；e2e crawler 用。
+    pub demo_sample_bills: bool,
+    /// 四份範本 PDF 所在的資料夾。
+    pub demo_samples_dir: PathBuf,
 }
 
 fn env(key: &str) -> Option<String> {
@@ -68,6 +72,8 @@ impl Config {
                 _ => None,
             },
             demo_seed: env("EO_DEMO_SEED").map(|v| v == "1" || v == "true").unwrap_or(false),
+            demo_sample_bills: env("EO_DEMO_SAMPLE_BILLS").map(|v| v == "1" || v == "true").unwrap_or(false),
+            demo_samples_dir: env("EO_DEMO_SAMPLES_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("tests/fixtures/samples")),
         })
     }
 }

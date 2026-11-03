@@ -74,6 +74,8 @@ impl TestApp {
             cookie_secure: false,
             bootstrap_admin: None,
             demo_seed: false,
+            demo_sample_bills: false,
+            demo_samples_dir: std::path::PathBuf::from("tests/fixtures/samples"),
         };
         tweak(&mut config);
         let clock = Arc::new(ManualClock::new(Utc.with_ymd_and_hms(2026, 11, 4, 2, 0, 0).unwrap()));

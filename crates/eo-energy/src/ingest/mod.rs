@@ -69,6 +69,13 @@ impl AppPlugin for IngestPlugin {
         if self.core.config.demo_seed {
             let report = crate::demo_seed::run(&self.core).await.map_err(|e| StartError::new(format!("demo seed: {e}")))?;
             log::info!("[energy] demo seed: org #{} ({})", report.org_id, report.org_unique_name);
+            if self.core.config.demo_sample_bills {
+                let dir = self.core.config.demo_samples_dir.clone();
+                let s = crate::demo_seed::run_sample_bills(&self.core, &report, &dir)
+                    .await
+                    .map_err(|e| StartError::new(format!("demo sample bills: {e}")))?;
+                log::info!("[energy] demo sample bills: {s:?}");
+            }
         }
         let secs = self.core.config.recognition_tick_secs;
         if secs > 0 && recognition::client(&self.core).is_some() {

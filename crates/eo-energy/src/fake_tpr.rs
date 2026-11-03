@@ -26,6 +26,12 @@ const ALIASES: &[(&str, &str)] = &[
     ("renewable-no-surplus", "電費單(無餘電需付款).pdf"),
 ];
 
+/// 某份範本的辨識結果（canonical document），以範本檔名查。
+pub fn canonical_sample(file_name: &str) -> Option<Value> {
+    let all: Value = serde_json::from_str(SAMPLES).ok()?;
+    all["documents"].get(file_name).cloned()
+}
+
 struct Job {
     created_at: String,
     files: Vec<(String, String)>,
