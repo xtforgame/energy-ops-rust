@@ -11,3 +11,4 @@ mod energy_mode;
 mod energy_execution_list;
 mod energy_rating_bindings;
 mod energy_master_data;
+mod energy_org_audit;
