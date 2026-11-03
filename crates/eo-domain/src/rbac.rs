@@ -123,3 +123,93 @@ impl RbacSeeds {
         self
     }
 }
+
+fn perm_key(scope: RbacScope, unique_name: &str) -> String {
+    format!("{}:{}", scope.as_str(), unique_name)
+}
+
+/// 開機收集到的所有 plugin seed 的一致性檢查（舊 `RbacSeedManager.validateSeeds` 的四條規則）：
+/// 1. (scope, uniqueName) 不可被兩個 plugin 宣告；
+/// 2. complex 不可為空、不可包 complex，非 complex 不可帶 included；
+/// 3. 角色不可為空，綁的 permission 必須在角色的 scope 宣告過。
+///
+/// 回傳每一條違規的說明（訊息與舊版逐字相同，方便對照）。
+pub fn validate_seeds(seeds: &[RbacSeeds]) -> Result<(), Vec<String>> {
+    use std::collections::BTreeMap;
+
+    let mut errors = Vec::new();
+
+    let mut perm_claimers: Vec<(String, Vec<&str>)> = Vec::new();
+    let mut role_claimers: Vec<(String, Vec<&str>)> = Vec::new();
+    for seed in seeds {
+        for p in &seed.permissions {
+            let key = perm_key(p.scope, &p.unique_name);
+            match perm_claimers.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1.push(&seed.created_by_plugin),
+                None => perm_claimers.push((key, vec![&seed.created_by_plugin])),
+            }
+        }
+        for r in &seed.roles {
+            let key = perm_key(r.scope, &r.unique_name);
+            match role_claimers.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1.push(&seed.created_by_plugin),
+                None => role_claimers.push((key, vec![&seed.created_by_plugin])),
+            }
+        }
+    }
+    for (key, claimers) in &perm_claimers {
+        if claimers.len() > 1 {
+            errors.push(format!("Permission {key} claimed by multiple plugins: [{}]", claimers.join(", ")));
+        }
+    }
+    for (key, claimers) in &role_claimers {
+        if claimers.len() > 1 {
+            errors.push(format!("Role {key} claimed by multiple plugins: [{}]", claimers.join(", ")));
+        }
+    }
+
+    let all_perms: BTreeMap<String, &SeedPermission> = seeds
+        .iter()
+        .flat_map(|s| s.permissions.iter())
+        .map(|p| (perm_key(p.scope, &p.unique_name), p))
+        .collect();
+    for p in seeds.iter().flat_map(|s| s.permissions.iter()) {
+        let me = perm_key(p.scope, &p.unique_name);
+        let has = !p.included.is_empty();
+        if !p.complex && has {
+            errors.push(format!("Permission {me} is not complex but declares includedPermissionUniqueNames"));
+        }
+        if p.complex && !has {
+            errors.push(format!("Complex permission {me} has empty includedPermissionUniqueNames"));
+        }
+        for included in &p.included {
+            let key = perm_key(p.scope, included);
+            match all_perms.get(&key) {
+                None => errors.push(format!("Permission {me} references unknown {key}")),
+                Some(inc) if inc.complex => errors.push(format!(
+                    "Permission {me} (complex) includes another complex permission {key} — nesting is not allowed"
+                )),
+                Some(_) => {}
+            }
+        }
+    }
+
+    for r in seeds.iter().flat_map(|s| s.roles.iter()) {
+        let me = perm_key(r.scope, &r.unique_name);
+        if r.permissions.is_empty() {
+            errors.push(format!("Role {me} has empty permissionUniqueNames"));
+        }
+        for name in &r.permissions {
+            let key = perm_key(r.scope, name);
+            if !all_perms.contains_key(&key) {
+                errors.push(format!("Role {me} references unknown permission {key}"));
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
