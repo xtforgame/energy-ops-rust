@@ -327,3 +327,34 @@ async fn side_channels_over_http() {
     let tasks = expect_status!(app.get(&f.admin, &f.u("/audit-events?targetType=energyWorkflowTask&type=flow.task_reassigned")).await, 200);
     assert_eq!(tasks["items"][0]["targetExecutionId"], e2, "task 類的稽核補得出它屬於哪一筆流程");
 }
+
+/// 流程單可視度：有流程權限但不是參與者、也沒有 view-all 的人，詳情與其下的資源一律看不到；
+/// 持 view-all 的人看得到。來源：App 5 executionAccess.ts（參與者或 flow:view-all）。
+#[actix_web::test]
+async fn non_participant_cannot_open_execution() {
+    let fx = fixture().await;
+    let outsider = fx.app.member(fx.org, "outsider", Some("energy:operator")).await;
+    let bill = fx.app.bill(fx.org, Some(fx.station), "2026-01-01", "2026-01-31", Some("5000"), Some("100")).await;
+    let exec = fx.start(bill, 5000).await;
+
+    for p in [
+        format!("/executions/{exec}"),
+        format!("/executions/{exec}/graph"),
+        format!("/executions/{exec}/actions"),
+        format!("/executions/{exec}/lineage"),
+    ] {
+        let (s, v) = fx.app.get(&outsider, &fx.u(&p)).await;
+        assert_eq!(s.as_u16(), 403, "{p} should be hidden from a non-participant: {v}");
+    }
+    // 清單（我的）裡也沒有它。
+    let v = expect_status!(fx.app.get(&outsider, &fx.u("/executions?scope=mine&tab=all")).await, 200);
+    assert!(!v["items"].as_array().unwrap().iter().any(|e| e["id"] == exec), "listed to outsider: {v}");
+    // 不是候選人，不能動它的任務。
+    let t = fx.open_task(&fx.clerk, exec).await;
+    let (s, _) = fx.app.post(&outsider, &fx.u(&format!("/tasks/{}/claim", t["id"])), json!({})).await;
+    assert_eq!(s.as_u16(), 403);
+
+    // 持 view-all 的唯讀角色看得到；參與者（發起人）看得到。
+    expect_status!(fx.app.get(&fx.viewer, &fx.u(&format!("/executions/{exec}"))).await, 200);
+    expect_status!(fx.app.get(&fx.clerk, &fx.u(&format!("/executions/{exec}"))).await, 200);
+}
