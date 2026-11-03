@@ -110,7 +110,7 @@ impl Fx {
     }
 
     async fn task_at(&self, exec: i64, node: &str) -> crate::support::energy::TaskLite {
-        self.app.tasks(exec).await.into_iter().filter(|t| t.node_key == node).last().unwrap()
+        self.app.tasks(exec).await.into_iter().rev().find(|t| t.node_key == node).unwrap()
     }
 
     async fn can_revert(&self, exec: i64, node: &str) -> eo_energy::workflow::engine::tasks::RevertVerdict {

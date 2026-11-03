@@ -502,3 +502,22 @@ async fn domain_model_constraints() {
     assert_eq!(null("tbl_energy_bill", "station_id").as_deref(), Some("YES"), "例外件的命脈");
     assert!(null("tbl_energy_contract", "station_id").is_none(), "合約不再直接掛案場");
 }
+
+/// 來源：routeGateAudit.test.ts「severity 是由 type 查 registry 的靜態值（不可單筆覆寫）」
+#[test]
+fn severity_is_a_static_registry_value() {
+    use eo_domain::audit_events::AuditSeverity;
+    let def = |t: &str| eo_domain::audit_events::get_audit_event_def(t).unwrap();
+    assert_eq!(def("bill.route_gate_added").severity, AuditSeverity::Notable);
+    assert_eq!(def("bill.route_gate_removed").severity, AuditSeverity::Critical);
+    assert!(def("bill.route_gate_removed").has_side_effect);
+    // 稽核表沒有 severity 欄 —— 寫入端無從操縱呈現分級。
+    assert!(!audit_columns().contains(&"severity"));
+}
+
+fn audit_columns() -> Vec<&'static str> {
+    let sql = include_str!("../migrations/0100_energy.sql");
+    let start = sql.find("create table if not exists public.tbl_energy_audit_event").unwrap();
+    let body = &sql[start..start + sql[start..].find(");").unwrap()];
+    body.lines().skip(1).filter_map(|l| l.split_whitespace().next()).collect()
+}

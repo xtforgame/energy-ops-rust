@@ -1,5 +1,8 @@
 //! 聚合測試 target：所有整合測試掛在這裡，只編一次。
 
+// 測試佈景就地解 tuple、參數多是常態。
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
+
 #[macro_use]
 mod support;
 mod platform;
@@ -12,3 +15,4 @@ mod energy_execution_list;
 mod energy_rating_bindings;
 mod energy_master_data;
 mod energy_org_audit;
+mod energy_http;

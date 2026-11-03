@@ -173,13 +173,15 @@ struct BillForRating {
 }
 
 /// 流程開始時快照下來的契約參數 —— 足以決定算式（白名單內的 strategyType）才用它。
-async fn contract_rating(tx: &mut Tx<'_>, execution_id: Option<i64>) -> ApiResult<Option<(String, Value, Option<i64>)>> {
+async fn contract_rating(tx: &mut Tx<'_>, access: &OrgAccess, execution_id: Option<i64>) -> ApiResult<Option<(String, Value, Option<i64>)>> {
     let Some(id) = execution_id else { return Ok(None) };
-    let data: Option<Value> =
-        sqlx::query_scalar("SELECT data FROM tbl_energy_workflow_execution WHERE id = $1 AND deleted_at IS NULL")
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await?;
+    let data: Option<Value> = sqlx::query_scalar(
+        "SELECT data FROM tbl_energy_workflow_execution WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(access.org_id())
+    .fetch_optional(&mut **tx)
+    .await?;
     let contract = data.as_ref().and_then(|d| d.get("attributes")).and_then(|a| a.get("contract")).cloned();
     let Some(contract) = contract else { return Ok(None) };
     let Some(params) = contract.get("params").filter(|p| p.is_object()).cloned() else { return Ok(None) };
@@ -248,7 +250,7 @@ async fn compute_inner(
         bill.billing_period_end.ok_or_else(|| err_d(409, "bill_has_no_billing_period", json!({ "billId": bill_id })))?;
 
     // 契約參數優先（流程開始那一刻的快照，事後改比例不影響已跑完的單）；沒給算式就回頭用案場綁定的策略。
-    let from_contract = contract_rating(tx, execution_id).await?;
+    let from_contract = contract_rating(tx, &ctx.access, execution_id).await?;
     let (strategy, strategy_type, params) = match &from_contract {
         Some((t, p, _)) => (None, t.clone(), p.clone()),
         None => {
