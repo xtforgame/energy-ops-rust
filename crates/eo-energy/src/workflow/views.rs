@@ -79,9 +79,18 @@ pub async fn actions_for_task(
         return Ok((vec![], Some(b)));
     }
     let Some(node) = node else { return Ok((vec![], None)) };
+    // 已套用（未解除）的副作用動作不再列出。
+    let applied: Vec<String> = sqlx::query_scalar(
+        "SELECT side_effect_key FROM tbl_energy_workflow_side_effect
+          WHERE execution_id = $1 AND released_at IS NULL AND deleted_at IS NULL",
+    )
+    .bind(exec.id)
+    .fetch_all(&mut **tx)
+    .await?;
     let actions: Vec<Value> = model::actions_of_node(tx, node.id)
         .await?
         .into_iter()
+        .filter(|a| !(a.kind == "sideEffect" && a.side_effect_key.as_ref().is_some_and(|k| applied.contains(k))))
         .map(|a| {
             json!({ "actionKey": a.action_key, "labelKey": a.label_key, "kind": a.kind,
                     "requiresReason": a.requires_reason, "sortOrder": a.sort_order })

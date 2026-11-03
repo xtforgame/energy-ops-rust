@@ -292,6 +292,20 @@ async fn do_side_effect(tx: &mut Tx<'_>, ctx: &Ctx, task: &TaskRow, exec: &Execu
         .side_effect_key
         .clone()
         .ok_or_else(|| err_d(500, "side_effect_key_required", json!({ "actionKey": action.action_key })))?;
+    // 同一張單上已有未解除的同一種副作用就不再記一次（連按兩下「已付款」不可變成兩筆付款）。
+    // App 5 沒擋。解除（release）之後才能再標一次。
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM tbl_energy_workflow_side_effect
+          WHERE execution_id = $1 AND side_effect_key = $2 AND released_at IS NULL AND deleted_at IS NULL
+          FOR UPDATE",
+    )
+    .bind(exec.id)
+    .bind(&key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some(prev) = existing {
+        return Err(err_d(409, "side_effect_already_applied", json!({ "sideEffectKey": key, "sideEffectId": prev })));
+    }
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO tbl_energy_workflow_side_effect
            (execution_id, task_id, side_effect_key, locks_revert, applied_by_user_id, applied_at, note)

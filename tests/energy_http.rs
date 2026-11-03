@@ -359,3 +359,25 @@ async fn non_participant_cannot_open_execution() {
     expect_status!(fx.app.get(&fx.viewer, &fx.u(&format!("/executions/{exec}"))).await, 200);
     expect_status!(fx.app.get(&fx.clerk, &fx.u(&format!("/executions/{exec}"))).await, 200);
 }
+
+/// 副作用不可重複套用：標過「已付款」後，同一種副作用再按回 409，可用動作也不再列出它。
+/// App 5 沒擋（連按兩下會記兩筆付款）；這裡刻意修正。
+#[actix_web::test]
+async fn side_effect_cannot_be_applied_twice() {
+    let fx = fixture().await;
+    let bill = fx.app.bill(fx.org, Some(fx.station), "2026-02-01", "2026-02-28", Some("5000"), Some("100")).await;
+    let exec = fx.start(bill, 5000).await;
+    fx.step(&fx.clerk, exec, json!({ "actionKey": "submit" })).await;
+    fx.step(&fx.manager, exec, json!({ "actionKey": "approve" })).await;
+    fx.step(&fx.finance, exec, json!({ "actionKey": "release" })).await;
+    fx.step(&fx.accountant, exec, json!({ "actionKey": "markPaid" })).await;
+    let t = fx.open_task(&fx.accountant, exec).await;
+    let (s, v) = fx.app.post(&fx.accountant, &fx.u(&format!("/tasks/{}/actions", t["id"])), json!({ "actionKey": "markPaid" })).await;
+    assert_eq!(s.as_u16(), 409, "{v}");
+    assert_eq!(v["code"], "side_effect_already_applied");
+    let a = expect_status!(fx.app.get(&fx.accountant, &fx.u(&format!("/executions/{exec}/actions"))).await, 200);
+    let keys: Vec<&str> = a["availableActions"].as_array().unwrap().iter().map(|x| x["actionKey"].as_str().unwrap()).collect();
+    assert!(!keys.contains(&"markPaid") && keys.contains(&"submit"), "{keys:?}");
+    let n = fx.app.scalar_i64(&format!("SELECT count(*) FROM tbl_energy_workflow_side_effect WHERE execution_id = {exec}")).await;
+    assert_eq!(n, 1);
+}
