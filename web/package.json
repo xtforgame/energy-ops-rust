@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.strict.json",
     "test": "vitest --run",
-    "e2e": "node e2e/smoke.mjs"
+    "e2e": "node e2e/smoke.mjs",
+    "e2e:energy": "node e2e/energy-phase2.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

@@ -44,7 +44,7 @@ export interface EnergyRoute {
   /** 前綴之後的路徑，`:x` 是路徑參數。 */
   path: string;
   adapt?: Adapt;
-  /** 收件那一組（電費單／收件批次／辨識）：後端另一條分支在做，尚未上線。 */
+  /** 收件那一組（附件／電費單／收件批次／辨識）：後端另一條分支在做，尚未上線。 */
   intake?: boolean;
 }
 
@@ -96,10 +96,10 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'GET', path: '/workflows/:definitionId/nodes/:nodeKey/tasks', adapt: unwrapItems },
   { method: 'POST', path: '/setup/install-defaults' },
   // 附件
-  { method: 'GET', path: '/executions/:executionId/attachments', adapt: unwrapItems },
-  { method: 'POST', path: '/executions/:executionId/attachments' },
-  { method: 'GET', path: '/attachments/:attachmentId/download' },
-  { method: 'POST', path: '/attachment-links/:linkId/remove' },
+  { method: 'GET', path: '/executions/:executionId/attachments', adapt: unwrapItems, intake: true },
+  { method: 'POST', path: '/executions/:executionId/attachments', intake: true },
+  { method: 'GET', path: '/attachments/:attachmentId/download', intake: true },
+  { method: 'POST', path: '/attachment-links/:linkId/remove', intake: true },
   { method: 'POST', path: '/uploads/sign', intake: true },
   // 電費單與收件
   { method: 'POST', path: '/bills/ingest', intake: true },

@@ -201,12 +201,15 @@ const DepartmentsPage: React.FC = () => {
                     size="small"
                     color={color}
                     label={m.name || `#${m.userId}`}
+                    data-testid="department-member"
+                    data-user={m.userId}
+                    data-role={m.role}
                     onDelete={() => removeMember(d, m.userId)}
                     sx={{ mr: 0.5, mb: 0.5 }}
                   />
                 );
                 return (
-                  <TableRow key={d.id}>
+                  <TableRow key={d.id} data-testid="department-row" data-key={d.key}>
                     <TableCell>{d.name}</TableCell>
                     <TableCell><Typography variant="caption" color="text.secondary">{d.key}</Typography></TableCell>
                     <TableCell>
@@ -221,7 +224,7 @@ const DepartmentsPage: React.FC = () => {
                     </TableCell>
                     <TableCell align="right">
                       <Tooltip title={translate('tc.departments.assign')}>
-                        <IconButton size="small" onClick={() => { setAssignError(null); setAssignTarget(d); }}>
+                        <IconButton size="small" data-testid="department-assign" onClick={() => { setAssignError(null); setAssignTarget(d); }}>
                           <PersonAddIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -279,6 +282,7 @@ const DepartmentsPage: React.FC = () => {
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             <TextField
               select={members.length > 0}
+              data-testid="department-assign-user"
               label={translate('tc.departments.user')}
               value={assignUserId}
               onChange={(e) => setAssignUserId(e.target.value)}
@@ -290,6 +294,7 @@ const DepartmentsPage: React.FC = () => {
             </TextField>
             <TextField
               select
+              data-testid="department-assign-role"
               label={translate('tc.departments.role')}
               value={assignRole}
               onChange={(e) => setAssignRole(e.target.value as any)}
@@ -302,7 +307,7 @@ const DepartmentsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAssignTarget(null)}>{translate('ra.action.cancel')}</Button>
-          <Button variant="contained" onClick={submitAssign}>{translate('tc.departments.assign')}</Button>
+          <Button variant="contained" onClick={submitAssign} data-testid="department-assign-submit">{translate('tc.departments.assign')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

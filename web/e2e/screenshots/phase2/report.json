@@ -1,0 +1,15 @@
+{
+  "org": 23,
+  "execution": 5,
+  "errors": [],
+  "coreFailures": [],
+  "intakePending": [
+    "404 GET /api/v1/orgs/{id}/energy/bills/unmatched",
+    "404 GET /api/v1/orgs/{id}/energy/ingest-batches",
+    "404 GET /api/v1/orgs/{id}/energy/recognition/status",
+    "404 GET /api/v1/orgs/{id}/energy/bills",
+    "404 GET /api/v1/orgs/{id}/energy/bills/{id}/payouts",
+    "404 GET /api/v1/orgs/{id}/energy/executions/{id}/attachments",
+    "404 GET /api/v1/orgs/{id}/energy/bills/{id}/branch-preview"
+  ]
+}
