@@ -10,6 +10,7 @@
 #   CARGO_TARGET_DIR  後端 binary 所在（預設 <repo>/target）
 #   E2E_SKIP_BUILD=1  不重建後端與 web/dist（直接用現有的）
 #   CRAWLER_HEADFUL=1 開著瀏覽器視窗跑
+#   E2E_TPR_POLLS     假辨識服務回幾次「處理中」才完成（預設 3：辨識中的畫面要看得到）
 # 前置：docker compose 的 Postgres（56432）與 MinIO（56900）起著。
 set -u
 cd "$(dirname "$0")/../.."
@@ -57,7 +58,7 @@ for c in "${CRAWLERS[@]}"; do
   psql_admin -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB" >/dev/null || { echo "$c: 重建資料庫失敗" | tee -a "$SUMMARY"; total_fail=1; continue; }
 
   TPR_PORT=$(free_port); API_PORT=$(free_port)
-  "$BIN" fake-tpr "$TPR_PORT" > "$OUT/fake-tpr.log" 2>&1 & pids+=($!)
+  "$BIN" fake-tpr "$TPR_PORT" "${E2E_TPR_POLLS:-3}" > "$OUT/fake-tpr.log" 2>&1 & pids+=($!)
   env -i PATH="$PATH" HOME="$HOME" RUST_LOG=info \
     EO_DATABASE_URL="postgres://energy:energy@127.0.0.1:${EO_PG_PORT:-56432}/$DB" \
     EO_S3_ENDPOINT="http://127.0.0.1:${EO_MINIO_PORT:-56900}" EO_S3_REGION=us-east-1 EO_S3_BUCKET=energy-files \
