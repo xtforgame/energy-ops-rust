@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="docs/spec/tools/build.mjs">
+<title>A3 應用元件｜電費單與租金管理系統 規格文件</title>
+<style>/* 規格文件的樣式。狀態顏色與 tools/lib.mjs 的 IMPL／CLAR 同一組，圖與網頁看起來是同一套。 */
+:root {
+  --ink: #1f2937; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e3e7ed; --line-2: #cfd6df;
+  --bg: #f4f6f8; --paper: #ffffff; --navy: #1f2a44; --navy-2: #2c3b5e; --accent: #1f3a5f;
+  --open: #c2410c; --open-bg: #fff7ed;
+  --done: #2f6b41; --done-bg: #e3f1e6; --done-ink: #1e5631;
+  --partial: #b7791f; --partial-bg: #fff1cc; --partial-ink: #6b4508;
+  --todo: #6b7280; --todo-bg: #ffffff; --todo-ink: #374151;
+  --beyond: #3a5f8a; --beyond-bg: #e2ebf6; --beyond-ink: #1b3150;
+  --external: #5b4a96; --external-bg: #eee9f7; --external-ink: #2a2150;
+  --dropped: #a3a3a3; --dropped-bg: #f1f1f1; --dropped-ink: #5f5f5f;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.7 "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 12.5px; color: #374151; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; word-break: break-all; }
+
+/* 版面 */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--navy); color: #fff; padding: 10px 24px; border-bottom: 3px solid var(--navy-2); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+.brand span { font-weight: 400; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); color: #d6deeb; }
+.top .meta { font-size: 12.5px; color: #c7d0de; }
+.wrap { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 0; max-width: 1480px; margin: 0 auto; }
+.side { position: sticky; top: 50px; align-self: start; height: calc(100vh - 50px); overflow: auto; padding: 20px 14px 40px 20px; border-right: 1px solid var(--line); background: #fbfcfd; }
+.nav-sec { margin-bottom: 16px; }
+.nav-h { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 6px; }
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 4px 10px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.5; border-radius: 0 4px 4px 0; }
+.side li a:hover { background: #eef2f7; }
+.side li.on a { border-left-color: var(--accent); background: #e8eef6; font-weight: 600; }
+.doc { min-width: 0; background: var(--paper); padding: 28px 40px 48px; border-left: 0; }
+.page + .page { margin-top: 56px; padding-top: 32px; border-top: 4px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--ink-3); margin-bottom: 2px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; color: #111827; }
+h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: #111827; }
+h3 { font-size: 16px; margin: 0; }
+h4 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); }
+p { margin: 8px 0 12px; }
+.lead { font-size: 16px; color: var(--ink-2); max-width: 980px; }
+.muted { color: var(--ink-3); }
+.warn-text { color: var(--open); font-weight: 600; }
+.foot { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+ul.points li, ul.qlist li { margin: 6px 0; }
+
+/* 狀態標籤：文字＋底色＋邊框，不靠顏色單獨表達 */
+.st, .cl, .dt, .tag, .by, .verdict { display: inline-block; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; border: 1px solid; vertical-align: 1px; }
+.st-done { color: var(--done-ink); background: var(--done-bg); border-color: var(--done); }
+.st-partial { color: var(--partial-ink); background: var(--partial-bg); border-color: var(--partial); }
+.st-todo { color: var(--todo-ink); background: var(--todo-bg); border-color: var(--todo); }
+.st-beyond { color: var(--beyond-ink); background: var(--beyond-bg); border-color: var(--beyond); }
+.st-external { color: var(--external-ink); background: var(--external-bg); border-color: var(--external); }
+.st-dropped { color: var(--dropped-ink); background: var(--dropped-bg); border-color: var(--dropped); }
+.cl { background: #fff; color: #374151; }
+.cl-confirmed { border: 1px solid #4b5563; }
+.cl-assumed { border: 1.5px dashed #4b5563; }
+.cl-open { border: 2px dotted var(--open); color: var(--open); background: var(--open-bg); line-height: 18px; }
+.dt-mock { color: #374151; border-color: #6b7280; background: repeating-linear-gradient(45deg, #f3f4f6 0 4px, #e5e7eb 4px 8px); }
+.dt-uncertain { color: #92400e; border-color: #b45309; background: #fef3c7; }
+.tag { color: #374151; border-color: #9ca3af; background: #f3f4f6; font-weight: 500; }
+.by { font-weight: 500; }
+.by-user { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.by-contract { color: var(--beyond-ink); border-color: var(--beyond); background: var(--beyond-bg); }
+.by-proxy { color: var(--open); border-color: var(--open); background: var(--open-bg); }
+.by-doc, .by-client { color: #374151; border-color: #9ca3af; background: #f3f4f6; }
+.verdict.v-bad { color: #991b1b; border-color: #b91c1c; background: #fef2f2; }
+.verdict.v-mid { color: var(--partial-ink); border-color: var(--partial); background: var(--partial-bg); }
+.verdict.v-ok { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.ref { font-family: var(--mono); font-size: 12px; padding: 0 5px; border: 1px solid #cbd5e1; border-radius: 3px; background: #f8fafc; color: var(--accent); text-decoration: none; white-space: nowrap; line-height: 18px; display: inline-block; }
+a.ref:hover { border-color: var(--accent); }
+.ref-q { color: var(--open); border-color: #f0b48f; background: var(--open-bg); }
+
+/* 表格 */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 18px; }
+table.reg { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.6; }
+table.reg th { position: sticky; top: 0; background: #eef1f5; color: #374151; text-align: left; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.reg td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+table.reg tbody tr:nth-child(even) td { background: #fafbfc; }
+table.reg tbody tr:target td { background: #fff7ed; }
+table.reg.compact td { padding: 6px 10px; }
+.where { margin-top: 4px; }
+.filter { margin: 10px 0 0; }
+.filter input { font: inherit; font-size: 14px; padding: 5px 10px; width: 320px; max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+
+/* 逐項卡片（驗收項、問題） */
+.item { border: 1px solid var(--line); border-radius: 6px; margin: 14px 0; background: #fff; }
+.item:target { outline: 3px solid #f0b48f; }
+.item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.item-id { font-family: var(--mono); font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 3px; }
+.q-id { background: var(--open); }
+.item-area { font-size: 12.5px; color: var(--ink-3); }
+.item .badges { margin-left: auto; display: flex; gap: 6px; }
+.item dl { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 0; margin: 0; }
+.item dt { padding: 8px 14px; color: var(--ink-2); font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--line); background: #fcfcfd; }
+.item dd { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.item dl > dt:first-child, .item dl > dt:first-child + dd { border-top: 0; }
+.item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
+.item dd.answer { color: var(--ink-3); }
+.q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+
+/* 提示框 */
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+.callout h4 { margin: 0 0 4px; font-size: 14.5px; color: #111827; }
+.callout p { margin: 4px 0; }
+.callout.risk { border-left-color: #b91c1c; background: #fef6f6; }
+.callout.warn { border-left-color: var(--open); background: #fffaf5; }
+.callout.note { border-left-color: #6b7280; background: #f8f9fa; }
+
+/* 數字摘要 */
+.hero { display: flex; align-items: baseline; gap: 14px; margin: 6px 0 4px; }
+.hero .num { font-size: 56px; font-weight: 600; line-height: 1; color: #111827; }
+.hero .unit { font-size: 20px; font-weight: 600; color: #111827; }
+.hero .what { font-size: 15px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.t-label { font-size: 13px; color: var(--ink-3); }
+.t-value { font-size: 26px; font-weight: 600; color: #111827; line-height: 1.35; }
+.t-sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 驗收覆蓋分段條：高 28px、段與段之間 2px 間隙 */
+figure.cover { margin: 8px 0 22px; }
+figure.cover figcaption { font-size: 13.5px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+.bar { display: flex; gap: 2px; height: 28px; }
+.seg { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; min-width: 2px; overflow: visible; white-space: nowrap; }
+.seg:focus { outline: 2px solid #111827; outline-offset: 1px; }
+.seg-done { background: var(--done); color: #fff; }
+.seg-partial { background: var(--partial); color: #fff; }
+.seg-todo { background: #e5e7eb; color: #374151; }
+.bar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.sw-done { background: var(--done); } .sw-partial { background: var(--partial); } .sw-todo { background: #e5e7eb; border: 1px solid #c4c9d1; }
+
+/* 圖例 */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px 28px; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; background: #fbfcfd; margin: 12px 0 18px; }
+.legend ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.legend li { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13.5px; }
+.legend li .st, .legend li .cl, .legend li .dt { min-width: 96px; text-align: center; }
+
+/* 架構圖 */
+figure.diagram { margin: 14px 0 22px; }
+figure.diagram a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: zoom-in; background: #fff; }
+figure.diagram img { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 12px 0; }
+.thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; display: block; }
+.thumb img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+.thumb div { padding: 8px 12px; font-size: 13.5px; }
+.thumb strong { display: block; color: #111827; }
+
+/* 放大檢視 */
+.zoom { position: fixed; inset: 0; z-index: 50; background: rgba(17, 24, 39, .82); display: flex; flex-direction: column; }
+.zoom[hidden] { display: none; }
+.zoom-bar { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; padding: 8px 16px; font-size: 13px; }
+.zoom-bar button { font: inherit; background: #fff; color: #111827; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+.zoom-body { flex: 1; overflow: auto; padding: 0 16px 16px; }
+.zoom-body img { display: block; max-width: none; background: #fff; border-radius: 4px; }
+
+@media (max-width: 1000px) {
+  .wrap { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .doc { padding: 20px; }
+  .item dl { grid-template-columns: 1fr; }
+}
+@media print {
+  .top, .side, .filter, .zoom { display: none !important; }
+  .wrap { display: block; }
+  .doc { padding: 0; }
+  body { background: #fff; font-size: 12px; }
+  .page { break-before: page; }
+  .item, tr { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">電費單與租金管理系統<span>規格文件</span></div><div class="meta">v0.1 盤點版 · 2026-11-12 · 以 energy-ops-rust 為主</div></header>
+<div class="wrap">
+<nav class="side" aria-label="文件目錄"><div class="nav-sec"><div class="nav-h">首頁</div><ul><li><a href="../index.html">首頁</a></li></ul></div><div class="nav-sec"><div class="nav-h">00 總覽</div><ul><li><a href="../00-%E7%B8%BD%E8%A6%BD/01-%E5%B0%88%E6%A1%88%E6%91%98%E8%A6%81.html">專案摘要</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/02-%E8%A6%8F%E6%A0%BC%E4%BE%86%E6%BA%90%E8%88%87%E4%B8%96%E4%BB%A3.html">規格來源與世代</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/03-%E5%9C%96%E4%BE%8B%E8%88%87%E7%B7%A8%E8%99%9F%E8%A6%8F%E5%89%87.html">圖例與編號規則</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/04-%E5%90%8D%E8%A9%9E%E8%A1%A8.html">名詞表</a></li></ul></div><div class="nav-sec"><div class="nav-h">10 架構（全局→細節）</div><ul><li><a href="../10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">A0 系統情境</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A1-%E6%A5%AD%E5%8B%99%E6%B5%81%E7%A8%8B.html">A1 業務流程全景</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A2-%E9%83%A8%E7%BD%B2%E8%88%87%E5%AE%B9%E5%99%A8.html">A2 部署與容器</a></li><li class="on"><a href="../10-%E6%9E%B6%E6%A7%8B/A3-%E6%87%89%E7%94%A8%E5%85%83%E4%BB%B6.html">A3 應用元件</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A4-%E8%B3%87%E6%96%99%E6%A8%A1%E5%9E%8B.html">A4 資料模型</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A5-%E9%9B%BB%E8%B2%BB%E5%96%AE%E8%99%95%E7%90%86.html">A5 電費單處理細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A6-%E7%A7%9F%E9%87%91%E8%88%87%E8%B3%87%E7%94%A2.html">A6 租金與資產細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A7-%E7%B0%BD%E6%A0%B8%E5%88%86%E5%B7%A5.html">A7 簽核分工（決策點）</a></li></ul></div><div class="nav-sec"><div class="nav-h">20 驗收</div><ul><li><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></li></ul></div><div class="nav-sec"><div class="nav-h">30 需求</div><ul><li><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></li></ul></div><div class="nav-sec"><div class="nav-h">40 清冊</div><ul><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分三批）</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">決策紀錄</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E6%AF%94%E5%B0%8D%E7%B4%80%E9%8C%84.html">程式碼比對紀錄</a></li></ul></div></nav>
+<main class="doc">
+<div class="crumb">10 架構（全局→細節）</div><h1>A3 應用元件</h1>
+<p class="lead">energy-ops-rust 的每個元件，以及它對合約的意義。綠色可以直接用於驗收；藍色已實作但合約沒有要求；白色虛框是驗收需要、目前沒有的元件。</p>
+<p>既有元件的品質不差（有測試、有稽核、有型別閘），問題在方向：投資最多的系統內簽核引擎、多組織與 RBAC 管理不在驗收表上，而驗收表需要的十個元件都還沒有。</p><figure class="diagram"><a href="../diagrams/A3.svg" data-zoom target="_blank" rel="noopener"><img src="../diagrams/A3.svg" alt="A3 應用元件（energy-ops-rust 的前端、後端、平台、純邏輯）" loading="lazy"></a><figcaption>圖 A3　應用元件（energy-ops-rust 的前端、後端、平台、純邏輯）。點圖放大；圖例見圖底部。</figcaption></figure><h2>重點</h2><ul class="points"><li>可直接沿用：收件與辨識驅動、電費單三層值與校對台、附件、稽核、權限、部門。</li><li>要擴充：主檔（只有讀取）、計費（改成每期租金）、工作台（加通知與報表）、抽取（天能與新樣態）。</li><li>要新增：郵件收件器、公槽歸檔器、天能單解析、紀錄單產生器、EasyFlow 連接器、發票管理、租金期別計算、提醒排程、主檔匯入編修匯出、報表。</li><li>合約外：系統內簽核引擎、流程單與流程總覽、效期綁定、多組織與邀請、RBAC 管理頁、3D 地圖——建議依 <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a>、<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a> 決定隱藏或保留。</li></ul><h2>圖中元素一覽</h2><p class="muted">由圖的定義自動產生（tools/diagrams.mjs），與圖面一致。共 48 個元素：已具備 20、部分具備 6、未實作 14、合約外既有 7、外部系統 1。</p><div class="tbl"><table class="reg compact"><thead><tr><th style="width:200px">元素</th><th>說明</th><th style="width:96px">實作</th><th style="width:84px">釐清</th><th style="width:170px">關聯</th></tr></thead><tbody>
+<tr><td>我的工作</td><td>待辦佇列＋我參與過的</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>送件（收件台）</td><td>批次上傳、辨識進度、就地校對</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>電費單／校對台</td><td>原檔＋三層值；五種模式</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>流程單</td><td>系統內簽核的執行</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a></td></tr>
+<tr><td>地主／案場</td><td>只能看，不能新增、編輯</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>行事曆／儀表板</td><td>只有期數到期；無應收</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>流程總覽／稽核</td><td>選單隱藏，網址可進</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a></td></tr>
+<tr><td>台灣 3D 地圖</td><td>示範座標</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span> <span class="dt dt-mock">假資料</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-28">Q-28</a></td></tr>
+<tr><td>組織／專案／邀請</td><td>多組織（合約外）</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a></td></tr>
+<tr><td>RBAC 管理</td><td>角色、permission、授權</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a></td></tr>
+<tr><td>部門與能源角色</td><td>五角色指派、部門主管</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>個人資料／帳號管理</td><td>改密碼、超級使用者</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>資產主檔維護</td><td>匯入、修正、匯出</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td></tr>
+<tr><td>租金計算／通知</td><td>每期計算、通知</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a></td></tr>
+<tr><td>發票管理</td><td>收件、配對、漏件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td></tr>
+<tr><td>紀錄單／報表</td><td>查詢、匯出</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td></tr>
+<tr><td>ingest 收件</td><td>批次、項目、去重、例外件、送審</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>recognition 辨識驅動</td><td>背景 tick、租約、每批 10 份</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>bills 電費單</td><td>三層值、校對、分支預覽</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>attachments 附件</td><td>MinIO、sha256、預簽直傳</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>master_data 主檔</td><td>只有讀取；geocode 是 mock</td><td><span class="st st-partial" title="實作狀態">部分具備</span> <span class="dt dt-mock">假資料</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>bindings 效期綁定</td><td>流程／計費綁案場</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>rating 計費</td><td>三種策略、不可變應付紀錄</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a></td></tr>
+<tr><td>workflow 引擎</td><td>多關卡簽核、回退鎖、代理</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a></td></tr>
+<tr><td>workbench</td><td>登入落點、儀表板（只有應付）、行事曆</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>org 部門與角色</td><td>五能源角色、最後一位治理者防呆</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>audit 稽核</td><td>56 種事件，與業務同交易寫入</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td></tr>
+<tr><td>demo_seed</td><td>虛構主檔，但用了真實電號</td><td><span class="st st-done" title="實作狀態">已具備</span> <span class="dt dt-mock">假資料</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-36">Q-36</a></td></tr>
+<tr><td>fake_tpr</td><td>開發測試用假辨識服務</td><td><span class="st st-done" title="實作狀態">已具備</span> <span class="dt dt-mock">假資料</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>tpr_client → OCR</td><td>講 taipower-recognition 協定</td><td><span class="st st-external" title="實作狀態">外部系統</span> <span class="dt dt-uncertain">資料不確定</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>郵件收件器</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B02">B02</a></td></tr>
+<tr><td>公槽歸檔器</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B10">B10</a></td></tr>
+<tr><td>天能單解析</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B08">B08</a></td></tr>
+<tr><td>紀錄單產生器（Excel）</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a></td></tr>
+<tr><td>EasyFlow 連接器（API／模擬操作）</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td></tr>
+<tr><td>發票管理</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td></tr>
+<tr><td>租金期別計算</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td></tr>
+<tr><td>提醒排程＋通知中心</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td></tr>
+<tr><td>主檔匯入／編修／匯出</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td></tr>
+<tr><td>報表與匯出</td><td><span class="muted">—</span></td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td></tr>
+<tr><td>authn 登入</td><td>bcrypt；DB session（閒置 14 天、絕對 183 天）；無忘記密碼</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>user 帳號</td><td>個資、改密碼、停用</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>multitenancy</td><td>組織、專案、邀請（不寄信）</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a></td></tr>
+<tr><td>rbac 權限</td><td>三層 scope、自訂角色、快取（功能遠多於合約）</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>基礎</td><td>database／storage（SigV4）／health／static_web</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>抽取與分類</td><td>canonical 119 欄；非 canonical 退回 mock</td><td><span class="st st-partial" title="實作狀態">部分具備</span> <span class="dt dt-mock">假資料</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>計費與條件</td><td>定點數計算、條件求值</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td>業務鍵與模式</td><td>去重鍵、單據五種模式</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+</tbody></table></div><h2>這一層的待釐清問題</h2><ul class="qlist"><li><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <strong>系統內簽核與 EasyFlow 的分工</strong>：energy-ops-rust 已有完整的系統內多關卡簽核（承辦→主管→加簽→計算→放行→付款），合約要求在 EasyFlow 建單加簽。兩者怎麼分工？</li><li><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a> <strong>租金公式與標準答案</strong>：各類租金的公式、四捨五入方式、所得稅／補充保費／營業稅的處理？「租金計算（範例）」裡的 #VALUE! 與欄位範圍錯位是範例錯誤嗎？每種租金類型的標準答案由誰提供？</li><li><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-28">Q-28</a> <strong>地圖與座標</strong>：台灣 3D 地圖、案場座標與地理編碼本期需要嗎？</li><li><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-34">Q-34</a> <strong>合約外功能的呈現</strong>：多組織、專案、自訂角色與 permission、邀請、流程總覽等合約外功能，要對雲豹使用者隱藏還是保留？</li><li><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-36">Q-36</a> <strong>示範與測試資料</strong>：示範種子資料用了真實電號配虛構案場名；測試環境能否使用真實電費單？正式環境要確保關閉示範資料。</li></ul>
+<footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
+</main>
+</div>
+<div class="zoom" hidden><div class="zoom-bar"><span>拖曳或捲動檢視，按 Esc 關閉</span><button type="button" data-zoom-close>關閉</button></div><div class="zoom-body"><img alt=""></div></div>
+<script>// 規格文件的少量互動：架構圖放大檢視、表格關鍵字篩選。沒有外部相依，離線可用。
+(function () {
+  var zoom = document.querySelector('.zoom');
+  var zimg = zoom && zoom.querySelector('img');
+  function close() { if (zoom) { zoom.hidden = true; zimg.removeAttribute('src'); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-zoom]');
+    if (a && zoom) {
+      e.preventDefault();
+      zimg.src = a.getAttribute('href');
+      zimg.alt = (a.querySelector('img') || {}).alt || '';
+      zoom.hidden = false;
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-zoom-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+  document.querySelectorAll('input[data-filter]').forEach(function (input) {
+    var box = input.closest('.filter').nextElementSibling;
+    var rows = box ? box.querySelectorAll('tbody tr') : [];
+    input.addEventListener('input', function () {
+      var q = input.value.trim().toLowerCase();
+      rows.forEach(function (tr) {
+        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

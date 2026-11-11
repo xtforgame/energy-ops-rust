@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="docs/spec/tools/build.mjs">
+<title>程式碼比對紀錄｜電費單與租金管理系統 規格文件</title>
+<style>/* 規格文件的樣式。狀態顏色與 tools/lib.mjs 的 IMPL／CLAR 同一組，圖與網頁看起來是同一套。 */
+:root {
+  --ink: #1f2937; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e3e7ed; --line-2: #cfd6df;
+  --bg: #f4f6f8; --paper: #ffffff; --navy: #1f2a44; --navy-2: #2c3b5e; --accent: #1f3a5f;
+  --open: #c2410c; --open-bg: #fff7ed;
+  --done: #2f6b41; --done-bg: #e3f1e6; --done-ink: #1e5631;
+  --partial: #b7791f; --partial-bg: #fff1cc; --partial-ink: #6b4508;
+  --todo: #6b7280; --todo-bg: #ffffff; --todo-ink: #374151;
+  --beyond: #3a5f8a; --beyond-bg: #e2ebf6; --beyond-ink: #1b3150;
+  --external: #5b4a96; --external-bg: #eee9f7; --external-ink: #2a2150;
+  --dropped: #a3a3a3; --dropped-bg: #f1f1f1; --dropped-ink: #5f5f5f;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.7 "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 12.5px; color: #374151; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; word-break: break-all; }
+
+/* 版面 */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--navy); color: #fff; padding: 10px 24px; border-bottom: 3px solid var(--navy-2); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+.brand span { font-weight: 400; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); color: #d6deeb; }
+.top .meta { font-size: 12.5px; color: #c7d0de; }
+.wrap { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 0; max-width: 1480px; margin: 0 auto; }
+.side { position: sticky; top: 50px; align-self: start; height: calc(100vh - 50px); overflow: auto; padding: 20px 14px 40px 20px; border-right: 1px solid var(--line); background: #fbfcfd; }
+.nav-sec { margin-bottom: 16px; }
+.nav-h { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 6px; }
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 4px 10px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.5; border-radius: 0 4px 4px 0; }
+.side li a:hover { background: #eef2f7; }
+.side li.on a { border-left-color: var(--accent); background: #e8eef6; font-weight: 600; }
+.doc { min-width: 0; background: var(--paper); padding: 28px 40px 48px; border-left: 0; }
+.page + .page { margin-top: 56px; padding-top: 32px; border-top: 4px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--ink-3); margin-bottom: 2px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; color: #111827; }
+h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: #111827; }
+h3 { font-size: 16px; margin: 0; }
+h4 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); }
+p { margin: 8px 0 12px; }
+.lead { font-size: 16px; color: var(--ink-2); max-width: 980px; }
+.muted { color: var(--ink-3); }
+.warn-text { color: var(--open); font-weight: 600; }
+.foot { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+ul.points li, ul.qlist li { margin: 6px 0; }
+
+/* 狀態標籤：文字＋底色＋邊框，不靠顏色單獨表達 */
+.st, .cl, .dt, .tag, .by, .verdict { display: inline-block; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; border: 1px solid; vertical-align: 1px; }
+.st-done { color: var(--done-ink); background: var(--done-bg); border-color: var(--done); }
+.st-partial { color: var(--partial-ink); background: var(--partial-bg); border-color: var(--partial); }
+.st-todo { color: var(--todo-ink); background: var(--todo-bg); border-color: var(--todo); }
+.st-beyond { color: var(--beyond-ink); background: var(--beyond-bg); border-color: var(--beyond); }
+.st-external { color: var(--external-ink); background: var(--external-bg); border-color: var(--external); }
+.st-dropped { color: var(--dropped-ink); background: var(--dropped-bg); border-color: var(--dropped); }
+.cl { background: #fff; color: #374151; }
+.cl-confirmed { border: 1px solid #4b5563; }
+.cl-assumed { border: 1.5px dashed #4b5563; }
+.cl-open { border: 2px dotted var(--open); color: var(--open); background: var(--open-bg); line-height: 18px; }
+.dt-mock { color: #374151; border-color: #6b7280; background: repeating-linear-gradient(45deg, #f3f4f6 0 4px, #e5e7eb 4px 8px); }
+.dt-uncertain { color: #92400e; border-color: #b45309; background: #fef3c7; }
+.tag { color: #374151; border-color: #9ca3af; background: #f3f4f6; font-weight: 500; }
+.by { font-weight: 500; }
+.by-user { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.by-contract { color: var(--beyond-ink); border-color: var(--beyond); background: var(--beyond-bg); }
+.by-proxy { color: var(--open); border-color: var(--open); background: var(--open-bg); }
+.by-doc, .by-client { color: #374151; border-color: #9ca3af; background: #f3f4f6; }
+.verdict.v-bad { color: #991b1b; border-color: #b91c1c; background: #fef2f2; }
+.verdict.v-mid { color: var(--partial-ink); border-color: var(--partial); background: var(--partial-bg); }
+.verdict.v-ok { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.ref { font-family: var(--mono); font-size: 12px; padding: 0 5px; border: 1px solid #cbd5e1; border-radius: 3px; background: #f8fafc; color: var(--accent); text-decoration: none; white-space: nowrap; line-height: 18px; display: inline-block; }
+a.ref:hover { border-color: var(--accent); }
+.ref-q { color: var(--open); border-color: #f0b48f; background: var(--open-bg); }
+
+/* 表格 */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 18px; }
+table.reg { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.6; }
+table.reg th { position: sticky; top: 0; background: #eef1f5; color: #374151; text-align: left; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.reg td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+table.reg tbody tr:nth-child(even) td { background: #fafbfc; }
+table.reg tbody tr:target td { background: #fff7ed; }
+table.reg.compact td { padding: 6px 10px; }
+.where { margin-top: 4px; }
+.filter { margin: 10px 0 0; }
+.filter input { font: inherit; font-size: 14px; padding: 5px 10px; width: 320px; max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+
+/* 逐項卡片（驗收項、問題） */
+.item { border: 1px solid var(--line); border-radius: 6px; margin: 14px 0; background: #fff; }
+.item:target { outline: 3px solid #f0b48f; }
+.item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.item-id { font-family: var(--mono); font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 3px; }
+.q-id { background: var(--open); }
+.item-area { font-size: 12.5px; color: var(--ink-3); }
+.item .badges { margin-left: auto; display: flex; gap: 6px; }
+.item dl { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 0; margin: 0; }
+.item dt { padding: 8px 14px; color: var(--ink-2); font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--line); background: #fcfcfd; }
+.item dd { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.item dl > dt:first-child, .item dl > dt:first-child + dd { border-top: 0; }
+.item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
+.item dd.answer { color: var(--ink-3); }
+.q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+
+/* 提示框 */
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+.callout h4 { margin: 0 0 4px; font-size: 14.5px; color: #111827; }
+.callout p { margin: 4px 0; }
+.callout.risk { border-left-color: #b91c1c; background: #fef6f6; }
+.callout.warn { border-left-color: var(--open); background: #fffaf5; }
+.callout.note { border-left-color: #6b7280; background: #f8f9fa; }
+
+/* 數字摘要 */
+.hero { display: flex; align-items: baseline; gap: 14px; margin: 6px 0 4px; }
+.hero .num { font-size: 56px; font-weight: 600; line-height: 1; color: #111827; }
+.hero .unit { font-size: 20px; font-weight: 600; color: #111827; }
+.hero .what { font-size: 15px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.t-label { font-size: 13px; color: var(--ink-3); }
+.t-value { font-size: 26px; font-weight: 600; color: #111827; line-height: 1.35; }
+.t-sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 驗收覆蓋分段條：高 28px、段與段之間 2px 間隙 */
+figure.cover { margin: 8px 0 22px; }
+figure.cover figcaption { font-size: 13.5px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+.bar { display: flex; gap: 2px; height: 28px; }
+.seg { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; min-width: 2px; overflow: visible; white-space: nowrap; }
+.seg:focus { outline: 2px solid #111827; outline-offset: 1px; }
+.seg-done { background: var(--done); color: #fff; }
+.seg-partial { background: var(--partial); color: #fff; }
+.seg-todo { background: #e5e7eb; color: #374151; }
+.bar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.sw-done { background: var(--done); } .sw-partial { background: var(--partial); } .sw-todo { background: #e5e7eb; border: 1px solid #c4c9d1; }
+
+/* 圖例 */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px 28px; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; background: #fbfcfd; margin: 12px 0 18px; }
+.legend ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.legend li { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13.5px; }
+.legend li .st, .legend li .cl, .legend li .dt { min-width: 96px; text-align: center; }
+
+/* 架構圖 */
+figure.diagram { margin: 14px 0 22px; }
+figure.diagram a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: zoom-in; background: #fff; }
+figure.diagram img { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 12px 0; }
+.thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; display: block; }
+.thumb img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+.thumb div { padding: 8px 12px; font-size: 13.5px; }
+.thumb strong { display: block; color: #111827; }
+
+/* 放大檢視 */
+.zoom { position: fixed; inset: 0; z-index: 50; background: rgba(17, 24, 39, .82); display: flex; flex-direction: column; }
+.zoom[hidden] { display: none; }
+.zoom-bar { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; padding: 8px 16px; font-size: 13px; }
+.zoom-bar button { font: inherit; background: #fff; color: #111827; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+.zoom-body { flex: 1; overflow: auto; padding: 0 16px 16px; }
+.zoom-body img { display: block; max-width: none; background: #fff; border-radius: 4px; }
+
+@media (max-width: 1000px) {
+  .wrap { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .doc { padding: 20px; }
+  .item dl { grid-template-columns: 1fr; }
+}
+@media print {
+  .top, .side, .filter, .zoom { display: none !important; }
+  .wrap { display: block; }
+  .doc { padding: 0; }
+  body { background: #fff; font-size: 12px; }
+  .page { break-before: page; }
+  .item, tr { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">電費單與租金管理系統<span>規格文件</span></div><div class="meta">v0.1 盤點版 · 2026-11-12 · 以 energy-ops-rust 為主</div></header>
+<div class="wrap">
+<nav class="side" aria-label="文件目錄"><div class="nav-sec"><div class="nav-h">首頁</div><ul><li><a href="../index.html">首頁</a></li></ul></div><div class="nav-sec"><div class="nav-h">00 總覽</div><ul><li><a href="../00-%E7%B8%BD%E8%A6%BD/01-%E5%B0%88%E6%A1%88%E6%91%98%E8%A6%81.html">專案摘要</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/02-%E8%A6%8F%E6%A0%BC%E4%BE%86%E6%BA%90%E8%88%87%E4%B8%96%E4%BB%A3.html">規格來源與世代</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/03-%E5%9C%96%E4%BE%8B%E8%88%87%E7%B7%A8%E8%99%9F%E8%A6%8F%E5%89%87.html">圖例與編號規則</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/04-%E5%90%8D%E8%A9%9E%E8%A1%A8.html">名詞表</a></li></ul></div><div class="nav-sec"><div class="nav-h">10 架構（全局→細節）</div><ul><li><a href="../10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">A0 系統情境</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A1-%E6%A5%AD%E5%8B%99%E6%B5%81%E7%A8%8B.html">A1 業務流程全景</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A2-%E9%83%A8%E7%BD%B2%E8%88%87%E5%AE%B9%E5%99%A8.html">A2 部署與容器</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A3-%E6%87%89%E7%94%A8%E5%85%83%E4%BB%B6.html">A3 應用元件</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A4-%E8%B3%87%E6%96%99%E6%A8%A1%E5%9E%8B.html">A4 資料模型</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A5-%E9%9B%BB%E8%B2%BB%E5%96%AE%E8%99%95%E7%90%86.html">A5 電費單處理細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A6-%E7%A7%9F%E9%87%91%E8%88%87%E8%B3%87%E7%94%A2.html">A6 租金與資產細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A7-%E7%B0%BD%E6%A0%B8%E5%88%86%E5%B7%A5.html">A7 簽核分工（決策點）</a></li></ul></div><div class="nav-sec"><div class="nav-h">20 驗收</div><ul><li><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></li></ul></div><div class="nav-sec"><div class="nav-h">30 需求</div><ul><li><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></li></ul></div><div class="nav-sec"><div class="nav-h">40 清冊</div><ul><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分三批）</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">決策紀錄</a></li><li class="on"><a href="../40-%E6%B8%85%E5%86%8A/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E6%AF%94%E5%B0%8D%E7%B4%80%E9%8C%84.html">程式碼比對紀錄</a></li></ul></div></nav>
+<main class="doc">
+<div class="crumb">40 清冊</div><h1>程式碼比對紀錄</h1>
+<p class="lead">2026-11-12 對三個 repo 執行遠端抓取並比對，確認有沒有尚未納入 energy-ops-rust 的新程式碼。</p>
+<p class="muted">方法：energy-ops-rust、az repo 以 git fetch／ls-remote 比對分支頭；App 5 以本機保存的 repo 帳密（只在指令中讀取，不寫入設定、不輸出）執行 ls-remote。比對 Rust 版的部分是靜態閱讀程式碼，尚未實測。</p><h2>遠端抓取結果（2026-11-12）</h2><div class="tbl"><table class="reg"><thead><tr><th style="width:200px">對象</th><th style="width:190px">遠端</th><th>本機</th><th>遠端最新</th><th>結果</th></tr></thead><tbody>
+<tr><td>energy-ops-rust</td><td><code>github.com/xtforgame/energy-ops-rust</code></td><td>master＝rust-port＝cf7a330</td><td>master＝rust-port＝cf7a330</td><td>沒有新提交</td></tr>
+<tr><td>az-fullstack-sequelize</td><td><code>origin（for-candidate）</code></td><td>feat-energy-ops-next 908a1545ee；feat-tenant-console-route-transition 0afe402aba</td><td>相同</td><td>沒有新提交；遠端另有 feat-rust-ontology-poc、try-rust，與能源無關</td></tr>
+<tr><td>App 5（potted-dev-team/workspaces/5-2fv26mb84qh6）</td><td><code>vaxal.io/git/apps/5.git</code></td><td>main 85631c6</td><td>main 85631c6；fix/local-workflow-docker-20261019 8c99fe2</td><td>main 沒有新提交；修正分支（2 個提交）未併入 main，也未被 Rust 版移植</td></tr>
+<tr><td>離線安裝包打包程式</td><td><code>—</code></td><td>本機與上述 repo 都找不到</td><td>—</td><td>來源待確認（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-09">Q-09</a>）</td></tr>
+</tbody></table></div><h2>App 5 未併修正分支 對 energy-ops-rust</h2><p>App 5 的 <code>fix/local-workflow-docker-20261019</code> 分支（56894ad「修正多流程權限、原檔存取與退回操作」、8c99fe2 本地 Docker 驗證紀錄）是在 Rust 版移植之後才出現的修正，沒有被移植。以下逐項比對 Rust 版是否有同樣的問題。</p><div class="tbl"><table class="reg"><thead><tr><th style="width:32px">#</th><th style="width:180px">問題</th><th>App 5 的修法</th><th>energy-ops-rust 現況</th><th style="width:130px">判定</th><th style="width:200px">證據</th></tr></thead><tbody>
+<tr><td>1</td><td>同一張單同時有核可與開票兩條流程時，退回承辦後仍不能編輯</td><td>GET／PATCH 接受 executionId，前端傳入所在待辦的流程</td><td>單據模式取該單「最新的一條」流程（ORDER BY id DESC LIMIT 1），沒有 executionId 參數</td><td><span class="verdict v-bad">高度疑似同樣問題</span></td><td><code>crates/eo-energy/src/workflow/mode.rs</code></td></tr>
+<tr><td>2</td><td>原檔在不同角色間忽然看不到</td><td>附件歸屬保留第一次；同單原檔可跨同單流程共享</td><td>把原檔接到流程時直接覆寫 execution_id；流程附件清單只列 execution_id 相符者；下載只檢查該流程的可視度</td><td><span class="verdict v-bad">高度疑似同樣問題</span></td><td><code>crates/eo-energy/src/attachments/service.rs（link_to_execution、list_for_execution）、handlers.rs</code></td></tr>
+<tr><td>3</td><td>退回理由沒有顯示，或重送後仍顯示</td><td>改以 task 找 execution；重送後不再列為退回；同一待辦不重複出現在兩區</td><td>已改以 task 找 execution（修好「永遠是空的」）；沒有「重送後失效」與跨區去重</td><td><span class="verdict v-mid">部分修好；疑似殘留舊理由</span></td><td><code>crates/eo-energy/src/workbench/mod.rs（sent_back_rows）</code></td></tr>
+<tr><td>4</td><td>未認領就按核准而失敗</td><td>未認領列改成「查看並認領」</td><td>工作台已把認領移到抽屜，列上只有已認領者能直接處理</td><td><span class="verdict v-ok">已有同等處理（待實測）</span></td><td><code>web/.../energyOps/WorkbenchPage.tsx</code></td></tr>
+<tr><td>5</td><td>單據金額與租金應付混淆</td><td>標示「單據金額」與「計算應付金額」並加說明</td><td>沒有區分的標籤</td><td><span class="verdict v-mid">疑似未修（文案）</span></td><td><code>web/src/admin/i18n/zh-tw.ts</code></td></tr>
+<tr><td>6</td><td>換單時短暫出現上一張原檔</td><td>切換附件時先清除舊 Blob、圖片網址與 MIME</td><td>只有在沒有附件時才清除；換附件時舊檔仍顯示到新檔載入完成</td><td><span class="verdict v-bad">疑似同樣問題</span></td><td><code>web/.../energyOps/shared.tsx</code></td></tr>
+</tbody></table></div><h2>範例電費單與現有測試範本</h2>
+<p>使用者這次提供的 8 份範例電費單中，4 份與 energy-ops-rust 測試用的範本完全相同（sha256 一致），另外 4 份是新樣態，辨識尚未驗證。</p>
+<div class="tbl"><table class="reg"><thead><tr><th>範例電費單</th><th style="width:170px">sha256（前 16 碼）</th><th>與現有範本</th></tr></thead><tbody>
+<tr><td>電費單樣態_1（有餘電需開發票）</td><td><code>bdb4305e73254df2</code></td><td>相同（電費單(有餘電需開發票).pdf）</td></tr>
+<tr><td>電費單樣態_2（無餘電，含電表租費及設備發電使用電費）</td><td><code>7a910cdb145d1de3</code></td><td><span class="st st-todo">新樣態</span></td></tr>
+<tr><td>電費單樣態_3（無餘電需付款）</td><td><code>388982ae35824bde</code></td><td>相同（電費單(無餘電需付款).pdf）</td></tr>
+<tr><td>電費單樣態_4（電表租費有退款情形）</td><td><code>bcfcb4b930e9e9a4</code></td><td><span class="st st-todo">新樣態</span>（掃描影本，有手寫註記）</td></tr>
+<tr><td>電費單樣態_5（電表租費有補收款情形）</td><td><code>fc88fb66382a4935</code></td><td><span class="st st-todo">新樣態</span></td></tr>
+<tr><td>逆變器電費單樣態_1（含電表租費＆設備發電使用電費）</td><td><code>037a2a7d3b170fa5</code></td><td>相同</td></tr>
+<tr><td>逆變器電費單樣態_2（含電表租費＆監控及攝影機使用電費）</td><td><code>f26f8db41b1759d9</code></td><td><span class="st st-todo">新樣態</span></td></tr>
+<tr><td>逆變器電費單樣態_3（僅設備發電使用電費）</td><td><code>2fea70b3e8a2f947</code></td><td>相同</td></tr>
+</tbody></table></div>
+<h2>其他觀察</h2>
+<ul>
+<li>az repo 遠端另有 <code>feat-rust-ontology-poc</code>（Object Explorer 示範）與 <code>try-rust</code>（暫存），與能源業務無關。</li>
+<li>離線安裝包的打包程式在本機與 GitHub 都找不到；若在另一台電腦，建議推上 energy-ops-rust（Q-09）。</li>
+</ul>
+<footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
+</main>
+</div>
+<div class="zoom" hidden><div class="zoom-bar"><span>拖曳或捲動檢視，按 Esc 關閉</span><button type="button" data-zoom-close>關閉</button></div><div class="zoom-body"><img alt=""></div></div>
+<script>// 規格文件的少量互動：架構圖放大檢視、表格關鍵字篩選。沒有外部相依，離線可用。
+(function () {
+  var zoom = document.querySelector('.zoom');
+  var zimg = zoom && zoom.querySelector('img');
+  function close() { if (zoom) { zoom.hidden = true; zimg.removeAttribute('src'); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-zoom]');
+    if (a && zoom) {
+      e.preventDefault();
+      zimg.src = a.getAttribute('href');
+      zimg.alt = (a.querySelector('img') || {}).alt || '';
+      zoom.hidden = false;
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-zoom-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+  document.querySelectorAll('input[data-filter]').forEach(function (input) {
+    var box = input.closest('.filter').nextElementSibling;
+    var rows = box ? box.querySelectorAll('tbody tr') : [];
+    input.addEventListener('input', function () {
+      var q = input.value.trim().toLowerCase();
+      rows.forEach(function (tr) {
+        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

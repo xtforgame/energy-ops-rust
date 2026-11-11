@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="docs/spec/tools/build.mjs">
+<title>需求總表與使用者故事｜電費單與租金管理系統 規格文件</title>
+<style>/* 規格文件的樣式。狀態顏色與 tools/lib.mjs 的 IMPL／CLAR 同一組，圖與網頁看起來是同一套。 */
+:root {
+  --ink: #1f2937; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e3e7ed; --line-2: #cfd6df;
+  --bg: #f4f6f8; --paper: #ffffff; --navy: #1f2a44; --navy-2: #2c3b5e; --accent: #1f3a5f;
+  --open: #c2410c; --open-bg: #fff7ed;
+  --done: #2f6b41; --done-bg: #e3f1e6; --done-ink: #1e5631;
+  --partial: #b7791f; --partial-bg: #fff1cc; --partial-ink: #6b4508;
+  --todo: #6b7280; --todo-bg: #ffffff; --todo-ink: #374151;
+  --beyond: #3a5f8a; --beyond-bg: #e2ebf6; --beyond-ink: #1b3150;
+  --external: #5b4a96; --external-bg: #eee9f7; --external-ink: #2a2150;
+  --dropped: #a3a3a3; --dropped-bg: #f1f1f1; --dropped-ink: #5f5f5f;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.7 "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 12.5px; color: #374151; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; word-break: break-all; }
+
+/* 版面 */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--navy); color: #fff; padding: 10px 24px; border-bottom: 3px solid var(--navy-2); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+.brand span { font-weight: 400; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); color: #d6deeb; }
+.top .meta { font-size: 12.5px; color: #c7d0de; }
+.wrap { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 0; max-width: 1480px; margin: 0 auto; }
+.side { position: sticky; top: 50px; align-self: start; height: calc(100vh - 50px); overflow: auto; padding: 20px 14px 40px 20px; border-right: 1px solid var(--line); background: #fbfcfd; }
+.nav-sec { margin-bottom: 16px; }
+.nav-h { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 6px; }
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 4px 10px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.5; border-radius: 0 4px 4px 0; }
+.side li a:hover { background: #eef2f7; }
+.side li.on a { border-left-color: var(--accent); background: #e8eef6; font-weight: 600; }
+.doc { min-width: 0; background: var(--paper); padding: 28px 40px 48px; border-left: 0; }
+.page + .page { margin-top: 56px; padding-top: 32px; border-top: 4px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--ink-3); margin-bottom: 2px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; color: #111827; }
+h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: #111827; }
+h3 { font-size: 16px; margin: 0; }
+h4 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); }
+p { margin: 8px 0 12px; }
+.lead { font-size: 16px; color: var(--ink-2); max-width: 980px; }
+.muted { color: var(--ink-3); }
+.warn-text { color: var(--open); font-weight: 600; }
+.foot { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+ul.points li, ul.qlist li { margin: 6px 0; }
+
+/* 狀態標籤：文字＋底色＋邊框，不靠顏色單獨表達 */
+.st, .cl, .dt, .tag, .by, .verdict { display: inline-block; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; border: 1px solid; vertical-align: 1px; }
+.st-done { color: var(--done-ink); background: var(--done-bg); border-color: var(--done); }
+.st-partial { color: var(--partial-ink); background: var(--partial-bg); border-color: var(--partial); }
+.st-todo { color: var(--todo-ink); background: var(--todo-bg); border-color: var(--todo); }
+.st-beyond { color: var(--beyond-ink); background: var(--beyond-bg); border-color: var(--beyond); }
+.st-external { color: var(--external-ink); background: var(--external-bg); border-color: var(--external); }
+.st-dropped { color: var(--dropped-ink); background: var(--dropped-bg); border-color: var(--dropped); }
+.cl { background: #fff; color: #374151; }
+.cl-confirmed { border: 1px solid #4b5563; }
+.cl-assumed { border: 1.5px dashed #4b5563; }
+.cl-open { border: 2px dotted var(--open); color: var(--open); background: var(--open-bg); line-height: 18px; }
+.dt-mock { color: #374151; border-color: #6b7280; background: repeating-linear-gradient(45deg, #f3f4f6 0 4px, #e5e7eb 4px 8px); }
+.dt-uncertain { color: #92400e; border-color: #b45309; background: #fef3c7; }
+.tag { color: #374151; border-color: #9ca3af; background: #f3f4f6; font-weight: 500; }
+.by { font-weight: 500; }
+.by-user { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.by-contract { color: var(--beyond-ink); border-color: var(--beyond); background: var(--beyond-bg); }
+.by-proxy { color: var(--open); border-color: var(--open); background: var(--open-bg); }
+.by-doc, .by-client { color: #374151; border-color: #9ca3af; background: #f3f4f6; }
+.verdict.v-bad { color: #991b1b; border-color: #b91c1c; background: #fef2f2; }
+.verdict.v-mid { color: var(--partial-ink); border-color: var(--partial); background: var(--partial-bg); }
+.verdict.v-ok { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.ref { font-family: var(--mono); font-size: 12px; padding: 0 5px; border: 1px solid #cbd5e1; border-radius: 3px; background: #f8fafc; color: var(--accent); text-decoration: none; white-space: nowrap; line-height: 18px; display: inline-block; }
+a.ref:hover { border-color: var(--accent); }
+.ref-q { color: var(--open); border-color: #f0b48f; background: var(--open-bg); }
+
+/* 表格 */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 18px; }
+table.reg { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.6; }
+table.reg th { position: sticky; top: 0; background: #eef1f5; color: #374151; text-align: left; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.reg td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+table.reg tbody tr:nth-child(even) td { background: #fafbfc; }
+table.reg tbody tr:target td { background: #fff7ed; }
+table.reg.compact td { padding: 6px 10px; }
+.where { margin-top: 4px; }
+.filter { margin: 10px 0 0; }
+.filter input { font: inherit; font-size: 14px; padding: 5px 10px; width: 320px; max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+
+/* 逐項卡片（驗收項、問題） */
+.item { border: 1px solid var(--line); border-radius: 6px; margin: 14px 0; background: #fff; }
+.item:target { outline: 3px solid #f0b48f; }
+.item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.item-id { font-family: var(--mono); font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 3px; }
+.q-id { background: var(--open); }
+.item-area { font-size: 12.5px; color: var(--ink-3); }
+.item .badges { margin-left: auto; display: flex; gap: 6px; }
+.item dl { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 0; margin: 0; }
+.item dt { padding: 8px 14px; color: var(--ink-2); font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--line); background: #fcfcfd; }
+.item dd { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.item dl > dt:first-child, .item dl > dt:first-child + dd { border-top: 0; }
+.item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
+.item dd.answer { color: var(--ink-3); }
+.q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+
+/* 提示框 */
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+.callout h4 { margin: 0 0 4px; font-size: 14.5px; color: #111827; }
+.callout p { margin: 4px 0; }
+.callout.risk { border-left-color: #b91c1c; background: #fef6f6; }
+.callout.warn { border-left-color: var(--open); background: #fffaf5; }
+.callout.note { border-left-color: #6b7280; background: #f8f9fa; }
+
+/* 數字摘要 */
+.hero { display: flex; align-items: baseline; gap: 14px; margin: 6px 0 4px; }
+.hero .num { font-size: 56px; font-weight: 600; line-height: 1; color: #111827; }
+.hero .unit { font-size: 20px; font-weight: 600; color: #111827; }
+.hero .what { font-size: 15px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.t-label { font-size: 13px; color: var(--ink-3); }
+.t-value { font-size: 26px; font-weight: 600; color: #111827; line-height: 1.35; }
+.t-sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 驗收覆蓋分段條：高 28px、段與段之間 2px 間隙 */
+figure.cover { margin: 8px 0 22px; }
+figure.cover figcaption { font-size: 13.5px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+.bar { display: flex; gap: 2px; height: 28px; }
+.seg { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; min-width: 2px; overflow: visible; white-space: nowrap; }
+.seg:focus { outline: 2px solid #111827; outline-offset: 1px; }
+.seg-done { background: var(--done); color: #fff; }
+.seg-partial { background: var(--partial); color: #fff; }
+.seg-todo { background: #e5e7eb; color: #374151; }
+.bar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.sw-done { background: var(--done); } .sw-partial { background: var(--partial); } .sw-todo { background: #e5e7eb; border: 1px solid #c4c9d1; }
+
+/* 圖例 */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px 28px; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; background: #fbfcfd; margin: 12px 0 18px; }
+.legend ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.legend li { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13.5px; }
+.legend li .st, .legend li .cl, .legend li .dt { min-width: 96px; text-align: center; }
+
+/* 架構圖 */
+figure.diagram { margin: 14px 0 22px; }
+figure.diagram a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: zoom-in; background: #fff; }
+figure.diagram img { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 12px 0; }
+.thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; display: block; }
+.thumb img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+.thumb div { padding: 8px 12px; font-size: 13.5px; }
+.thumb strong { display: block; color: #111827; }
+
+/* 放大檢視 */
+.zoom { position: fixed; inset: 0; z-index: 50; background: rgba(17, 24, 39, .82); display: flex; flex-direction: column; }
+.zoom[hidden] { display: none; }
+.zoom-bar { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; padding: 8px 16px; font-size: 13px; }
+.zoom-bar button { font: inherit; background: #fff; color: #111827; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+.zoom-body { flex: 1; overflow: auto; padding: 0 16px 16px; }
+.zoom-body img { display: block; max-width: none; background: #fff; border-radius: 4px; }
+
+@media (max-width: 1000px) {
+  .wrap { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .doc { padding: 20px; }
+  .item dl { grid-template-columns: 1fr; }
+}
+@media print {
+  .top, .side, .filter, .zoom { display: none !important; }
+  .wrap { display: block; }
+  .doc { padding: 0; }
+  body { background: #fff; font-size: 12px; }
+  .page { break-before: page; }
+  .item, tr { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">電費單與租金管理系統<span>規格文件</span></div><div class="meta">v0.1 盤點版 · 2026-11-12 · 以 energy-ops-rust 為主</div></header>
+<div class="wrap">
+<nav class="side" aria-label="文件目錄"><div class="nav-sec"><div class="nav-h">首頁</div><ul><li><a href="../index.html">首頁</a></li></ul></div><div class="nav-sec"><div class="nav-h">00 總覽</div><ul><li><a href="../00-%E7%B8%BD%E8%A6%BD/01-%E5%B0%88%E6%A1%88%E6%91%98%E8%A6%81.html">專案摘要</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/02-%E8%A6%8F%E6%A0%BC%E4%BE%86%E6%BA%90%E8%88%87%E4%B8%96%E4%BB%A3.html">規格來源與世代</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/03-%E5%9C%96%E4%BE%8B%E8%88%87%E7%B7%A8%E8%99%9F%E8%A6%8F%E5%89%87.html">圖例與編號規則</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/04-%E5%90%8D%E8%A9%9E%E8%A1%A8.html">名詞表</a></li></ul></div><div class="nav-sec"><div class="nav-h">10 架構（全局→細節）</div><ul><li><a href="../10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">A0 系統情境</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A1-%E6%A5%AD%E5%8B%99%E6%B5%81%E7%A8%8B.html">A1 業務流程全景</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A2-%E9%83%A8%E7%BD%B2%E8%88%87%E5%AE%B9%E5%99%A8.html">A2 部署與容器</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A3-%E6%87%89%E7%94%A8%E5%85%83%E4%BB%B6.html">A3 應用元件</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A4-%E8%B3%87%E6%96%99%E6%A8%A1%E5%9E%8B.html">A4 資料模型</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A5-%E9%9B%BB%E8%B2%BB%E5%96%AE%E8%99%95%E7%90%86.html">A5 電費單處理細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A6-%E7%A7%9F%E9%87%91%E8%88%87%E8%B3%87%E7%94%A2.html">A6 租金與資產細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A7-%E7%B0%BD%E6%A0%B8%E5%88%86%E5%B7%A5.html">A7 簽核分工（決策點）</a></li></ul></div><div class="nav-sec"><div class="nav-h">20 驗收</div><ul><li><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></li></ul></div><div class="nav-sec"><div class="nav-h">30 需求</div><ul><li class="on"><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></li></ul></div><div class="nav-sec"><div class="nav-h">40 清冊</div><ul><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分三批）</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">決策紀錄</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E6%AF%94%E5%B0%8D%E7%B4%80%E9%8C%84.html">程式碼比對紀錄</a></li></ul></div></nav>
+<main class="doc">
+<div class="crumb">30 需求</div><h1>需求總表與使用者故事</h1>
+<p class="lead">需求總表 v0.1（2026-11-08）整理自 08/18 與 11/04 的會議轉錄，共 35 條功能需求與 3 條非功能需求。本頁沿用原編號與原表的「確認狀態」，另加上 energy-ops-rust 的現況與對應的合約驗收項。</p>
+<div class="callout warn"><p>原表明註「此為待確認需求，不代表已簽核規格」，且來源轉錄誤辨較多（例如「工潮」疑為「公槽」）。條目文字需與雲豹逐條確認（DATA-13）。</p></div><div class="tiles"><div class="tile"><div class="t-label">功能需求 FR</div><div class="t-value">35 條</div><div class="t-sub">已具備 1、部分具備 11、未實作 23</div></div><div class="tile"><div class="t-label">非功能需求 NFR</div><div class="t-value">3 條</div><div class="t-sub">已具備 1、部分具備 2</div></div><div class="tile"><div class="t-label">原表標示待確認</div><div class="t-value">14 條</div><div class="t-sub">欄位、公式、規則、介接、報表樣式、選配</div></div></div><h2>需求總表（v0.1，2026-11-08）</h2><div class="filter"><label>篩選 <input type="search" placeholder="輸入關鍵字、編號或狀態" data-filter></label></div><div class="tbl"><table class="reg"><thead><tr><th style="width:78px">編號</th><th style="width:96px">模組</th><th>需求說明</th><th style="width:44px">優先</th><th style="width:96px">原表確認狀態</th><th>初步驗收條件</th><th style="width:92px">現況</th><th style="width:110px">對應驗收</th><th>備註</th></tr></thead><tbody>
+<tr id="FR-001"><td><span class="ref">FR-001</span></td><td>案場主檔</td><td>建立案場主檔，記錄案場名稱、電號、公司及相關合約關聯</td><td>高</td><td><span class="muted">已討論</span></td><td>案場主檔可新增、查詢、修改；電號可對應案場</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a></td><td>有案場表但只能看；缺公司（子公司）欄位與維護畫面</td></tr>
+<tr id="FR-002"><td><span class="ref">FR-002</span></td><td>電號對應</td><td>維護一案場多電號及電號對應案場關係</td><td>高</td><td><span class="muted">已討論</span></td><td>匯入電費單後能匹配正確案場</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a></td><td>電號正規化比對已有；一案場只能有一個電號</td></tr>
+<tr id="FR-003"><td><span class="ref">FR-003</span></td><td>台電收件</td><td>從指定電子郵件信箱定期收取台電電費單附件</td><td>高</td><td><span class="muted">已討論</span></td><td>能依可辨識寄件條件收取並保留附件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a></td><td></td></tr>
+<tr id="FR-004"><td><span class="ref">FR-004</span></td><td>天能收件</td><td>從電子郵件收取天能電費單，與台電資料分流</td><td>高</td><td><span class="muted">已討論</span></td><td>台電及天能來源可區分</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B02">B02</a></td><td></td></tr>
+<tr id="FR-005"><td><span class="ref">FR-005</span></td><td>手動上傳</td><td>允許人工上傳台電及天能電費單</td><td>高</td><td><span class="muted">已討論</span></td><td>上傳後可辨識並歸檔</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a></td><td>台電已可；天能不支援；不會歸檔到公槽</td></tr>
+<tr id="FR-006"><td><span class="ref">FR-006</span></td><td>批次匯入</td><td>可批次匯入歷史電費單與既有 Excel 案場資料</td><td>中</td><td><span class="muted">已討論</span></td><td>批次資料可匯入且能追蹤結果</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td><td>電費單可分批上傳（每批 ≤50）；Excel 案場資料匯入沒有</td></tr>
+<tr id="FR-007"><td><span class="ref">FR-007</span></td><td>單據辨識</td><td>辨識電號、計費期間、下次抄表日、金額及電費單既有欄位</td><td>高</td><td><span class="warn-text">欄位待確認</span></td><td>辨識欄位與樣本逐欄比對</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B05">B05</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B06">B06</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B08">B08</a></td><td>台電 4 版型已驗證；天能與新樣態未支援</td></tr>
+<tr id="FR-008"><td><span class="ref">FR-008</span></td><td>單據原檔</td><td>保留原始 PDF／影像及辨識結果供查核</td><td>高</td><td><span class="muted">已討論</span></td><td>可從案場檢索並開啟原始附件</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B10">B10</a></td><td>三層值＋原檔；校對台並排原檔與欄位高亮</td></tr>
+<tr id="FR-009"><td><span class="ref">FR-009</span></td><td>單據異常</td><td>格式變更、缺少附件或辨識失敗時產生警示</td><td>高</td><td><span class="muted">已討論</span></td><td>異常單據顯示待處理狀態</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a></td><td>辨識失敗、認不出、對不上都有狀態與出口；沒有主動警示</td></tr>
+<tr id="FR-010"><td><span class="ref">FR-010</span></td><td>系統通知</td><td>登入系統可看到異常及待處理通知</td><td>高</td><td><span class="muted">驗收確認</span></td><td>具系統內警示功能</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a></td><td>「我的工作」列出待辦；沒有異常通知中心</td></tr>
+<tr id="FR-011"><td><span class="ref">FR-011</span></td><td>Email 警示</td><td>可選擇以 Email 群組發送異常通知</td><td>低</td><td><span class="warn-text">選配待議</span></td><td>需確認寄件帳號及群組</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a></td><td>系統沒有寄信元件</td></tr>
+<tr id="FR-012"><td><span class="ref">FR-012</span></td><td>帳單到期追蹤</td><td>記錄各案場每月應收、實收電費單及漏件狀態</td><td>高</td><td><span class="muted">已討論</span></td><td>可查未收帳單及計費期間</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a></td><td>原設計的 billExpected 未實作</td></tr>
+<tr id="FR-013"><td><span class="ref">FR-013</span></td><td>案場工作歷程</td><td>記錄案場單據、請款、付款及事件的時間軸</td><td>高</td><td><span class="muted">已討論</span></td><td>案場可查看跨流程歷程</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="muted">—</span></td><td>案場詳情可看單據、流程與綁定；請款與付款（EasyFlow）不在系統內</td></tr>
+<tr id="FR-014"><td><span class="ref">FR-014</span></td><td>合約管理</td><td>上傳及關聯案場合約，記錄簽署日、到期日及契約類型</td><td>高</td><td><span class="muted">已討論</span></td><td>案場可檢視合約及有效期限</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td><td>合約表有編號、起訖、階段；沒有上傳、類型、維護畫面</td></tr>
+<tr id="FR-015"><td><span class="ref">FR-015</span></td><td>合約提醒</td><td>依案場設定到期前 6、3、1 個月等提醒</td><td>高</td><td><span class="muted">已討論</span></td><td>到期前依設定產生提醒</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td><td></td></tr>
+<tr id="FR-016"><td><span class="ref">FR-016</span></td><td>租金類型</td><td>支援固定租金、依發電量比例、階段式與特殊標案租金</td><td>高</td><td><span class="warn-text">公式待確認</span></td><td>不同租金類型可配置計算參數</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td><td>有固定、比例、單價三型；沒有階段式與特殊標案</td></tr>
+<tr id="FR-017"><td><span class="ref">FR-017</span></td><td>租金計算</td><td>依電費單發電量及合約參數計算應付地主租金</td><td>高</td><td><span class="warn-text">公式待確認</span></td><td>計算結果與人工樣本一致</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td><td>每張單算一次；實際是每期×合約×地主</td></tr>
+<tr id="FR-018"><td><span class="ref">FR-018</span></td><td>特殊年租</td><td>支援年度計算、參考年租金與保證年租金比較規則</td><td>中</td><td><span class="warn-text">規則待確認</span></td><td>依標案樣本驗證計算結果</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a></td><td></td></tr>
+<tr id="FR-019"><td><span class="ref">FR-019</span></td><td>多地主</td><td>支援一案場對多地主、各別金額及比例分配</td><td>高</td><td><span class="muted">已討論</span></td><td>各地主可獨立記錄應付金額</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a></td><td>應付紀錄未設唯一性，保留了一單多筆的空間</td></tr>
+<tr id="FR-020"><td><span class="ref">FR-020</span></td><td>租約異動</td><td>記錄地主繼承、名單與租金分配變更生效日及歷史版本</td><td>高</td><td><span class="muted">已討論</span></td><td>可追溯任一期間使用的分配版本</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a></td><td>計費策略的效期綁定可借用同一個做法</td></tr>
+<tr id="FR-021"><td><span class="ref">FR-021</span></td><td>付款期限</td><td>依收帳日、發票日、工作天數或指定日期計算付款期限</td><td>高</td><td><span class="warn-text">規則待確認</span></td><td>可依合約觸發期限與提醒</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td><td></td></tr>
+<tr id="FR-022"><td><span class="ref">FR-022</span></td><td>發票類型</td><td>案場可設定先收發票或後補發票</td><td>高</td><td><span class="muted">已討論</span></td><td>兩種流程能正確分流</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td><td></td></tr>
+<tr id="FR-023"><td><span class="ref">FR-023</span></td><td>發票收件</td><td>電子發票可由 Email 匯入；紙本可人工上傳</td><td>高</td><td><span class="muted">已討論</span></td><td>兩種來源可建立發票紀錄</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B15">B15</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td><td></td></tr>
+<tr id="FR-024"><td><span class="ref">FR-024</span></td><td>發票辨識</td><td>電子 PDF 發票比對；手寫發票無法可靠辨識時轉人工確認</td><td>高</td><td><span class="muted">已討論</span></td><td>失敗時可人工補正</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td><td></td></tr>
+<tr id="FR-025"><td><span class="ref">FR-025</span></td><td>發票漏件</td><td>未收到或未上傳發票時提示異常</td><td>高</td><td><span class="muted">已討論</span></td><td>可查待補發票清單</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B15">B15</a></td><td></td></tr>
+<tr id="FR-026"><td><span class="ref">FR-026</span></td><td>付款通知</td><td>產生地主付款通知及相關附件</td><td>高</td><td><span class="muted">已討論</span></td><td>可產出指定格式通知文件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a></td><td></td></tr>
+<tr id="FR-027"><td><span class="ref">FR-027</span></td><td>Outlook 發信</td><td>研究以 Outlook 腳本批次寄送付款通知</td><td>中</td><td><span class="warn-text">技術待驗證</span></td><td>需先驗證腳本與資安限制</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a></td><td></td></tr>
+<tr id="FR-028"><td><span class="ref">FR-028</span></td><td>EIP 付款申請</td><td>組合租金計算表、電費單及發票等附件，建立 EIP 付款申請</td><td>高</td><td><span class="warn-text">介接待確認</span></td><td>可形成付款申請及附件清單</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td>合約用語是 EasyFlow</td></tr>
+<tr id="FR-029"><td><span class="ref">FR-029</span></td><td>付款申請紀錄</td><td>至少保留送出申請日期、單號及送件狀態</td><td>高</td><td><span class="muted">已討論</span></td><td>可判斷已送及未送案件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td></td></tr>
+<tr id="FR-030"><td><span class="ref">FR-030</span></td><td>付款審核追蹤</td><td>依 EIP 單號查詢核准及付款日期；可每日查詢待核准單</td><td>中</td><td><span class="warn-text">介接待確認</span></td><td>狀態能依可存取資料更新</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td></td></tr>
+<tr id="FR-031"><td><span class="ref">FR-031</span></td><td>付款日規則</td><td>支援指定付款日及公司固定週期付款日</td><td>高</td><td><span class="muted">已討論</span></td><td>依核准日與付款類型計算預計付款日</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td><td></td></tr>
+<tr id="FR-032"><td><span class="ref">FR-032</span></td><td>報表查詢</td><td>依案場、期間、公司、付款狀態等條件篩選及產生報表</td><td>高</td><td><span class="warn-text">報表樣式待確認</span></td><td>可查詢並輸出所需資料</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td><td></td></tr>
+<tr id="FR-033"><td><span class="ref">FR-033</span></td><td>履約保證金</td><td>記錄履約保證金餘額、分期返還與提醒</td><td>中</td><td><span class="muted">已討論</span></td><td>可查剩餘保證金及應返還日期</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="muted">—</span></td><td>系統的「保證金請款」是另一件事（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-18">Q-18</a>）</td></tr>
+<tr id="FR-034"><td><span class="ref">FR-034</span></td><td>保險管理</td><td>記錄案場保險與年度續保／證明需求</td><td>中</td><td><span class="muted">已討論</span></td><td>可查保險有效期及待辦</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="muted">—</span></td><td></td></tr>
+<tr id="FR-035"><td><span class="ref">FR-035</span></td><td>既有系統</td><td>整合「工潮」檔案資料及 EIP；無 API 時評估模擬操作</td><td>高</td><td><span class="warn-text">技術待驗證</span></td><td>介接方式經 IT 測試確認</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B12">B12</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B13">B13</a></td><td>「工潮」疑為「公槽」的轉錄誤字</td></tr>
+<tr id="NFR-001"><td><span class="ref">NFR-001</span></td><td>不影響現行流程</td><td>初期以測試環境及測試資料驗證，不干擾既有作業</td><td>高</td><td><span class="muted">已討論</span></td><td>測試期間既有流程正常運作</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="muted">—</span></td><td>離線包可獨立安裝；測試環境與測試資料未定（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-38">Q-38</a>）</td></tr>
+<tr id="NFR-002"><td><span class="ref">NFR-002</span></td><td>環境與權限</td><td>部署於客戶主機，配合內部網路限制與 IT 協作</td><td>高</td><td><span class="warn-text">技術待驗證</span></td><td>系統可於內部網路登入與操作</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#D07">D07</a></td><td>已有離線安裝包；安裝指南只說明主機本機使用（127.0.0.1），內網連線未定</td></tr>
+<tr id="NFR-003"><td><span class="ref">NFR-003</span></td><td>權限管理</td><td>依使用者角色限制通知處理、資料維護及操作權限</td><td>中</td><td><span class="warn-text">細節待確認</span></td><td>不同角色僅可執行授權功能</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td><td>RBAC 完整（遠多於需求）；角色要對應雲豹職務</td></tr>
+</tbody></table></div><h2 id="stories">早期設計的使用者故事（原版設計文件，2026-08）</h2><p>以下是原版設計（2026-08）定義的使用者故事，energy-ops-rust 就是照它們做出來的。對照合約可以看出：多數故事已實作，但其中一半屬於系統內簽核，合約沒有要求。</p><div class="tbl"><table class="reg"><thead><tr><th style="width:64px">編號</th><th style="width:96px">角色</th><th>需求</th><th style="width:96px">現況</th><th>與合約的關係</th></tr></thead><tbody>
+<tr id="US-1"><td><span class="ref">US-1</span></td><td>業務承辦</td><td>上傳電費單，系統自動抽出電號、期間、金額、度數</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td>對應 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a>～<a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B06">B06</a>（部分）</td></tr>
+<tr id="US-2"><td><span class="ref">US-2</span></td><td>業務承辦</td><td>對照辨識值校對最終值後送出</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td>人工覆核；合約未單列</td></tr>
+<tr id="US-3"><td><span class="ref">US-3</span></td><td>業務承辦</td><td>看到經手的單走到哪一關</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>系統內簽核；合約外</td></tr>
+<tr id="US-4"><td><span class="ref">US-4</span></td><td>部門主管</td><td>核准或附理由退回</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>合約的簽核在 EasyFlow（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a>）</td></tr>
+<tr id="US-5"><td><span class="ref">US-5</span></td><td>業務承辦</td><td>電號對不上時人工指認案場</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a> 的例外路徑</td></tr>
+<tr id="US-6"><td><span class="ref">US-6</span></td><td>財務</td><td>看到應付金額與算法（策略版本、參數）</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a>（要改成每期租金）</td></tr>
+<tr id="US-7"><td><span class="ref">US-7</span></td><td>會計</td><td>按「已付款」後不能回退</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>付款在 EasyFlow 與會計；<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a></td></tr>
+<tr id="US-8"><td><span class="ref">US-8</span></td><td>高階主管</td><td>金額超過門檻時加簽</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>EasyFlow 加簽；<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-21">Q-21</a></td></tr>
+<tr id="US-9"><td><span class="ref">US-9</span></td><td>管理員</td><td>流程卡住時強制推進或解除副作用鎖</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>合約外</td></tr>
+<tr id="US-10"><td><span class="ref">US-10</span></td><td>CXO</td><td>核可「中斷」申請</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>合約外</td></tr>
+<tr id="US-11"><td><span class="ref">US-11</span></td><td>稽核／主管</td><td>查誰在什麼時候改了什麼</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a> 操作紀錄</td></tr>
+<tr id="US-12"><td><span class="ref">US-12</span></td><td>主管</td><td>儀表板看本月應收應付、卡關、案場狀態</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td>只有應付；<a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a> 報表</td></tr>
+<tr id="US-13"><td><span class="ref">US-13</span></td><td>業務</td><td>地主頁看到一個地主的所有錢與時間</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td>地主總覽頁唯讀</td></tr>
+<tr id="US-14"><td><span class="ref">US-14</span></td><td>業務承辦</td><td>一次丟多個檔，自動判斷單別後逐筆校對送審</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td>送件頁（手動）；<a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a> 要改成自動收件</td></tr>
+<tr id="US-15"><td><span class="ref">US-15</span></td><td>業務承辦</td><td>被退回時第一眼看到理由與退回人</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>疑似殘留舊理由（見程式碼比對）</td></tr>
+<tr id="US-16"><td><span class="ref">US-16</span></td><td>各角色</td><td>登入後直接落在要做事的那一頁</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td></td></tr>
+<tr id="US-17"><td><span class="ref">US-17</span></td><td>會計</td><td>看到「已放行但未付」並依天數排序</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>付款在 EasyFlow 之後</td></tr>
+<tr id="US-18"><td><span class="ref">US-18</span></td><td>管理員</td><td>看到流程長相與每個節點積了幾張</td><td><span class="st st-beyond" title="實作狀態">合約外既有</span></td><td>選單已隱藏</td></tr>
+<tr id="US-19"><td><span class="ref">US-19</span></td><td>稽核</td><td>從稽核事件跳回實體的當時脈絡</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td></td></tr>
+<tr id="US-20"><td><span class="ref">US-20</span></td><td>稽核／承辦</td><td>查這張單是哪一批、誰、何時送進來</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td>收件時間是 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a> 紀錄單欄位</td></tr>
+<tr id="US-21"><td><span class="ref">US-21</span></td><td>業務</td><td>從任一實體一路點到底（單→案場→地主→合約→策略→應付）</td><td><span class="st st-done" title="實作狀態">已具備</span></td><td></td></tr>
+</tbody></table></div>
+<footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
+</main>
+</div>
+<div class="zoom" hidden><div class="zoom-bar"><span>拖曳或捲動檢視，按 Esc 關閉</span><button type="button" data-zoom-close>關閉</button></div><div class="zoom-body"><img alt=""></div></div>
+<script>// 規格文件的少量互動：架構圖放大檢視、表格關鍵字篩選。沒有外部相依，離線可用。
+(function () {
+  var zoom = document.querySelector('.zoom');
+  var zimg = zoom && zoom.querySelector('img');
+  function close() { if (zoom) { zoom.hidden = true; zimg.removeAttribute('src'); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-zoom]');
+    if (a && zoom) {
+      e.preventDefault();
+      zimg.src = a.getAttribute('href');
+      zimg.alt = (a.querySelector('img') || {}).alt || '';
+      zoom.hidden = false;
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-zoom-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+  document.querySelectorAll('input[data-filter]').forEach(function (input) {
+    var box = input.closest('.filter').nextElementSibling;
+    var rows = box ? box.querySelectorAll('tbody tr') : [];
+    input.addEventListener('input', function () {
+      var q = input.value.trim().toLowerCase();
+      rows.forEach(function (tr) {
+        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

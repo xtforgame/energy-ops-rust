@@ -66,4 +66,5 @@ cd web && npm run e2e:crawlers           # 同第一行
 | `docs/OVERVIEW.md` | **說明文件**（功能、架構、起法、測試、與原版的差異） |
 | `docs/PLAN.md` | 計畫與決定 |
 | `docs/API-ENERGY.md` | 能源 API 契約 |
+| `docs/spec/` | **規格文件系統**（以合約驗收表為基準的盤點：架構圖 A0～A7、驗收對照、需求、待釐清問題、現況與比對清冊）；入口 `docs/spec/index.html`，產生方式見 `docs/spec/README.md` |
 | `PROVENANCE.md` | 規格來源 commit 與 fixture |

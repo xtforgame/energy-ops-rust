@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="docs/spec/tools/build.mjs">
+<title>合約驗收對照表｜電費單與租金管理系統 規格文件</title>
+<style>/* 規格文件的樣式。狀態顏色與 tools/lib.mjs 的 IMPL／CLAR 同一組，圖與網頁看起來是同一套。 */
+:root {
+  --ink: #1f2937; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e3e7ed; --line-2: #cfd6df;
+  --bg: #f4f6f8; --paper: #ffffff; --navy: #1f2a44; --navy-2: #2c3b5e; --accent: #1f3a5f;
+  --open: #c2410c; --open-bg: #fff7ed;
+  --done: #2f6b41; --done-bg: #e3f1e6; --done-ink: #1e5631;
+  --partial: #b7791f; --partial-bg: #fff1cc; --partial-ink: #6b4508;
+  --todo: #6b7280; --todo-bg: #ffffff; --todo-ink: #374151;
+  --beyond: #3a5f8a; --beyond-bg: #e2ebf6; --beyond-ink: #1b3150;
+  --external: #5b4a96; --external-bg: #eee9f7; --external-ink: #2a2150;
+  --dropped: #a3a3a3; --dropped-bg: #f1f1f1; --dropped-ink: #5f5f5f;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.7 "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 12.5px; color: #374151; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; word-break: break-all; }
+
+/* 版面 */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--navy); color: #fff; padding: 10px 24px; border-bottom: 3px solid var(--navy-2); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+.brand span { font-weight: 400; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); color: #d6deeb; }
+.top .meta { font-size: 12.5px; color: #c7d0de; }
+.wrap { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 0; max-width: 1480px; margin: 0 auto; }
+.side { position: sticky; top: 50px; align-self: start; height: calc(100vh - 50px); overflow: auto; padding: 20px 14px 40px 20px; border-right: 1px solid var(--line); background: #fbfcfd; }
+.nav-sec { margin-bottom: 16px; }
+.nav-h { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 6px; }
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 4px 10px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.5; border-radius: 0 4px 4px 0; }
+.side li a:hover { background: #eef2f7; }
+.side li.on a { border-left-color: var(--accent); background: #e8eef6; font-weight: 600; }
+.doc { min-width: 0; background: var(--paper); padding: 28px 40px 48px; border-left: 0; }
+.page + .page { margin-top: 56px; padding-top: 32px; border-top: 4px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--ink-3); margin-bottom: 2px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; color: #111827; }
+h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: #111827; }
+h3 { font-size: 16px; margin: 0; }
+h4 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); }
+p { margin: 8px 0 12px; }
+.lead { font-size: 16px; color: var(--ink-2); max-width: 980px; }
+.muted { color: var(--ink-3); }
+.warn-text { color: var(--open); font-weight: 600; }
+.foot { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+ul.points li, ul.qlist li { margin: 6px 0; }
+
+/* 狀態標籤：文字＋底色＋邊框，不靠顏色單獨表達 */
+.st, .cl, .dt, .tag, .by, .verdict { display: inline-block; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; border: 1px solid; vertical-align: 1px; }
+.st-done { color: var(--done-ink); background: var(--done-bg); border-color: var(--done); }
+.st-partial { color: var(--partial-ink); background: var(--partial-bg); border-color: var(--partial); }
+.st-todo { color: var(--todo-ink); background: var(--todo-bg); border-color: var(--todo); }
+.st-beyond { color: var(--beyond-ink); background: var(--beyond-bg); border-color: var(--beyond); }
+.st-external { color: var(--external-ink); background: var(--external-bg); border-color: var(--external); }
+.st-dropped { color: var(--dropped-ink); background: var(--dropped-bg); border-color: var(--dropped); }
+.cl { background: #fff; color: #374151; }
+.cl-confirmed { border: 1px solid #4b5563; }
+.cl-assumed { border: 1.5px dashed #4b5563; }
+.cl-open { border: 2px dotted var(--open); color: var(--open); background: var(--open-bg); line-height: 18px; }
+.dt-mock { color: #374151; border-color: #6b7280; background: repeating-linear-gradient(45deg, #f3f4f6 0 4px, #e5e7eb 4px 8px); }
+.dt-uncertain { color: #92400e; border-color: #b45309; background: #fef3c7; }
+.tag { color: #374151; border-color: #9ca3af; background: #f3f4f6; font-weight: 500; }
+.by { font-weight: 500; }
+.by-user { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.by-contract { color: var(--beyond-ink); border-color: var(--beyond); background: var(--beyond-bg); }
+.by-proxy { color: var(--open); border-color: var(--open); background: var(--open-bg); }
+.by-doc, .by-client { color: #374151; border-color: #9ca3af; background: #f3f4f6; }
+.verdict.v-bad { color: #991b1b; border-color: #b91c1c; background: #fef2f2; }
+.verdict.v-mid { color: var(--partial-ink); border-color: var(--partial); background: var(--partial-bg); }
+.verdict.v-ok { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.ref { font-family: var(--mono); font-size: 12px; padding: 0 5px; border: 1px solid #cbd5e1; border-radius: 3px; background: #f8fafc; color: var(--accent); text-decoration: none; white-space: nowrap; line-height: 18px; display: inline-block; }
+a.ref:hover { border-color: var(--accent); }
+.ref-q { color: var(--open); border-color: #f0b48f; background: var(--open-bg); }
+
+/* 表格 */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 18px; }
+table.reg { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.6; }
+table.reg th { position: sticky; top: 0; background: #eef1f5; color: #374151; text-align: left; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.reg td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+table.reg tbody tr:nth-child(even) td { background: #fafbfc; }
+table.reg tbody tr:target td { background: #fff7ed; }
+table.reg.compact td { padding: 6px 10px; }
+.where { margin-top: 4px; }
+.filter { margin: 10px 0 0; }
+.filter input { font: inherit; font-size: 14px; padding: 5px 10px; width: 320px; max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+
+/* 逐項卡片（驗收項、問題） */
+.item { border: 1px solid var(--line); border-radius: 6px; margin: 14px 0; background: #fff; }
+.item:target { outline: 3px solid #f0b48f; }
+.item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.item-id { font-family: var(--mono); font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 3px; }
+.q-id { background: var(--open); }
+.item-area { font-size: 12.5px; color: var(--ink-3); }
+.item .badges { margin-left: auto; display: flex; gap: 6px; }
+.item dl { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 0; margin: 0; }
+.item dt { padding: 8px 14px; color: var(--ink-2); font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--line); background: #fcfcfd; }
+.item dd { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.item dl > dt:first-child, .item dl > dt:first-child + dd { border-top: 0; }
+.item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
+.item dd.answer { color: var(--ink-3); }
+.q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+
+/* 提示框 */
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+.callout h4 { margin: 0 0 4px; font-size: 14.5px; color: #111827; }
+.callout p { margin: 4px 0; }
+.callout.risk { border-left-color: #b91c1c; background: #fef6f6; }
+.callout.warn { border-left-color: var(--open); background: #fffaf5; }
+.callout.note { border-left-color: #6b7280; background: #f8f9fa; }
+
+/* 數字摘要 */
+.hero { display: flex; align-items: baseline; gap: 14px; margin: 6px 0 4px; }
+.hero .num { font-size: 56px; font-weight: 600; line-height: 1; color: #111827; }
+.hero .unit { font-size: 20px; font-weight: 600; color: #111827; }
+.hero .what { font-size: 15px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.t-label { font-size: 13px; color: var(--ink-3); }
+.t-value { font-size: 26px; font-weight: 600; color: #111827; line-height: 1.35; }
+.t-sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 驗收覆蓋分段條：高 28px、段與段之間 2px 間隙 */
+figure.cover { margin: 8px 0 22px; }
+figure.cover figcaption { font-size: 13.5px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+.bar { display: flex; gap: 2px; height: 28px; }
+.seg { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; min-width: 2px; overflow: visible; white-space: nowrap; }
+.seg:focus { outline: 2px solid #111827; outline-offset: 1px; }
+.seg-done { background: var(--done); color: #fff; }
+.seg-partial { background: var(--partial); color: #fff; }
+.seg-todo { background: #e5e7eb; color: #374151; }
+.bar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.sw-done { background: var(--done); } .sw-partial { background: var(--partial); } .sw-todo { background: #e5e7eb; border: 1px solid #c4c9d1; }
+
+/* 圖例 */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px 28px; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; background: #fbfcfd; margin: 12px 0 18px; }
+.legend ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.legend li { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13.5px; }
+.legend li .st, .legend li .cl, .legend li .dt { min-width: 96px; text-align: center; }
+
+/* 架構圖 */
+figure.diagram { margin: 14px 0 22px; }
+figure.diagram a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: zoom-in; background: #fff; }
+figure.diagram img { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 12px 0; }
+.thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; display: block; }
+.thumb img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+.thumb div { padding: 8px 12px; font-size: 13.5px; }
+.thumb strong { display: block; color: #111827; }
+
+/* 放大檢視 */
+.zoom { position: fixed; inset: 0; z-index: 50; background: rgba(17, 24, 39, .82); display: flex; flex-direction: column; }
+.zoom[hidden] { display: none; }
+.zoom-bar { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; padding: 8px 16px; font-size: 13px; }
+.zoom-bar button { font: inherit; background: #fff; color: #111827; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+.zoom-body { flex: 1; overflow: auto; padding: 0 16px 16px; }
+.zoom-body img { display: block; max-width: none; background: #fff; border-radius: 4px; }
+
+@media (max-width: 1000px) {
+  .wrap { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .doc { padding: 20px; }
+  .item dl { grid-template-columns: 1fr; }
+}
+@media print {
+  .top, .side, .filter, .zoom { display: none !important; }
+  .wrap { display: block; }
+  .doc { padding: 0; }
+  body { background: #fff; font-size: 12px; }
+  .page { break-before: page; }
+  .item, tr { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">電費單與租金管理系統<span>規格文件</span></div><div class="meta">v0.1 盤點版 · 2026-11-12 · 以 energy-ops-rust 為主</div></header>
+<div class="wrap">
+<nav class="side" aria-label="文件目錄"><div class="nav-sec"><div class="nav-h">首頁</div><ul><li><a href="../index.html">首頁</a></li></ul></div><div class="nav-sec"><div class="nav-h">00 總覽</div><ul><li><a href="../00-%E7%B8%BD%E8%A6%BD/01-%E5%B0%88%E6%A1%88%E6%91%98%E8%A6%81.html">專案摘要</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/02-%E8%A6%8F%E6%A0%BC%E4%BE%86%E6%BA%90%E8%88%87%E4%B8%96%E4%BB%A3.html">規格來源與世代</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/03-%E5%9C%96%E4%BE%8B%E8%88%87%E7%B7%A8%E8%99%9F%E8%A6%8F%E5%89%87.html">圖例與編號規則</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/04-%E5%90%8D%E8%A9%9E%E8%A1%A8.html">名詞表</a></li></ul></div><div class="nav-sec"><div class="nav-h">10 架構（全局→細節）</div><ul><li><a href="../10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">A0 系統情境</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A1-%E6%A5%AD%E5%8B%99%E6%B5%81%E7%A8%8B.html">A1 業務流程全景</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A2-%E9%83%A8%E7%BD%B2%E8%88%87%E5%AE%B9%E5%99%A8.html">A2 部署與容器</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A3-%E6%87%89%E7%94%A8%E5%85%83%E4%BB%B6.html">A3 應用元件</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A4-%E8%B3%87%E6%96%99%E6%A8%A1%E5%9E%8B.html">A4 資料模型</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A5-%E9%9B%BB%E8%B2%BB%E5%96%AE%E8%99%95%E7%90%86.html">A5 電費單處理細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A6-%E7%A7%9F%E9%87%91%E8%88%87%E8%B3%87%E7%94%A2.html">A6 租金與資產細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A7-%E7%B0%BD%E6%A0%B8%E5%88%86%E5%B7%A5.html">A7 簽核分工（決策點）</a></li></ul></div><div class="nav-sec"><div class="nav-h">20 驗收</div><ul><li class="on"><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></li></ul></div><div class="nav-sec"><div class="nav-h">30 需求</div><ul><li><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></li></ul></div><div class="nav-sec"><div class="nav-h">40 清冊</div><ul><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分三批）</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">決策紀錄</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E6%AF%94%E5%B0%8D%E7%B4%80%E9%8C%84.html">程式碼比對紀錄</a></li></ul></div></nav>
+<main class="doc">
+<div class="crumb">20 驗收</div><h1>合約驗收對照表</h1>
+<p class="lead">合約附件一的每一個驗收項，對照 energy-ops-rust 的現況：合約原文、現在有什麼、缺什麼、怎麼驗收（草案）、對應哪些需求、還有哪些問題沒答。</p>
+<div class="callout note"><p>驗收程序（合約第三條）：完成建置與教育訓練後通知乙方驗收；不符驗收準則者，甲方於收到通知翌日起 7 日內改善並重新提交。附件一的勾選欄只有「合格／不合格」，判定方法需雙方另行約定（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-03">Q-03</a>）。各項「驗收方法」均為草案。</p></div>
+<p class="muted">「備註」欄的「整併版對照」是雲豹提供的驗收對照表（電費單掃描資料庫欄位與合約驗收對照_整併版）對需求覆蓋的判斷，與本文件的實作判定是兩件事。</p><div class="tiles"><div class="tile"><div class="t-label">表一　電費單</div><div class="t-value">15 項</div><div class="t-sub">部分具備 3、未實作 12</div></div><div class="tile"><div class="t-label">表二　租金</div><div class="t-value">8 項</div><div class="t-sub">部分具備 2、未實作 6</div></div><div class="tile"><div class="t-label">交付與義務</div><div class="t-value">8 項</div><div class="t-sub">部分具備 4、未實作 4</div></div></div><figure class="cover"><figcaption>表一＋表二驗收項的實作覆蓋（共 23 項）</figcaption><div class="bar" role="img" aria-label="表一＋表二驗收項的實作覆蓋：已具備 0 項、部分具備 5 項、未實作 18 項"><div class="seg seg-partial" style="flex:5" tabindex="0" title="部分具備：5 項（22%）" aria-label="部分具備 5 項，占 22%"><span>部分具備 5</span></div><div class="seg seg-todo" style="flex:18" tabindex="0" title="未實作：18 項（78%）" aria-label="未實作 18 項，占 78%"><span>未實作 18</span></div></div><ul class="bar-legend"><li><i class="sw sw-done"></i>已具備 0</li><li><i class="sw sw-partial"></i>部分具備 5</li><li><i class="sw sw-todo"></i>未實作 18</li></ul></figure><h2 id="summary">總覽</h2><div class="tbl"><table class="reg compact"><thead><tr><th style="width:64px">編號</th><th>項目</th><th style="width:96px">實作</th><th style="width:84px">釐清</th><th style="width:150px">待釐清問題</th></tr></thead><tbody>
+<tr><td><a class="ref" href="#B01">B01</a></td><td>表一｜台電電費單收件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-14">Q-14</a></td></tr>
+<tr><td><a class="ref" href="#B02">B02</a></td><td>表一｜天能電費單收件</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a></td></tr>
+<tr><td><a class="ref" href="#B03">B03</a></td><td>表一｜警示系統（未收到電費單）</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-16">Q-16</a></td></tr>
+<tr><td><a class="ref" href="#B04">B04</a></td><td>表一｜電號→案場、持有公司、台電區處</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-17">Q-17</a></td></tr>
+<tr><td><a class="ref" href="#B05">B05</a></td><td>表一｜費用欄位與發票 BBR 號碼</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></td></tr>
+<tr><td><a class="ref" href="#B06">B06</a></td><td>表一｜計費期間與下次抄表日</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></td></tr>
+<tr><td><a class="ref" href="#B07">B07</a></td><td>表一｜天能轉供單：電號→案場、持有公司、計費期間</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></td></tr>
+<tr><td><a class="ref" href="#B08">B08</a></td><td>表一｜天能轉供單：購電電費、營業稅</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></td></tr>
+<tr><td><a class="ref" href="#B09">B09</a></td><td>表一｜電費紀錄單內容</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></td></tr>
+<tr><td><a class="ref" href="#B10">B10</a></td><td>表一｜電費紀錄單存檔</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></td></tr>
+<tr><td><a class="ref" href="#B11">B11</a></td><td>表一｜EasyFlow 付款申請單</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a></td></tr>
+<tr><td><a class="ref" href="#B12">B12</a></td><td>表一｜EasyFlow 發票開立申請單（台電）</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a></td></tr>
+<tr><td><a class="ref" href="#B13">B13</a></td><td>表一｜EasyFlow 發票開立申請單（天能）</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a></td></tr>
+<tr><td><a class="ref" href="#B14">B14</a></td><td>表一｜已開發票自動收件存檔</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a></td></tr>
+<tr><td><a class="ref" href="#B15">B15</a></td><td>表一｜回寫發票開立日期</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></td></tr>
+<tr><td><a class="ref" href="#R01">R01</a></td><td>表二｜通用租金計算表</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a></td></tr>
+<tr><td><a class="ref" href="#R02">R02</a></td><td>表二｜依合約付款期程產出租金計算表</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-24">Q-24</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a></td></tr>
+<tr><td><a class="ref" href="#R03">R03</a></td><td>表二｜付款通知產出</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-19">Q-19</a></td></tr>
+<tr><td><a class="ref" href="#R04">R04</a></td><td>表二｜發票上傳及存檔（先附／後補，未收提醒）</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-23">Q-23</a></td></tr>
+<tr><td><a class="ref" href="#R05">R05</a></td><td>表二｜資產管理表匯入、查詢、修正、匯出、操作紀錄、權限</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-02">Q-02</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-29">Q-29</a></td></tr>
+<tr><td><a class="ref" href="#R06">R06</a></td><td>表二｜合約到期及待辦提醒</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-25">Q-25</a></td></tr>
+<tr><td><a class="ref" href="#R07">R07</a></td><td>表二｜相關報表產出</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-26">Q-26</a></td></tr>
+<tr><td><a class="ref" href="#R08">R08</a></td><td>表二｜租金付款申請單</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-20">Q-20</a></td></tr>
+<tr><td><a class="ref" href="#D01">D01</a></td><td>交付｜完成建置並驗收合格的期限</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-01">Q-01</a></td></tr>
+<tr><td><a class="ref" href="#D02">D02</a></td><td>交付｜一週訓練課程</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></td></tr>
+<tr><td><a class="ref" href="#D03">D03</a></td><td>交付｜使用手冊（安裝、功能說明、錯誤排除）</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></td></tr>
+<tr><td><a class="ref" href="#D04">D04</a></td><td>交付｜原始碼、範例、投影片（PPT）、文件（DOC）；安裝、編譯、操作與演算法手冊</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></td></tr>
+<tr><td><a class="ref" href="#D05">D05</a></td><td>交付｜主程式、資料庫模組、使用者界面</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><span class="muted">—</span></td></tr>
+<tr><td><a class="ref" href="#D06">D06</a></td><td>交付｜電費單生成工具（支援轉供和餘電契約生成等）</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-13">Q-13</a></td></tr>
+<tr><td><a class="ref" href="#D07">D07</a></td><td>交付｜Windows 安裝包</td><td><span class="st st-partial" title="實作狀態">部分具備</span></td><td><span class="cl cl-open" title="釐清狀態">待釐清</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-09">Q-09</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-31">Q-31</a></td></tr>
+<tr><td><a class="ref" href="#D08">D08</a></td><td>交付｜一年除錯維護</td><td><span class="st st-todo" title="實作狀態">未實作</span></td><td><span class="cl cl-confirmed" title="釐清狀態">已確認</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-31">Q-31</a></td></tr>
+</tbody></table></div><h2 id="g-表一">表一　電費單管理系統需求暨驗收表</h2><article class="item" id="B01">
+<header><span class="item-id">B01</span><h3>台電電費單收件</h3><span class="item-area">電費通知單收件</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">能自動從指定 email 信箱存取附件電費單，並依指定檔名及路徑存檔。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>只能在「送件」頁手動上傳（一批 1～50 檔，支援預簽直傳）；原檔存 MinIO，原檔名記在資料庫。沒有郵件收件，也不會寫到公槽。</dd>
+<dt>缺口</dt><dd>郵件收件器（信箱連線、寄件者與附件規則、sha256 去重、依子公司密碼解密）；檔名規則；寫入公槽；收件時間紀錄。</dd>
+<dt>驗收方法（草案）</dt><dd>以測試信箱寄入數封台電電費單（含加密 PDF），在約定的收件週期內，公槽指定資料夾出現依規則命名的檔案，系統內可查到收件時間與原檔。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-003">FR-003</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-005">FR-005</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-14">Q-14</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/ingest/handlers.rs、attachments/service.rs</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，驗收細節不足。</dd>
+</dl></article><article class="item" id="B02">
+<header><span class="item-id">B02</span><h3>天能電費單收件</h3><span class="item-area">電費通知單收件</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">能自動從指定 email 信箱存取附件電費單，並合併檔案後依指定檔名及路徑存檔。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有天能來源，也沒有合併檔案的機制。</dd>
+<dt>缺口</dt><dd>天能來源分流；合併規則（合併哪些檔、順序）；命名與存檔。</dd>
+<dt>驗收方法（草案）</dt><dd>寄入天能轉供電費單（與台電轉供單清單），系統依約定規則合併為一個檔並依檔名規則存到指定路徑。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-004">FR-004</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（合併檔案）。</dd>
+</dl></article><article class="item" id="B03">
+<header><span class="item-id">B03</span><h3>警示系統（未收到電費單）</h3><span class="item-area">電費通知單收件</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">若指定時間未收到電費單，系統應發出警示通知。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>行事曆只有「期數到期」一種事件，而且只由示範資料產生；「本月應收到某張單」在原設計中延後未做；沒有通知中心，也不寄信。</dd>
+<dt>缺口</dt><dd>每個案場的預計到件日規則；排程比對；系統內警示（登入可見）；Email 群組通知（需求總表列為選配）。</dd>
+<dt>驗收方法（草案）</dt><dd>設定某案場預計到件日，超過容忍天數仍未收件時，指定角色登入即看到警示；選配時群組信箱收到通知。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-009">FR-009</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-010">FR-010</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-011">FR-011</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-012">FR-012</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-16">Q-16</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/workbench/mod.rs、demo_seed.rs（installmentDue）</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，須明確測試指定時間。</dd>
+</dl></article><article class="item" id="B04">
+<header><span class="item-id">B04</span><h3>電號→案場、持有公司、台電區處</h3><span class="item-area">台電電費單資料辨識</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">系統可辨識電費單之電號並判斷案場名稱、持有公司名稱及台電區處所。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>辨識服務抽出電號與服務部門（serviceDepartment）；系統以正規化電號比對案場，取得案場名稱。案場主檔沒有持有公司（子公司）與區處欄位，案場只連到地主。</dd>
+<dt>缺口</dt><dd>主檔加入子公司、區處（或由「發電案場清單」匯入）；把服務部門落成正式欄位；一個案場多個電號。</dd>
+<dt>驗收方法（草案）</dt><dd>以 98 個案場的主檔與一批真實電費單，逐張核對案場名稱、子公司名稱、區處三欄與人工結果一致。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-002">FR-002</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-17">Q-17</a></dd>
+<dt>證據</dt><dd><code>migrations/0102_energy_intake.sql（customer_number_key）、crates/eo-domain/src/taipower_extractor.rs</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（台電區處所）。</dd>
+</dl></article><article class="item" id="B05">
+<header><span class="item-id">B05</span><h3>費用欄位與發票 BBR 號碼</h3><span class="item-area">台電電費單資料辨識</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">系統可辨識電費單之購電電費、營業稅、電表租費、使用電能費及發票 BBR 號碼。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>辨識服務輸出 119 個欄位，已含購電電費、營業稅、電表租費小計、使用電能費、電表租費發票號碼與載具欄位；系統的「最終值」只有總金額、度數、計費期間、開單日、繳費期限，其餘只留在辨識原始資料。</dd>
+<dt>缺口</dt><dd>把五個欄位做成可校對、可輸出的正式欄位；確認「BBR」對應的欄位；用新樣態（退款、補收、監控攝影機）驗證。</dd>
+<dt>驗收方法（草案）</dt><dd>以約定的樣本集（含各樣態），逐欄比對辨識值與標準答案，達到約定的正確率門檻。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></dd>
+<dt>證據</dt><dd><code>tests/fixtures/canonical-samples.json、crates/eo-energy/src/ingest/bills.rs</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（BBR 號碼）。離線包已驗證 4 份 PDF 的 54 項預期值。</dd>
+</dl></article><article class="item" id="B06">
+<header><span class="item-id">B06</span><h3>計費期間與下次抄表日</h3><span class="item-area">台電電費單資料辨識</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-confirmed" title="釐清狀態">已確認</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">系統可辨識電費單之計費期間及下次抄表日。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>計費期間已是正式欄位；下次抄表日（nextReadingDate）辨識得到，但只留在辨識原始資料。</dd>
+<dt>缺口</dt><dd>下次抄表日落成正式欄位並進電費紀錄單。</dd>
+<dt>驗收方法（草案）</dt><dd>同 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B05">B05</a>，逐張比對計費起訖與下次抄表日。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/ingest/bills.rs（BillView）</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，需逐欄測試。</dd>
+</dl></article><article class="item" id="B07">
+<header><span class="item-id">B07</span><h3>天能轉供單：電號→案場、持有公司、計費期間</h3><span class="item-area">台電電費單資料辨識</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">系統可辨識轉供單之電號並判斷案場名稱、持有公司名稱及計費期間。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>辨識服務與系統都只認台電版型；天能單一張列多個電號，現有資料模型一張單只有一個電號。</dd>
+<dt>缺口</dt><dd>天能版型解析（文字層 PDF）；一單多電號的資料模型；用戶名稱→子公司。</dd>
+<dt>驗收方法（草案）</dt><dd>以數張天能轉供電費單，核對每個電號對到的案場、子公司與計費期間。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：已有，驗收細節不足。</dd>
+</dl></article><article class="item" id="B08">
+<header><span class="item-id">B08</span><h3>天能轉供單：購電電費、營業稅</h3><span class="item-area">台電電費單資料辨識</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-confirmed" title="釐清狀態">已確認</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">系統可辨識轉供單之購電電費、營業稅。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有。</dd>
+<dt>缺口</dt><dd>天能「未稅電能費」「營業稅」（與轉供度數、購售電費率）抽取。</dd>
+<dt>驗收方法（草案）</dt><dd>同 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a>，核對金額欄位。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：已有，驗收細節不足。</dd>
+</dl></article><article class="item" id="B09">
+<header><span class="item-id">B09</span><h3>電費紀錄單內容</h3><span class="item-area">電費紀錄單彙整</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">能將電費單辨識之結果彙整成電費紀錄單，呈現各案場電費、開立發票金額、計費期間、下次抄表日及收件日期。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>電費單清單可依期間、狀態、案場篩選；沒有「電費紀錄單」的格式，也沒有匯出。</dd>
+<dt>缺口</dt><dd>紀錄單格式（現行【電費單紀錄】Excel 沒有提供，只拿到 15 個欄位表頭）；產生器；Excel 匯出。</dd>
+<dt>驗收方法（草案）</dt><dd>用一個月的樣本電費單產出紀錄單，與人工版逐列核對。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-007">FR-007</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-008">FR-008</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-012">FR-012</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></dd>
+<dt>證據</dt><dd><code>web/src/admin/domain-logic/components/energyOps/BillsPage.tsx</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（指定格式）。</dd>
+</dl></article><article class="item" id="B10">
+<header><span class="item-id">B10</span><h3>電費紀錄單存檔</h3><span class="item-area">電費紀錄單彙整</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">將電費紀錄單依指定檔名及路徑存檔。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有。</dd>
+<dt>缺口</dt><dd>檔名規則與公槽路徑；寫入權限。</dd>
+<dt>驗收方法（草案）</dt><dd>產出後在公槽指定路徑看到依規則命名的檔案。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-008">FR-008</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（指定路徑）。</dd>
+</dl></article><article class="item" id="B11">
+<header><span class="item-id">B11</span><h3>EasyFlow 付款申請單</h3><span class="item-area">付款與發票申請單建立</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">依電費單及電費紀錄單內容，建立 EasyFlow 付款申請單，填寫公司名稱、申請摘要、申請事由等欄位，並附件及加簽。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有 EasyFlow 介接。系統內有自己的付款關卡（標記已付款並鎖住回退），那是系統內簽核，不是 EasyFlow。</dd>
+<dt>缺口</dt><dd>申請單欄位對應（SOP 列的 9 欄：公司、費用種類、摘要、付款對象、付款方式、付款條件、憑證、事由、金額）；附件；加簽；送出方式（API 或模擬操作）。</dd>
+<dt>驗收方法（草案）</dt><dd>在 EasyFlow 測試環境由系統建立一張付款申請單，欄位、附件、加簽關卡與人工建立的一致。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-028">FR-028</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-035">FR-035</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a></dd>
+<dt>證據</dt><dd><code>crates/eo-domain/src/workflow_defs.rs（payment 關卡）</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（明確欄位與加簽）。</dd>
+</dl></article><article class="item" id="B12">
+<header><span class="item-id">B12</span><h3>EasyFlow 發票開立申請單（台電）</h3><span class="item-area">付款與發票申請單建立</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">依電費單及電費紀錄單內容，建立 EasyFlow 發票開立申請單，填寫公司名稱、收款對象、統一編號、開立金額、項目說明等欄位，並附件及加簽。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>系統內有一條「開立發票」流程（1 關，預設值），不是 EasyFlow。</dd>
+<dt>缺口</dt><dd>有餘電才開票的判斷；收款對象＝台電區處與其統編；開立金額＝購電電費；預計收款日；附件與加簽。</dd>
+<dt>驗收方法（草案）</dt><dd>同 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a>，以有餘電的電費單建立開票申請單並核對欄位。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-028">FR-028</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-035">FR-035</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a></dd>
+<dt>證據</dt><dd><code>crates/eo-domain/src/workflow_defs.rs（invoice_issue）</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（完整欄位與加簽）。</dd>
+</dl></article><article class="item" id="B13">
+<header><span class="item-id">B13</span><h3>EasyFlow 發票開立申請單（天能）</h3><span class="item-area">付款與發票申請單建立</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">依天能電費單內容，建立 EasyFlow 發票開立申請單，填寫公司名稱、收款對象、統一編號、開立金額、項目說明等欄位，並附件及加簽。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有。</dd>
+<dt>缺口</dt><dd>收款對象＝天能；開立金額＝未稅電能費；項目說明句型「〔收款對象〕向〔用戶名稱〕購買綠電（〔電費單名稱〕）」；相關憑證＝台電轉供單清單＋天能電費單。</dd>
+<dt>驗收方法（草案）</dt><dd>同 <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a>，以天能電費單建立開票申請單。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-028">FR-028</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-035">FR-035</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（天能獨立測試）。</dd>
+</dl></article><article class="item" id="B14">
+<header><span class="item-id">B14</span><h3>已開發票自動收件存檔</h3><span class="item-area">發票存檔</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">財務完成發票開立後，能自動從指定 email 信箱存取附件發票，並依指定檔名及路徑存檔。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有。</dd>
+<dt>缺口</dt><dd>發票信件辨認；發票檔名規則（SOP：(區域)子公司_發票號碼_案場-電號）；存檔；與電費單配對。</dd>
+<dt>驗收方法（草案）</dt><dd>財務在測試流程開立發票並寄出後，系統收下並以規則命名存檔，且掛到對應的電費單。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-023">FR-023</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（財務開立後自動收件）。</dd>
+</dl></article><article class="item" id="B15">
+<header><span class="item-id">B15</span><h3>回寫發票開立日期</h3><span class="item-area">發票存檔</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">更新電費紀錄單中發票開立日期。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有。</dd>
+<dt>缺口</dt><dd>發票與電費單的配對；紀錄單欄位回寫。</dd>
+<dt>驗收方法（草案）</dt><dd><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a> 之後，紀錄單上對應列出現發票開立日期。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-023">FR-023</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-025">FR-025</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：遺漏（回寫欄位）。</dd>
+</dl></article><h2 id="g-表二">表二　租金管理系統需求暨驗收表</h2><article class="item" id="R01">
+<header><span class="item-id">R01</span><h3>通用租金計算表</h3><span class="item-area">租金計算及支付流程</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">於系統建立一套通用的租金計算表，適用不同合約條件的租金計算。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>計費引擎 rating：策略即資料（固定費用、售電金額比例、發電量單價），有效期綁定、定點數計算、不可變的應付紀錄；以「每張電費單」在流程的計算節點產生一筆。</dd>
+<dt>缺口</dt><dd>改成「每期 × 每份合約 × 每位地主」；餘電與轉供兩種度數與費率；所得稅、補充保費、營業稅；保底、年度基準、階段式、特殊標案；人工調整與確認；租金計算表輸出。</dd>
+<dt>驗收方法（草案）</dt><dd>以雲豹提供的標準答案（每種租金類型至少一例），系統計算結果逐筆一致。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-016">FR-016</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-017">FR-017</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-018">FR-018</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/rating/mod.rs、crates/eo-domain/src/rating.rs</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，需定義測試案例。</dd>
+</dl></article><article class="item" id="R02">
+<header><span class="item-id">R02</span><h3>依合約付款期程產出租金計算表</h3><span class="item-area">租金計算及支付流程</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">固定租金直接產出；變動租金須至指定資料夾抓取電費單資料（依合約有轉供及台電電費單或只有台電電費單）作計算。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有付款期程的概念（只有建設期保證金期數）；度數只來自系統內已送審的台電電費單。</dd>
+<dt>缺口</dt><dd>合約付款頻率與期程；到期自動產出；度數來源（台電餘電、天能轉供；「指定資料夾」的意義）。</dd>
+<dt>驗收方法（草案）</dt><dd>固定租金合約到期自動產出；變動租金合約在兩種來源齊備時產出並與標準答案一致。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-016">FR-016</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-017">FR-017</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-021">FR-021</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-24">Q-24</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（指定資料夾抓取與兩種來源組合）。</dd>
+</dl></article><article class="item" id="R03">
+<header><span class="item-id">R03</span><h3>付款通知產出</h3><span class="item-area">租金計算及支付流程</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">配合支付對象設定罐頭訊息，依支付對象生成租金計算表、通知文件（紙本或 email）及檢附附件（電費單）。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有通知文件，也不寄信。</dd>
+<dt>缺口</dt><dd>罐頭訊息範本；紙本格式；Email 寄送（Outlook 腳本待驗證）；附件組合。</dd>
+<dt>驗收方法（草案）</dt><dd>對一位受款人產出通知文件（紙本 PDF 與 Email 各一），內容與附件正確。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-026">FR-026</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-027">FR-027</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-19">Q-19</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（罐頭訊息與紙本通知）。</dd>
+</dl></article><article class="item" id="R04">
+<header><span class="item-id">R04</span><h3>發票上傳及存檔（先附／後補，未收提醒）</h3><span class="item-area">租金計算及支付流程</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">如支付對象為公司或機關，須建立可供發票或收據上傳的空間，作為請款文件之一（發票可為先附或後補）；後補者設定未收到提醒。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>有通用的附件上傳（MinIO、sha256、稽核），但沒有受款人、發票實體，也沒有提醒。</dd>
+<dt>缺口</dt><dd>受款人主檔（是否需要發票、先附或後補）；發票紀錄；後補期限與提醒。</dd>
+<dt>驗收方法（草案）</dt><dd>先附與後補各一例：先附可上傳後請款；後補超過期限出現提醒。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-022">FR-022</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-023">FR-023</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-024">FR-024</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-025">FR-025</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-23">Q-23</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/attachments/*</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，需明確驗收先後補情境。</dd>
+</dl></article><article class="item" id="R05">
+<header><span class="item-id">R05</span><h3>資產管理表匯入、查詢、修正、匯出、操作紀錄、權限</h3><span class="item-area">資產管理表資料管理平台</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">共用總表匯入資料正確，可提供查詢、篩選、修正、及匯出功能；可留操作記錄及設定帳號權限。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>操作紀錄（稽核）與帳號權限（RBAC）已具備；地主、案場只能看，不能新增、修改、匯入、匯出；資產管理清單的欄位（子公司、合約類型、維運、履保、保險等）大多沒有對應資料表。</dd>
+<dt>缺口</dt><dd>匯入（含錯誤報告）；主檔維護畫面；匯出；欄位擴充；權限套用到主檔。</dd>
+<dt>驗收方法（草案）</dt><dd>匯入雲豹提供的總表後筆數與內容一致；修改一筆有操作紀錄；不同角色只能做被授權的動作；匯出的檔案可再匯入。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-001">FR-001</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-006">FR-006</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#NFR-003">NFR-003</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-02">Q-02</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-29">Q-29</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/master_data/mod.rs、audit/*、eo-platform/src/rbac/*</code></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（操作紀錄、權限驗收）。</dd>
+</dl></article><article class="item" id="R06">
+<header><span class="item-id">R06</span><h3>合約到期及待辦提醒</h3><span class="item-area">資產管理表資料管理平台</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">租賃契約可上傳至系統，系統可判定契約到期日及租金付款日；資產管理表合約欄位設定到期前續約提醒；租金付款日設定待辦提醒。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>合約表只有起訖日與階段；沒有上傳、沒有提醒。</dd>
+<dt>缺口</dt><dd>合約檔上傳；到期日與付款日的判定方式；提醒規則與待辦。</dd>
+<dt>驗收方法（草案）</dt><dd>上傳一份合約並設定到期日，於設定的提前時間出現續約提醒；付款日出現待辦。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-014">FR-014</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-015">FR-015</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-021">FR-021</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-25">Q-25</a></dd>
+<dt>證據</dt><dd><code>migrations/0100_energy.sql（tbl_energy_contract）</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，需測試上傳與日期判定。</dd>
+</dl></article><article class="item" id="R07">
+<header><span class="item-id">R07</span><h3>相關報表產出</h3><span class="item-area">資產管理表資料管理平台</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">可篩選案場、年份、月份產出發電度數、租金支出等系統資料。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>儀表板只有「本月應付」、卡關數、案場狀態分布；沒有報表與匯出。</dd>
+<dt>缺口</dt><dd>報表欄位與格式；篩選；匯出。</dd>
+<dt>驗收方法（草案）</dt><dd>指定案場與年月，報表數字與資料一致並可匯出。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-032">FR-032</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-26">Q-26</a></dd>
+<dt>證據</dt><dd><code>crates/eo-energy/src/workbench/mod.rs（dashboard）</code></dd>
+<dt>備註</dt><dd>整併版對照：已有，需明確欄位及篩選。</dd>
+</dl></article><article class="item" id="R08">
+<header><span class="item-id">R08</span><h3>租金付款申請單</h3><span class="item-area">租金付款開立付款申請單</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">依系統資訊填入付款申請單資訊；檢附相關附件（租金計算表、電費單、發票或其他需求文件）；產出付款申請單可讓執行者檢核及簽准。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>系統內簽核引擎可以做「檢核及簽准」，但沒有租金付款申請單；沒有 EasyFlow／EIP 介接。</dd>
+<dt>缺口</dt><dd>申請單內容與附件清單；在系統內或 EasyFlow 簽准（取決於 <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a>）；申請單號與狀態紀錄。</dd>
+<dt>驗收方法（草案）</dt><dd>由一筆確認後的租金產出付款申請單，附件齊全，執行者完成檢核與簽准並留下紀錄。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-028">FR-028</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-029">FR-029</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-030">FR-030</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-04">Q-04</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-20">Q-20</a></dd>
+<dt>證據</dt><dd><span class="muted">—</span></dd>
+<dt>備註</dt><dd>整併版對照：部分遺漏（簽准前檢核及附件清單）。</dd>
+</dl></article><h2 id="g-交付">其他交付與契約義務（附件一、第二、三、九條）</h2><article class="item" id="D01">
+<header><span class="item-id">D01</span><h3>完成建置並驗收合格的期限</h3><span class="item-area">契約期間</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">甲方應於民國 115 年 11 月 30 日前完成本專案系統之建置且經乙方依本合約約定之驗收準則，驗收合格。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>本文件產出日為 2026-11-12，距期限 18 天；表一、表二尚無任一項完整具備。</dd>
+<dt>缺口</dt><dd>書面展延或縮小本期範圍；驗收時程與重驗（7 日內改善）的安排。</dd>
+<dt>驗收方法（草案）</dt><dd>—</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-01">Q-01</a></dd>
+<dt>證據</dt><dd><code>委託開發契約書第二、三條</code></dd>
+
+</dl></article><article class="item" id="D02">
+<header><span class="item-id">D02</span><h3>一週訓練課程</h3><span class="item-area">教育訓練</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">甲方人員將提供乙方人員為期一週之訓練課程，依使用手冊章節進行，於乙方指定處所舉行。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>尚未安排。</dd>
+<dt>缺口</dt><dd>課程表、對象、時間地點。</dd>
+<dt>驗收方法（草案）</dt><dd>完成訓練並簽到。</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></dd>
+<dt>證據</dt><dd><code>附件一 教育訓練</code></dd>
+
+</dl></article><article class="item" id="D03">
+<header><span class="item-id">D03</span><h3>使用手冊（安裝、功能說明、錯誤排除）</h3><span class="item-area">文件</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">甲方需提供該軟體之使用手冊，內容包括安裝、功能說明及錯誤排除等。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>有「雲豹離線安裝逐步操作指南」（安裝與部分錯誤排除）；沒有功能說明手冊。</dd>
+<dt>缺口</dt><dd>功能說明（依最終功能）；錯誤排除章節補齊；以 DOC 交付。</dd>
+<dt>驗收方法（草案）</dt><dd>手冊章節齊備並經雲豹確認。</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></dd>
+<dt>證據</dt><dd><code>雲豹離線安裝_逐步操作指南.md</code></dd>
+
+</dl></article><article class="item" id="D04">
+<header><span class="item-id">D04</span><h3>原始碼、範例、投影片（PPT）、文件（DOC）；安裝、編譯、操作與演算法手冊</h3><span class="item-area">交付項目</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">電費單管理系統之原始碼、範例、相關投影片檔案（以 PPT 檔案交付）與文件（以 DOC 檔案交付）；用以提供安裝、編譯、操作以及相關演算法之使用手冊。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>原始碼在 GitHub（energy-ops-rust），README／OVERVIEW 有編譯與架構說明；沒有 PPT、DOC，也沒有演算法說明文件。</dd>
+<dt>缺口</dt><dd>PPT、DOC 版文件；演算法（辨識對應、租金計算）說明；交付方式。</dd>
+<dt>驗收方法（草案）</dt><dd>交付清單逐項點交。</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-33">Q-33</a></dd>
+<dt>證據</dt><dd><code>README.md、docs/OVERVIEW.md</code></dd>
+
+</dl></article><article class="item" id="D05">
+<header><span class="item-id">D05</span><h3>主程式、資料庫模組、使用者界面</h3><span class="item-area">軟體套件</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-confirmed" title="釐清狀態">已確認</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">所交付之軟體套件包含：1. 電費單管理系統主程式 2. 資料庫模組 3. 使用者界面。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>energy-ops-rust：Rust 單一執行檔、Postgres（migrations 編進執行檔）、React 前端，三者都有；功能面依表一、表二仍有缺口。</dd>
+<dt>缺口</dt><dd>依驗收項補齊功能。</dd>
+<dt>驗收方法（草案）</dt><dd>隨表一、表二驗收。</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><span class="muted">—</span></dd>
+<dt>證據</dt><dd><code>src/、crates/、migrations/、web/</code></dd>
+
+</dl></article><article class="item" id="D06">
+<header><span class="item-id">D06</span><h3>電費單生成工具（支援轉供和餘電契約生成等）</h3><span class="item-area">軟體套件</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">4. 電費單生成工具（支援轉供和餘電契約生成等）。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>不清楚指的是什麼；現有系統沒有可對應的功能。</dd>
+<dt>缺口</dt><dd>先定義。</dd>
+<dt>驗收方法（草案）</dt><dd>—</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-13">Q-13</a></dd>
+<dt>證據</dt><dd><code>附件一 軟體套件</code></dd>
+
+</dl></article><article class="item" id="D07">
+<header><span class="item-id">D07</span><h3>Windows 安裝包</h3><span class="item-area">軟體套件</span><span class="badges"><span class="st st-partial" title="實作狀態">部分具備</span> <span class="cl cl-open" title="釐清狀態">待釐清</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">5. 安裝包（Windows）。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>已有離線安裝包 EnergyOps_Offline_20261104（Windows Server 2022＋WSL＋4 個容器），但打包原始碼不在 energy-ops-rust；開機自動啟動仍待 IT；容量只做過單筆試跑。</dd>
+<dt>缺口</dt><dd>打包流程納入版控並可重現；開機自啟；升版流程。</dd>
+<dt>驗收方法（草案）</dt><dd>在乾淨的客戶主機上依指南完成安裝並通過健康檢查。</dd>
+<dt>對應需求</dt><dd><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#NFR-002">NFR-002</a></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-09">Q-09</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-31">Q-31</a></dd>
+<dt>證據</dt><dd><code>雲豹離線安裝_逐步操作指南.md</code></dd>
+
+</dl></article><article class="item" id="D08">
+<header><span class="item-id">D08</span><h3>一年除錯維護</h3><span class="item-area">維護</span><span class="badges"><span class="st st-todo" title="實作狀態">未實作</span> <span class="cl cl-confirmed" title="釐清狀態">已確認</span></span></header>
+<dl>
+<dt>合約原文</dt><dd class="quote">驗收合格翌日起一年內提供除錯服務；工作時間 4 小時內確認問題；立即影響作業者最遲 1 個工作天，非緊急者最遲 3 個工作天；逾期每日罰款專案費用 0.1%。</dd>
+<dt>現況（energy-ops-rust）</dt><dd>沒有監控、日誌收集與通報流程。</dd>
+<dt>缺口</dt><dd>聯絡窗口、通報管道、遠端維護方式、日誌與備份。</dd>
+<dt>驗收方法（草案）</dt><dd>—</dd>
+<dt>對應需求</dt><dd><span class="muted">—</span></dd>
+<dt>待釐清</dt><dd><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-31">Q-31</a></dd>
+<dt>證據</dt><dd><code>委託開發契約書第九條</code></dd>
+
+</dl></article>
+<footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
+</main>
+</div>
+<div class="zoom" hidden><div class="zoom-bar"><span>拖曳或捲動檢視，按 Esc 關閉</span><button type="button" data-zoom-close>關閉</button></div><div class="zoom-body"><img alt=""></div></div>
+<script>// 規格文件的少量互動：架構圖放大檢視、表格關鍵字篩選。沒有外部相依，離線可用。
+(function () {
+  var zoom = document.querySelector('.zoom');
+  var zimg = zoom && zoom.querySelector('img');
+  function close() { if (zoom) { zoom.hidden = true; zimg.removeAttribute('src'); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-zoom]');
+    if (a && zoom) {
+      e.preventDefault();
+      zimg.src = a.getAttribute('href');
+      zimg.alt = (a.querySelector('img') || {}).alt || '';
+      zoom.hidden = false;
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-zoom-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+  document.querySelectorAll('input[data-filter]').forEach(function (input) {
+    var box = input.closest('.filter').nextElementSibling;
+    var rows = box ? box.querySelectorAll('tbody tr') : [];
+    input.addEventListener('input', function () {
+      var q = input.value.trim().toLowerCase();
+      rows.forEach(function (tr) {
+        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

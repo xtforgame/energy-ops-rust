@@ -1,0 +1,78 @@
+{
+  "A0": {
+    "title": "系統情境圖（誰用、跟誰往來）",
+    "stats": {
+      "external": 13,
+      "partial": 2,
+      "dropped": 2,
+      "todo": 4
+    }
+  },
+  "A1": {
+    "title": "業務流程全景（現行人工作業 → 系統化後）",
+    "stats": {
+      "todo": 27,
+      "partial": 5,
+      "done": 1,
+      "beyond": 1,
+      "dropped": 1
+    }
+  },
+  "A2": {
+    "title": "部署與容器（客戶主機、開發環境、舊版）",
+    "stats": {
+      "done": 8,
+      "partial": 3,
+      "todo": 4,
+      "external": 3,
+      "dropped": 2
+    }
+  },
+  "A3": {
+    "title": "應用元件（energy-ops-rust 的前端、後端、平台、純邏輯）",
+    "stats": {
+      "done": 20,
+      "beyond": 7,
+      "partial": 6,
+      "todo": 14,
+      "external": 1
+    }
+  },
+  "A4": {
+    "title": "資料模型（現有資料表 → 合約與需求還需要的資料）",
+    "stats": {
+      "partial": 5,
+      "done": 4,
+      "beyond": 1,
+      "todo": 11
+    }
+  },
+  "A5": {
+    "title": "電費單處理細部（表一 B01～B15 對到每一步）",
+    "stats": {
+      "external": 3,
+      "todo": 14,
+      "partial": 5,
+      "done": 3,
+      "dropped": 1
+    }
+  },
+  "A6": {
+    "title": "租金與資產管理細部（表二 R01～R08）",
+    "stats": {
+      "external": 2,
+      "todo": 17,
+      "partial": 5,
+      "done": 1
+    }
+  },
+  "A7": {
+    "title": "系統內簽核引擎 與 EasyFlow 的分工（待決策）",
+    "stats": {
+      "beyond": 21,
+      "partial": 1,
+      "external": 4,
+      "todo": 3
+    }
+  }
+}
