@@ -111,6 +111,11 @@ table.reg.compact td { padding: 6px 10px; }
 .item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
 .item dd.answer { color: var(--ink-3); }
 .q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+.why-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; margin: 2px 0 6px; }
+.why-row .st { text-align: center; }
+.why-row ul { margin: 0; padding-left: 18px; }
+.why-row li { margin: 1px 0; }
+.why p { margin: 4px 0 0; color: var(--ink-2); }
 
 /* 提示框 */
 .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
@@ -217,7 +222,7 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <tr id="DEC-02"><td><span class="ref">DEC-02</span></td><td>2026-11-12</td><td>文件呈現</td><td>規格文件以正式 HTML 呈現，狀態以文字標籤表示，不使用 emoji。</td><td><span class="by by-user">使用者決定</span></td><td>本次對話</td><td><span class="cl cl-confirmed">維持</span></td></tr>
 <tr id="DEC-03"><td><span class="ref">DEC-03</span></td><td>2026-10-17 起</td><td>合約</td><td>期限 115/11/30；驗收依附件一表一、表二；維護一年；交付含 Windows 安裝包、手冊、訓練。</td><td><span class="by by-contract">合約約定</span></td><td>委託開發契約書（修改附件驗收項目版）</td><td><span class="cl cl-open">需重新確認</span></td></tr>
 <tr id="DEC-04"><td><span class="ref">DEC-04</span></td><td>2026-11-04</td><td>Rust 重寫的範圍</td><td>多組織＋完整 RBAC、API 重新設計、sqlx、Vite、單一執行檔＋Postgres＋MinIO、密碼沿用 bcrypt。</td><td><span class="by by-user">使用者決定</span></td><td>energy-ops-rust docs/PLAN.md §0</td><td><span class="cl cl-open">需重新確認</span></td></tr>
-<tr id="DEC-05"><td><span class="ref">DEC-05</span></td><td>2026-11-04</td><td>部署形態</td><td>客戶主機 Windows Server 2022＋WSL＋4 個容器的離線安裝包；空白系統、隨機管理員密碼。</td><td><span class="by by-doc">文件推定</span></td><td>雲豹離線安裝逐步操作指南</td><td><span class="cl cl-open">需重新確認</span></td></tr>
+<tr id="DEC-05"><td><span class="ref">DEC-05</span></td><td>2026-11-04</td><td>部署形態</td><td>客戶主機 Windows Server 2022＋WSL＋4 個容器的離線安裝包；空白系統、隨機管理員密碼。已完成。</td><td><span class="by by-user">使用者決定</span></td><td>雲豹離線安裝逐步操作指南；使用者 2026-11-12 確認已完成</td><td><span class="cl cl-confirmed">維持</span></td></tr>
 <tr id="DEC-06"><td><span class="ref">DEC-06</span></td><td>2026-08-26</td><td>系統邊界</td><td>付款是書面後進會計系統，不串接銀行或會計系統；系統只確保改金額有紀錄。</td><td><span class="by by-user">使用者決定</span></td><td>RT WORKFLOW.md §9、REQUIREMENTS 附錄 B.2.1</td><td><span class="cl cl-confirmed">維持</span></td></tr>
 <tr id="DEC-07"><td><span class="ref">DEC-07</span></td><td>2026-08-26</td><td>計算策略</td><td>計算策略是資料（type＋參數），每次計算都留紀錄；v1 三種：固定、售電比例、度數單價。</td><td><span class="by by-user">使用者決定</span></td><td>RT REQUIREMENTS 附錄 B.1、B.6</td><td><span class="cl cl-open">需重新確認</span></td></tr>
 <tr id="DEC-08"><td><span class="ref">DEC-08</span></td><td>2026-08-26</td><td>跨約</td><td>v1 不拆算跨約期間，忠實記錄（計費起訖、取版日、策略版本、參數快照）。</td><td><span class="by by-user">使用者決定</span></td><td>RT RATING.md §5</td><td><span class="cl cl-confirmed">維持</span></td></tr>
@@ -232,7 +237,6 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <tr id="DEC-17"><td><span class="ref">DEC-17</span></td><td>2026-08-26</td><td>稽核</td><td>寫入失敗依副作用分級、預設擋下；永久保存；機敏欄位只記「已變更」。</td><td><span class="by by-proxy">設計者代決</span></td><td>RT AUDIT.md §8</td><td><span class="cl cl-open">需重新確認</span></td></tr>
 <tr id="DEC-18"><td><span class="ref">DEC-18</span></td><td>2026-08-26</td><td>選單</td><td>先只留「我的工作」與「營運」；治理群組（流程總覽、稽核）隱藏但路由保留。</td><td><span class="by by-user">使用者決定</span></td><td>web/src/admin/domain-logic/components/getMenuItems.tsx</td><td><span class="cl cl-open">需重新確認</span></td></tr>
 <tr id="DEC-19"><td><span class="ref">DEC-19</span></td><td>2026-08-25</td><td>視覺</td><td>採 JV 視覺方向 1C（紫底大區塊、白底細線列表）。</td><td><span class="by by-user">使用者決定</span></td><td>RT REQUIREMENTS 附錄 A.3</td><td><span class="cl cl-confirmed">維持</span></td></tr>
-<tr id="DEC-20"><td><span class="ref">DEC-20</span></td><td>2026-10-17</td><td>App 5 時期的架構</td><td>後端全進 Supabase、單一組織、成員由管理者直接建帳號。<div class="muted">已被 <a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html#DEC-01">DEC-01</a>、<a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html#DEC-04">DEC-04</a> 取代</div></td><td><span class="by by-user">使用者決定</span></td><td>energy-ops-next DESIGN.md E8、E15、E16</td><td><span class="cl cl-confirmed">維持</span></td></tr>
 </tbody></table></div>
 <footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
 </main>

@@ -111,6 +111,11 @@ table.reg.compact td { padding: 6px 10px; }
 .item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
 .item dd.answer { color: var(--ink-3); }
 .q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+.why-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; margin: 2px 0 6px; }
+.why-row .st { text-align: center; }
+.why-row ul { margin: 0; padding-left: 18px; }
+.why-row li { margin: 1px 0; }
+.why p { margin: 4px 0 0; color: var(--ink-2); }
 
 /* 提示框 */
 .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
@@ -213,13 +218,13 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <div class="crumb">首頁</div><h1>電費單與租金管理系統　規格文件</h1>
 <p class="lead">這是「電費單與租金管理系統」的規格文件系統（v0.1 盤點版）。它以雲豹委託開發合約的驗收表為基準，盤點三個來源（原版設計文件、App 5、energy-ops-rust）的規格與實作，用顏色與樣式標出每個部分「做到哪」與「定了沒」，並把所有不清楚的地方整理成分批的待釐清問題。</p>
 <div class="hero"><span class="num">18</span><span class="unit">天</span><span class="what">截至 2026-11-12，距合約約定的完成並驗收期限（民國 115 年 11 月 30 日）。</span></div>
-<div class="tiles"><div class="tile"><div class="t-label">表一　電費單驗收項</div><div class="t-value">15 項</div><div class="t-sub">已具備 0、部分 3、未實作 12</div></div><div class="tile"><div class="t-label">表二　租金驗收項</div><div class="t-value">8 項</div><div class="t-sub">已具備 0、部分 2、未實作 6</div></div><div class="tile"><div class="t-label">待釐清問題</div><div class="t-value">48 題</div><div class="t-sub">第一批 13 題要先回覆</div></div><div class="tile"><div class="t-label">假資料與不確定資料</div><div class="t-value">18 筆</div><div class="t-sub">示範資料、mock、範例錯誤、未驗證</div></div><div class="tile"><div class="t-label">測試資料</div><div class="t-value">22 類</div><div class="t-sub">已有 1、部分 10、沒有 11</div></div></div>
+<div class="tiles"><div class="tile"><div class="t-label">表一　電費單驗收項</div><div class="t-value">15 項</div><div class="t-sub">已具備 0、部分 3、未實作 12</div></div><div class="tile"><div class="t-label">表二　租金驗收項</div><div class="t-value">8 項</div><div class="t-sub">已具備 0、部分 2、未實作 6</div></div><div class="tile"><div class="t-label">待釐清問題</div><div class="t-value">45 題</div><div class="t-sub">第一批 11 題要先回覆</div></div><div class="tile"><div class="t-label">假資料與不確定資料</div><div class="t-value">18 筆</div><div class="t-sub">示範資料、mock、範例錯誤、未驗證</div></div><div class="tile"><div class="t-label">測試資料</div><div class="t-value">22 類</div><div class="t-sub">已有 1、部分 10、沒有 11</div></div></div>
 <figure class="cover"><figcaption>合約驗收項的實作覆蓋（共 23 項）</figcaption><div class="bar" role="img" aria-label="合約驗收項的實作覆蓋：已具備 0 項、部分具備 5 項、未實作 18 項"><div class="seg seg-partial" style="flex:5" tabindex="0" title="部分具備：5 項（22%）" aria-label="部分具備 5 項，占 22%"><span>部分具備 5</span></div><div class="seg seg-todo" style="flex:18" tabindex="0" title="未實作：18 項（78%）" aria-label="未實作 18 項，占 78%"><span>未實作 18</span></div></div><ul class="bar-legend"><li><i class="sw sw-done"></i>已具備 0</li><li><i class="sw sw-partial"></i>部分具備 5</li><li><i class="sw sw-todo"></i>未實作 18</li></ul></figure>
 <h2>關鍵發現</h2>
 <div class="callout risk"><h4>一、驗收基準與既有實作錯位</h4>
 <p>合約驗收表的重心是「自動收件、電費紀錄單、EasyFlow 申請單、發票存檔、租金與資產管理」；energy-ops-rust 投資最多的是系統內多關卡簽核、多組織與完整 RBAC——這些都不在驗收表上。23 個驗收項中，沒有一項完整具備。</p></div>
 <div class="callout warn"><h4>二、外部介接全部未定</h4>
-<p>公用信箱、公槽、EasyFlow、同仁電腦連線、PDF 密碼保管——每一項都要雲豹 IT 開通或決定，而且都還沒有測試環境。它們是時程上最大的不確定。</p></div>
+<p>公用信箱、公槽、EasyFlow、PDF 密碼保管——每一項都要雲豹 IT 開通或決定，而且都還沒有測試環境。它們是時程上最大的不確定。</p></div>
 <div class="callout warn"><h4>三、規格資料不完整，部分有錯</h4>
 <p>電費紀錄單的範本沒有提供；租金計算範例有 #VALUE! 與錯位公式；需求總表是機器轉錄的 v0.1；合約附件版本待核；辨識樣本只驗證過 4 種。這些都要先補齊，驗收才判得出合不合格。</p></div>
 <h2>閱讀路徑</h2>
@@ -237,7 +242,7 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <tr><td><a href="10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">架構圖 A0～A7</a></td><td>從系統情境、業務流程、部署、元件、資料，到電費單與租金的細部，以及簽核分工的決策點。</td></tr>
 <tr><td><a href="20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></td><td>表一 B01～B15、表二 R01～R08、交付 D01～D08：合約原文、現況、缺口、驗收方法草案、待釐清問題。</td></tr>
 <tr><td><a href="30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></td><td>FR-001～035、NFR-001～003 的現況與對應驗收；原版設計的 US-1～21。</td></tr>
-<tr><td><a href="40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分四批）</a></td><td>Q-01～Q-48；第一批 13 題是排工前必須決定的；第四批是測試資料索取。</td></tr>
+<tr><td><a href="40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分四批）</a></td><td>Q-01～Q-45；第一批 11 題是排工前必須決定的；第四批是測試資料索取。</td></tr>
 <tr><td><a href="40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html">測試資料盤點</a></td><td>每個驗收項需要哪些測試資料、現在有沒有、在哪裡（含各 branch）；案場與地主資料的現況。</td></tr>
 <tr><td><a href="40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></td><td>energy-ops-rust 每個元件的狀態、對合約的意義與證據路徑。</td></tr>
 <tr><td><a href="40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></td><td>示範資料、mock、預設值、範例錯誤、未驗證的辨識與容量。</td></tr>

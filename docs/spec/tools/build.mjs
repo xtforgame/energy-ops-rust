@@ -199,7 +199,7 @@ function questionsPage(ctx) {
 <header><span class="item-id q-id">${q.id}</span><h3>${esc(q.topic)}</h3><span class="badges"><span class="cl cl-open">未回覆</span></span></header>
 <p class="q-text">${linkRefs(ctx, q.q)}</p>
 <dl>
-<dt>為什麼要問</dt><dd>${linkRefs(ctx, q.why)}</dd>
+<dt>為什麼要問</dt><dd><div class="why"><div class="why-row"><span class="st st-done">已有</span><ul>${(q.have || []).map((x) => `<li>${linkRefs(ctx, x)}</li>`).join('')}</ul></div><div class="why-row"><span class="st st-todo">沒有</span><ul>${(q.lack || []).map((x) => `<li>${linkRefs(ctx, x)}</li>`).join('')}</ul></div><p>${linkRefs(ctx, q.why)}</p></div></dd>
 <dt>選項／建議</dt><dd>${linkRefs(ctx, q.options)}</dd>
 <dt>建議回答者</dt><dd>${esc(q.who)}</dd>
 <dt>關聯</dt><dd>${refs(ctx, q.refs)}</dd>

@@ -19,13 +19,12 @@
     }
   },
   "A2": {
-    "title": "部署與容器（客戶主機、開發環境、舊版）",
+    "title": "部署與容器（客戶主機、開發環境）",
     "stats": {
-      "done": 8,
-      "partial": 3,
-      "todo": 4,
-      "external": 3,
-      "dropped": 2
+      "done": 11,
+      "partial": 1,
+      "todo": 2,
+      "external": 3
     }
   },
   "A3": {

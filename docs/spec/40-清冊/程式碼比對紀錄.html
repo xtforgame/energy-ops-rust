@@ -111,6 +111,11 @@ table.reg.compact td { padding: 6px 10px; }
 .item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
 .item dd.answer { color: var(--ink-3); }
 .q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+.why-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; margin: 2px 0 6px; }
+.why-row .st { text-align: center; }
+.why-row ul { margin: 0; padding-left: 18px; }
+.why-row li { margin: 1px 0; }
+.why p { margin: 4px 0 0; color: var(--ink-2); }
 
 /* 提示框 */
 .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
@@ -215,8 +220,7 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <p class="muted">方法：energy-ops-rust、az repo 以 git fetch／ls-remote 比對分支頭；App 5 以本機保存的 repo 帳密（只在指令中讀取，不寫入設定、不輸出）執行 ls-remote。比對 Rust 版的部分是靜態閱讀程式碼，尚未實測。</p><h2>遠端抓取結果（2026-11-12）</h2><div class="tbl"><table class="reg"><thead><tr><th style="width:200px">對象</th><th style="width:190px">遠端</th><th>本機</th><th>遠端最新</th><th>結果</th></tr></thead><tbody>
 <tr><td>energy-ops-rust</td><td><code>github.com/xtforgame/energy-ops-rust</code></td><td>master＝rust-port＝cf7a330</td><td>master＝rust-port＝cf7a330</td><td>沒有新提交</td></tr>
 <tr><td>az-fullstack-sequelize</td><td><code>origin（for-candidate）</code></td><td>feat-energy-ops-next 908a1545ee；feat-tenant-console-route-transition 0afe402aba</td><td>相同</td><td>沒有新提交；遠端另有 feat-rust-ontology-poc、try-rust，與能源無關</td></tr>
-<tr><td>App 5（potted-dev-team/workspaces/5-2fv26mb84qh6）</td><td><code>vaxal.io/git/apps/5.git</code></td><td>main 85631c6</td><td>main 85631c6；fix/local-workflow-docker-20261019 8c99fe2</td><td>main 沒有新提交；修正分支（2 個提交）未併入 main，也未被 Rust 版移植</td></tr>
-<tr><td>離線安裝包打包程式</td><td><code>—</code></td><td>本機與上述 repo 都找不到</td><td>—</td><td>來源待確認（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-09">Q-09</a>）</td></tr>
+<tr><td>App 5（potted-dev-team/workspaces/5-2fv26mb84qh6）</td><td><code>vaxal.io/git/apps/5.git</code></td><td>main 85631c6</td><td>main 85631c6；fix/local-workflow-docker-20261019 8c99fe2</td><td>main 沒有新提交；修正分支（2 個提交）未併入 main（舊版不保留、不維護，只用來比對 Rust 版）</td></tr>
 </tbody></table></div><h2>App 5 未併修正分支 對 energy-ops-rust</h2><p>App 5 的 <code>fix/local-workflow-docker-20261019</code> 分支（56894ad「修正多流程權限、原檔存取與退回操作」、8c99fe2 本地 Docker 驗證紀錄）是在 Rust 版移植之後才出現的修正，沒有被移植。以下逐項比對 Rust 版是否有同樣的問題。</p><div class="tbl"><table class="reg"><thead><tr><th style="width:32px">#</th><th style="width:180px">問題</th><th>App 5 的修法</th><th>energy-ops-rust 現況</th><th style="width:130px">判定</th><th style="width:200px">證據</th></tr></thead><tbody>
 <tr><td>1</td><td>同一張單同時有核可與開票兩條流程時，退回承辦後仍不能編輯</td><td>GET／PATCH 接受 executionId，前端傳入所在待辦的流程</td><td>單據模式取該單「最新的一條」流程（ORDER BY id DESC LIMIT 1），沒有 executionId 參數</td><td><span class="verdict v-bad">高度疑似同樣問題</span></td><td><code>crates/eo-energy/src/workflow/mode.rs</code></td></tr>
 <tr><td>2</td><td>原檔在不同角色間忽然看不到</td><td>附件歸屬保留第一次；同單原檔可跨同單流程共享</td><td>把原檔接到流程時直接覆寫 execution_id；流程附件清單只列 execution_id 相符者；下載只檢查該流程的可視度</td><td><span class="verdict v-bad">高度疑似同樣問題</span></td><td><code>crates/eo-energy/src/attachments/service.rs（link_to_execution、list_for_execution）、handlers.rs</code></td></tr>
@@ -239,7 +243,6 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <h2>其他觀察</h2>
 <ul>
 <li>az repo 遠端另有 <code>feat-rust-ontology-poc</code>（Object Explorer 示範）與 <code>try-rust</code>（暫存），與能源業務無關。</li>
-<li>離線安裝包的打包程式在本機與 GitHub 都找不到；若在另一台電腦，建議推上 energy-ops-rust（Q-09）。</li>
 </ul>
 <footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
 </main>

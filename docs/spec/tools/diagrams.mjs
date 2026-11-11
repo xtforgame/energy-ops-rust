@@ -23,7 +23,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     subtitle: '最外層：系統在雲豹的位置。中間是我們要交付的系統，左邊是使用者，右邊是外部系統與往來對象；每條線標著它對應的合約驗收項。',
     basis: '委託開發契約書附件一（表一、表二）、電費單付款申請及開立發票 SOP、需求總表 v0.1',
   });
-  d.group({ id: 'gUsers', x: 30, y: 120, w: 340, h: 660, title: '雲豹能源內部使用者', sub: '角色對應為暫定（Q-30）' });
+  d.group({ id: 'gUsers', x: 30, y: 120, w: 340, h: 660, title: '雲豹能源內部使用者', sub: '角色對應為暫定（Q-28）' });
   const actors = [
     ['a1', '總務／電費單承辦', '收件、對電號、歸檔、填 EasyFlow（SOP 執行者）'],
     ['a2', '各子公司財會窗口', '依子公司分工收單據、處理付款'],
@@ -38,14 +38,14 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     title: '電費單與租金管理系統',
     sub: `以 energy-ops-rust 為主（Rust 單一執行檔＋Postgres＋MinIO＋React 前端），部署在雲豹內網 Windows Server（離線安裝包）。\n\n已具備：手動上傳、辨識、校對、例外件、稽核、權限、系統內簽核。\n未實作：自動收件、未收單警示、天能轉供單、電費紀錄單、EasyFlow 申請單、發票存檔、租金與資產管理、報表。\n\n合約驗收覆蓋：表一 15 項（${cover(t1)}）；表二 8 項（${cover(t2)}）。`,
   });
-  d.node({ id: 'ocr', x: 640, y: 690, w: 400, h: 100, impl: 'partial', data: 'uncertain', tags: ['B04–B08', 'Q-15'], title: 'OCR 辨識服務（taipower-recognition）', sub: '外部交付物，隨離線包以容器部署；4 份 PDF 範本 54 項已驗證，影像辨識仍有誤' });
+  d.node({ id: 'ocr', x: 640, y: 690, w: 400, h: 100, impl: 'partial', data: 'uncertain', tags: ['B04–B08', 'Q-13'], title: 'OCR 辨識服務（taipower-recognition）', sub: '外部交付物，隨離線包以容器部署；4 份 PDF 範本 54 項已驗證，影像辨識仍有誤' });
   d.node({ id: 'tp', x: 1190, y: 112, w: 215, h: 74, impl: 'external', title: '台灣電力公司', sub: '電子電費單（PDF，依子公司加密）' });
   d.node({ id: 'gn', x: 1425, y: 112, w: 215, h: 74, impl: 'external', title: '天能綠電', sub: '轉供電費單（一張多個電號）' });
   d.node({ id: 'mail', x: 1190, y: 214, w: 450, h: 86, impl: 'external', clar: 'open', tags: ['Q-06'], title: '公用信箱群組', sub: '系統要自動收台電、天能電費單與財務開好的發票' });
   d.node({ id: 'ef', x: 1190, y: 326, w: 450, h: 100, impl: 'external', clar: 'open', tags: ['Q-04', 'Q-05'], title: 'EasyFlow／EIP 簽核系統', sub: '付款申請單、開立發票申請單；加簽；會計群組核准' });
   d.node({ id: 'share', x: 1190, y: 452, w: 450, h: 84, impl: 'external', clar: 'open', tags: ['Q-07'], title: '公槽（共用磁碟 Z:\\）', sub: '依指定檔名與路徑存放電費單、紀錄單、發票' });
   d.node({ id: 'payee', x: 1190, y: 562, w: 450, h: 88, impl: 'external', title: '地主／受款人', sub: '收租金付款通知（紙本或 Email）；公司或機關要提供發票或收據' });
-  d.node({ id: 'outlook', x: 1190, y: 676, w: 450, h: 84, impl: 'external', clar: 'open', tags: ['FR-027', 'Q-19'], title: 'Outlook', sub: '批次寄送付款通知（技術與資安待驗證）' });
+  d.node({ id: 'outlook', x: 1190, y: 676, w: 450, h: 84, impl: 'external', clar: 'open', tags: ['FR-027', 'Q-17'], title: 'Outlook', sub: '批次寄送付款通知（技術與資安待驗證）' });
   d.node({ id: 'acct', x: 1190, y: 786, w: 450, h: 70, impl: 'dropped', title: '會計系統／銀行', sub: '不串接：付款以人工為準（合約未要求）' });
   d.node({ id: 'line', x: 1190, y: 880, w: 450, h: 80, impl: 'dropped', clar: 'open', tags: ['Q-07'], title: 'LINE 群組「電費單小圈圈」', sub: '現行歸檔管道；系統化後是否停用' });
   d.group({ id: 'gExcel', x: 30, y: 820, w: 1010, h: 160, title: '現行 Excel 與檔案（要匯入或被系統取代）' });
@@ -55,7 +55,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
       { id: 'e1', title: '電費單超強表格', sub: '電號→案場、檔名規則、付款申請內容', data: 'uncertain' },
       { id: 'e2', title: '電費單紀錄', sub: '每日收件、開票金額、計費期間（未提供範本）', clar: 'open', tags: ['Q-08'] },
       { id: 'e3', title: '資產管理清單', sub: '案場、SPV、合約、地主、履保、保險', data: 'uncertain' },
-      { id: 'e4', title: '租金計算（範例）', sub: '度數×費率×租金率；範例含 #VALUE!', data: 'uncertain', tags: ['Q-11'] },
+      { id: 'e4', title: '租金計算（範例）', sub: '度數×費率×租金率；範例含 #VALUE!', data: 'uncertain', tags: ['Q-09'] },
     ],
   });
   d.edge({ from: 'tp', to: 'mail', fromSide: 'b', toSide: 't', toAt: 0.24, impl: 'external', label: 'Email' });
@@ -68,7 +68,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.edge({ from: 'payee', to: 'sys', fromSide: 'l', toSide: 'r', fromAt: 0.75, toAt: 0.85, impl: 'todo', label: '發票／收據 R04', labelAt: [1114, 604] });
   d.edge({ from: 'sys', to: 'outlook', fromSide: 'r', toSide: 'l', fromAt: 0.97, impl: 'todo', clar: 'open', label: '寄送（研究）' });
   d.edge({ from: 'sys', to: 'ocr', fromSide: 'b', toSide: 't', fromAt: 0.62, toAt: 0.45, impl: 'partial', label: '辨識（HTTP）', both: true });
-  d.edge({ from: 'gUsers', to: 'sys', fromSide: 'r', toSide: 'l', fromAt: 0.5, toAt: 0.5, impl: 'partial', clar: 'open', label: '瀏覽器操作（安裝指南只寫主機本機 127.0.0.1，Q-09）', labelW: 160 });
+  d.edge({ from: 'gUsers', to: 'sys', fromSide: 'r', toSide: 'l', fromAt: 0.5, toAt: 0.5, impl: 'done', label: '瀏覽器操作' });
   d.edge({ from: 'gExcel', to: 'sys', fromSide: 't', toSide: 'b', fromAt: 0.5644, toAt: 0.0833, impl: 'todo', label: '匯入 R05／FR-006', labelAt: [560, 742] });
   d.legend(30, 1004, 1620);
 }
@@ -87,7 +87,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     x: 40, y: 152, w: W, h: 126, gap: 16,
     items: [
       { id: 's1', title: '收信下載', sub: '公用信箱自動取附件；現況只能手動上傳', impl: 'todo', clar: 'open', tags: ['B01', 'Q-06'] },
-      { id: 's2', title: '解密 PDF', sub: '依子公司密碼；現況可逐檔輸入、不保存', impl: 'partial', clar: 'open', tags: ['Q-14'] },
+      { id: 's2', title: '解密 PDF', sub: '依子公司密碼；現況可逐檔輸入、不保存', impl: 'partial', clar: 'open', tags: ['Q-12'] },
       { id: 's3', title: '命名＋歸檔', sub: '日期_編號_(子公司)案場；存公槽（現況存 MinIO）', impl: 'todo', clar: 'open', tags: ['B01', 'Q-07'] },
       { id: 's4', title: '辨識欄位', sub: '電號、期間、度數、金額（4 版型已驗證）', impl: 'partial', data: 'uncertain', tags: ['B05', 'B06'] },
       { id: 's5', title: '對案場／子公司／區處', sub: '電號→案場已具備；子公司、區處缺', impl: 'partial', tags: ['B04'] },
@@ -99,8 +99,8 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   });
   d.chain(['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9'], { impl: 'todo' });
   d.node({ id: 'own', x: 40, y: 330, w: 524, h: 140, impl: 'beyond', clar: 'open', tags: ['Q-04'], title: '系統內多關卡核可（energy-ops-rust 既有，合約外）', sub: '承辦確認 → 主管核准 →（≥10 萬）高層加簽 → 計算應付 → 財務放行 → 付款。合約要求的簽核在 EasyFlow，兩者分工待決。' });
-  d.node({ id: 'alert', x: 580, y: 330, w: 344, h: 140, impl: 'todo', clar: 'open', tags: ['B03', 'Q-16'], title: '未收單警示', sub: '指定時間沒收到電費單就通知（系統內；Email 群組為選配）。現況：沒有預計到件日的資料，也沒有通知機制。' });
-  d.node({ id: 's12', x: X(6), y: 330, w: W, h: 140, impl: 'dropped', clar: 'open', tags: ['Q-27'], title: '發票寄送台電', sub: '區處 Email；雲林、南投寄紙本。合約未列' });
+  d.node({ id: 'alert', x: 580, y: 330, w: 344, h: 140, impl: 'todo', clar: 'open', tags: ['B03', 'Q-14'], title: '未收單警示', sub: '指定時間沒收到電費單就通知（系統內；Email 群組為選配）。現況：沒有預計到件日的資料，也沒有通知機制。' });
+  d.node({ id: 's12', x: X(6), y: 330, w: W, h: 140, impl: 'dropped', clar: 'open', tags: ['Q-25'], title: '發票寄送台電', sub: '區處 Email；雲林、南投寄紙本。合約未列' });
   d.node({ id: 's11', x: X(7), y: 330, w: W, h: 140, impl: 'todo', tags: ['B15'], title: '回寫開立日期', sub: '更新電費紀錄單的發票開立日期' });
   d.node({ id: 's10', x: X(8), y: 330, w: W, h: 140, impl: 'todo', tags: ['B14'], title: '發票收件存檔', sub: '財務開立後，自信箱取發票附件並命名存檔' });
   d.edge({ from: 's9', to: 's10', fromSide: 'b', toSide: 't', impl: 'todo' });
@@ -112,7 +112,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     x: 40, y: 552, w: W, h: 130, gap: 16,
     items: [
       { id: 't1', title: '收信（天能）', sub: '與台電來源分流', impl: 'todo', clar: 'open', tags: ['B02', 'Q-06'] },
-      { id: 't2', title: '合併檔案＋歸檔', sub: '合併規則未定', impl: 'todo', clar: 'open', tags: ['B02', 'Q-12'] },
+      { id: 't2', title: '合併檔案＋歸檔', sub: '合併規則未定', impl: 'todo', clar: 'open', tags: ['B02', 'Q-10'] },
       { id: 't3', title: '辨識電號→案場、子公司', sub: '一張單多個電號；含計費期間', impl: 'todo', tags: ['B07'] },
       { id: 't4', title: '辨識未稅電能費、營業稅', sub: '現有辨識服務不支援天能版型', impl: 'todo', tags: ['B08'] },
       { id: 't5', title: 'EasyFlow 開票申請', sub: '收款對象＝天能；項目說明有固定句型', impl: 'todo', clar: 'open', tags: ['B13', 'Q-05'] },
@@ -126,14 +126,14 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.row({
     x: 40, y: 762, w: W, h: 136, gap: 16,
     items: [
-      { id: 'r1', title: '付款期程到期', sub: '固定租金直接產出；變動租金等度數', impl: 'todo', clar: 'open', tags: ['R02', 'Q-24'] },
+      { id: 'r1', title: '付款期程到期', sub: '固定租金直接產出；變動租金等度數', impl: 'todo', clar: 'open', tags: ['R02', 'Q-22'] },
       { id: 'r2', title: '取度數', sub: '台電餘電＋天能轉供（指定資料夾）', impl: 'todo', tags: ['R02'] },
-      { id: 'r3', title: '租金計算表', sub: '(餘電度×費率＋轉供度×費率)×租金率；稅', impl: 'partial', clar: 'open', tags: ['R01', 'Q-11'] },
-      { id: 'r4', title: '多地主分配', sub: '比例或固定金額；繼承異動', impl: 'todo', clar: 'open', tags: ['FR-019', 'Q-22'] },
-      { id: 'r5', title: '付款通知', sub: '罐頭訊息；紙本或 Email；附電費單', impl: 'todo', clar: 'open', tags: ['R03', 'Q-19'] },
-      { id: 'r6', title: '發票／收據', sub: '公司或機關受款人；先附或後補；未收提醒', impl: 'todo', clar: 'open', tags: ['R04', 'Q-23'] },
+      { id: 'r3', title: '租金計算表', sub: '(餘電度×費率＋轉供度×費率)×租金率；稅', impl: 'partial', clar: 'open', tags: ['R01', 'Q-09'] },
+      { id: 'r4', title: '多地主分配', sub: '比例或固定金額；繼承異動', impl: 'todo', clar: 'open', tags: ['FR-019', 'Q-20'] },
+      { id: 'r5', title: '付款通知', sub: '罐頭訊息；紙本或 Email；附電費單', impl: 'todo', clar: 'open', tags: ['R03', 'Q-17'] },
+      { id: 'r6', title: '發票／收據', sub: '公司或機關受款人；先附或後補；未收提醒', impl: 'todo', clar: 'open', tags: ['R04', 'Q-21'] },
       { id: 'r7', title: '付款申請單', sub: '附租金計算表、電費單、發票；檢核簽准', impl: 'todo', clar: 'open', tags: ['R08', 'Q-05'] },
-      { id: 'r8', title: '付款追蹤', sub: 'EIP 單號、核准日、實際付款日', impl: 'todo', clar: 'open', tags: ['FR-030', 'Q-20'] },
+      { id: 'r8', title: '付款追蹤', sub: 'EIP 單號、核准日、實際付款日', impl: 'todo', clar: 'open', tags: ['FR-030', 'Q-18'] },
     ],
   });
   d.chain(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], { impl: 'todo' });
@@ -144,7 +144,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     items: [
       { id: 'm1', title: '資產管理表匯入', sub: '共用總表：查詢、篩選、修正、匯出', impl: 'todo', tags: ['R05', 'FR-006'] },
       { id: 'm2', title: '操作紀錄與權限', sub: '稽核與權限機制已具備，要接上主檔', impl: 'partial', tags: ['R05'] },
-      { id: 'm3', title: '合約上傳＋到期判定', sub: '到期日、租金付款日', impl: 'todo', clar: 'open', tags: ['R06', 'Q-25'] },
+      { id: 'm3', title: '合約上傳＋到期判定', sub: '到期日、租金付款日', impl: 'todo', clar: 'open', tags: ['R06', 'Q-23'] },
       { id: 'm4', title: '續約／付款日提醒', sub: '到期前 6／3／1 個月；付款日待辦', impl: 'todo', tags: ['R06', 'FR-015'] },
       { id: 'm5', title: '履保金退還追蹤', sub: '分期退還、提醒；本期是否交付？', impl: 'todo', clar: 'open', tags: ['FR-033', 'Q-02'] },
       { id: 'm6', title: '保險承保追蹤', sub: '續保與保單提供；本期是否交付？', impl: 'todo', clar: 'open', tags: ['FR-034', 'Q-02'] },
@@ -161,8 +161,8 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
 // ───────────────────────────── A2 部署與容器 ─────────────────────────────
 {
   const d = make({
-    id: 'A2', title: '部署與容器（客戶主機、開發環境、舊版）', width: 1700, height: 1100,
-    subtitle: '系統實際怎麼跑：客戶端是 Windows Server 上的 WSL 與四個容器；右側是我方開發環境與不再採用的舊版。內網資源都還沒接。',
+    id: 'A2', title: '部署與容器（客戶主機、開發環境）', width: 1700, height: 1100,
+    subtitle: '系統實際怎麼跑：客戶端是 Windows Server 上的 WSL 與四個容器（離線安裝包已完成）；右側是我方開發環境。內網資源（信箱、公槽、EasyFlow）都還沒接。',
     basis: '雲豹離線安裝逐步操作指南（2026-11-04）、energy-ops-rust README／docker-compose、deployments/energy-ops.md',
   });
   d.group({ id: 'gC', x: 20, y: 110, w: 1060, h: 880, title: '雲豹內網（客戶主機）', sub: 'NFR-002：部署於客戶主機，配合內部網路限制' });
@@ -172,15 +172,14 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.node({ id: 'c2', x: 370, y: 280, w: 270, h: 120, shape: 'db', impl: 'done', title: 'postgres', sub: '業務資料、稽核、session' });
   d.node({ id: 'c3', x: 80, y: 420, w: 270, h: 120, shape: 'db', impl: 'done', title: 'minio', sub: '原檔與附件（S3 相容）；不對外開放' });
   d.node({ id: 'c4', x: 370, y: 420, w: 270, h: 120, impl: 'partial', data: 'uncertain', title: 'ocr：taipower-recognition', sub: 'PDF 文字層＋本機 OCR；影像辨識有誤（營業稅誤取）' });
-  d.node({ id: 'pkg', x: 80, y: 552, w: 560, h: 78, impl: 'partial', clar: 'open', tags: ['Q-09'], title: '安裝包 EnergyOps_Offline_20261104', sub: 'Prepare／Install／Start-Windows.ps1；打包原始碼不在 energy-ops-rust repo' });
-  d.node({ id: 'ops1', x: 60, y: 660, w: 290, h: 140, impl: 'todo', clar: 'open', tags: ['Q-31'], title: '開機自動啟動', sub: '需 IT 設定工作排程，並驗證重開機、遠端登出後仍持續運作' });
-  d.node({ id: 'ops2', x: 370, y: 660, w: 290, h: 140, impl: 'todo', clar: 'open', tags: ['Q-31'], title: '備份／監控／日誌', sub: '尚未規劃。維護期合約要求 4 小時內確認問題' });
+  d.node({ id: 'pkg', x: 80, y: 552, w: 560, h: 78, impl: 'done', title: '安裝包 EnergyOps_Offline_20261104', sub: 'Prepare／Install／Start-Windows.ps1；已完成（使用者確認）' });
+  d.node({ id: 'ops2', x: 60, y: 660, w: 600, h: 140, impl: 'todo', clar: 'open', tags: ['Q-29'], title: '備份／監控／日誌／維護通報', sub: '尚未規劃。維護期合約要求 4 小時內確認問題，逾期每日罰款' });
   d.group({ id: 'gNet', x: 700, y: 170, w: 360, h: 650, title: '內網資源（都需 IT 開通）', fill: '#F1F5F9' });
-  d.node({ id: 'i1', x: 720, y: 222, w: 320, h: 120, impl: 'partial', clar: 'open', tags: ['Q-09', 'Q-30'], title: '使用者電腦（瀏覽器）', sub: '安裝指南要求在主機遠端桌面內開 127.0.0.1:11950；同仁自己的電腦能否連線未定' });
+  d.node({ id: 'i1', x: 720, y: 222, w: 320, h: 120, impl: 'done', tags: ['Q-28'], title: '使用者電腦（瀏覽器）', sub: '依安裝指南以瀏覽器操作；使用者名單與角色待提供' });
   d.node({ id: 'i2', x: 720, y: 368, w: 320, h: 120, impl: 'external', clar: 'open', tags: ['Q-06'], title: '公用信箱伺服器', sub: 'Exchange／Microsoft 365／IMAP？帳號與連線方式未定' });
   d.node({ id: 'i3', x: 720, y: 514, w: 320, h: 120, impl: 'external', clar: 'open', tags: ['Q-07'], title: '公槽（SMB 共用磁碟）', sub: '指定路徑與寫入權限未定；指南提醒不要把程式放在公槽執行' });
   d.node({ id: 'i4', x: 720, y: 660, w: 320, h: 140, impl: 'external', clar: 'open', tags: ['Q-05'], title: 'EasyFlow 伺服器', sub: '有無 API、能否以模擬操作建單、測試帳號，皆未定' });
-  d.node({ id: 'deliv', x: 40, y: 840, w: 1020, h: 130, impl: 'todo', clar: 'open', tags: ['Q-33'], title: '交付與維運（合約第三、九條與附件一）', sub: '教育訓練 1 週；使用手冊（安裝、功能、錯誤排除）；原始碼、範例、PPT、DOC；Windows 安裝包；維護 1 年：4 小時內確認、緊急 1 個工作天、非緊急 3 個工作天，逾期每日罰款。' });
+  d.node({ id: 'deliv', x: 40, y: 840, w: 1020, h: 130, impl: 'todo', clar: 'open', tags: ['Q-31'], title: '交付與維運（合約第三、九條與附件一）', sub: '教育訓練 1 週；使用手冊（安裝、功能、錯誤排除）；原始碼、範例、PPT、DOC；Windows 安裝包；維護 1 年：4 小時內確認、緊急 1 個工作天、非緊急 3 個工作天，逾期每日罰款。' });
   d.edge({ from: 'c1', to: 'c2', impl: 'done', both: true });
   d.edge({ from: 'c1', to: 'c3', fromSide: 'b', toSide: 't', impl: 'done', both: true });
   d.edge({ from: 'c1', to: 'c4', fromSide: 'r', toSide: 'l', fromAt: 0.85, toAt: 0.2, impl: 'partial' });
@@ -188,7 +187,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.edge({ from: 'gWSL', to: 'i2', fromSide: 'r', toSide: 'l', fromAt: 0.42, toAt: 0.317, impl: 'todo', clar: 'open', label: '收件' });
   d.edge({ from: 'gWSL', to: 'i3', fromSide: 'r', toSide: 'l', fromAt: 0.8, toAt: 0.367, impl: 'todo', clar: 'open', label: '存檔' });
   d.edge({ from: 'gWSL', to: 'i4', fromSide: 'r', toSide: 'l', fromAt: 0.97, toAt: 0.2, impl: 'todo', clar: 'open', route: 'h', mid: 690, label: '建單', labelAt: [690, 660] });
-  d.group({ id: 'gDev', x: 1100, y: 110, w: 580, h: 560, title: '開發環境（我方）', fill: '#F8FAFC' });
+  d.group({ id: 'gDev', x: 1100, y: 110, w: 580, h: 880, title: '開發環境（我方）', fill: '#F8FAFC' });
   d.row({ x: 1120, y: 166, w: 262, h: 100, gap: 16, items: [
     { id: 'd1', impl: 'done', title: 'docker compose', sub: 'Postgres 18 :56432、MinIO :56900' },
     { id: 'd2', impl: 'done', title: 'dev-run.sh', sub: '後端 :10950＋Vite :5190；--demo 灌示範資料' },
@@ -197,11 +196,9 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     { id: 'd3', impl: 'done', data: 'mock', title: 'fake-tpr :18080', sub: '依檔名回 4 份範本的辨識結果' },
     { id: 'd4', impl: 'done', title: 'gate.sh／e2e crawler', sub: 'Rust 266＋vitest 173；12 支 crawler、595 條斷言' },
   ] });
-  d.node({ id: 'd5', x: 1120, y: 414, w: 540, h: 100, impl: 'todo', clar: 'open', tags: ['Q-09'], title: '打包腳本（產出離線安裝包）', sub: '本機與 GitHub 都找不到；離線包可能在另一台電腦打包' });
+  d.node({ id: 'd5', x: 1120, y: 414, w: 540, h: 100, impl: 'done', title: '離線安裝包 EnergyOps_Offline_20261104', sub: '已完成（使用者確認）；功能更新後重新打包' });
   d.node({ id: 'd6', x: 1120, y: 538, w: 540, h: 112, impl: 'done', title: 'GitHub：xtforgame/energy-ops-rust', sub: 'master＝rust-port＝cf7a330（2026-11-04）。2026-11-12 抓取：遠端沒有新提交' });
-  d.group({ id: 'gOld', x: 1100, y: 690, w: 580, h: 300, title: '舊版（不採用；去留待定）', fill: '#FAFAFA' });
-  d.node({ id: 'l1', x: 1120, y: 744, w: 540, h: 104, impl: 'dropped', clar: 'open', tags: ['Q-10'], title: 'App 5 線上 Demo（energy-ops.vercel.app）', sub: 'Vercel＋Supabase Edge Functions＋平台 OCR；單一組織；有一條未併修正分支' });
-  d.node({ id: 'l2', x: 1120, y: 866, w: 540, h: 104, impl: 'dropped', title: 'az repo 原版（Node／Sequelize）', sub: 'feat-tenant-console-route-transition；設計文件與 crawler 的來源' });
+  d.note({ x: 1120, y: 680, w: 540, h: 70, tone: 'info', fs: 12, text: '舊版（az repo 原版、energy-ops-next、App 5）不保留、不維護，只當作規格參考；詳見「規格來源與世代」。' });
   d.edge({ from: 'd5', to: 'pkg', fromSide: 'l', toSide: 'r', impl: 'external', points: [[1090, 464], [1090, 160], [690, 160], [690, 591]], label: 'zip 人工搬到主機', labelAt: [890, 160] });
   d.legend(20, 1012, 1660);
 }
@@ -222,12 +219,12 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     { id: 'p4', impl: 'beyond', clar: 'open', tags: ['Q-04'], title: '流程單', sub: '系統內簽核的執行' },
     { id: 'p5', impl: 'partial', title: '地主／案場', sub: '只能看，不能新增、編輯' },
     { id: 'p6', impl: 'partial', title: '行事曆／儀表板', sub: '只有期數到期；無應收' },
-    { id: 'p7', impl: 'done', clar: 'open', tags: ['Q-34'], title: '流程總覽／稽核', sub: '選單隱藏，網址可進' },
-    { id: 'p8', impl: 'beyond', data: 'mock', tags: ['Q-28'], title: '台灣 3D 地圖', sub: '示範座標' },
+    { id: 'p7', impl: 'done', clar: 'open', tags: ['Q-32'], title: '流程總覽／稽核', sub: '選單隱藏，網址可進' },
+    { id: 'p8', impl: 'beyond', data: 'mock', tags: ['Q-26'], title: '台灣 3D 地圖', sub: '示範座標' },
   ] });
   d.row({ x: 40, y: 278, w: 191, h: 104, gap: 16, items: [
-    { id: 'p9', impl: 'beyond', clar: 'open', tags: ['Q-34'], title: '組織／專案／邀請', sub: '多組織（合約外）' },
-    { id: 'p10', impl: 'beyond', clar: 'open', tags: ['Q-34'], title: 'RBAC 管理', sub: '角色、permission、授權' },
+    { id: 'p9', impl: 'beyond', clar: 'open', tags: ['Q-32'], title: '組織／專案／邀請', sub: '多組織（合約外）' },
+    { id: 'p10', impl: 'beyond', clar: 'open', tags: ['Q-32'], title: 'RBAC 管理', sub: '角色、permission、授權' },
     { id: 'p11', impl: 'done', title: '部門與能源角色', sub: '五角色指派、部門主管' },
     { id: 'p12', impl: 'done', title: '個人資料／帳號管理', sub: '改密碼、超級使用者' },
     { id: 'p13', impl: 'todo', tags: ['R05'], title: '資產主檔維護', sub: '匯入、修正、匯出' },
@@ -243,14 +240,14 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     { id: 'b4', impl: 'done', title: 'attachments 附件', sub: 'MinIO、sha256、預簽直傳' },
     { id: 'b5', impl: 'partial', data: 'mock', title: 'master_data 主檔', sub: '只有讀取；geocode 是 mock' },
     { id: 'b6', impl: 'beyond', title: 'bindings 效期綁定', sub: '流程／計費綁案場' },
-    { id: 'b7', impl: 'partial', clar: 'open', tags: ['Q-11'], title: 'rating 計費', sub: '三種策略、不可變應付紀錄' },
+    { id: 'b7', impl: 'partial', clar: 'open', tags: ['Q-09'], title: 'rating 計費', sub: '三種策略、不可變應付紀錄' },
     { id: 'b8', impl: 'beyond', clar: 'open', tags: ['Q-04'], title: 'workflow 引擎', sub: '多關卡簽核、回退鎖、代理' },
   ] });
   d.row({ x: 40, y: 592, w: 191, h: 110, gap: 16, items: [
     { id: 'b9', impl: 'partial', title: 'workbench', sub: '登入落點、儀表板（只有應付）、行事曆' },
     { id: 'b10', impl: 'done', title: 'org 部門與角色', sub: '五能源角色、最後一位治理者防呆' },
     { id: 'b11', impl: 'done', tags: ['R05'], title: 'audit 稽核', sub: '56 種事件，與業務同交易寫入' },
-    { id: 'b12', impl: 'done', data: 'mock', tags: ['Q-36'], title: 'demo_seed', sub: '虛構主檔，但用了真實電號' },
+    { id: 'b12', impl: 'done', data: 'mock', tags: ['Q-34'], title: 'demo_seed', sub: '虛構主檔，但用了真實電號' },
     { id: 'b13', impl: 'done', data: 'mock', title: 'fake_tpr', sub: '開發測試用假辨識服務' },
     { id: 'b14', impl: 'external', data: 'uncertain', title: 'tpr_client → OCR', sub: '講 taipower-recognition 協定' },
   ] });
@@ -271,7 +268,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.row({ x: 40, y: 970, w: 206, h: 146, gap: 15, items: [
     { id: 'q1', impl: 'done', title: 'authn 登入', sub: 'bcrypt；DB session（閒置 14 天、絕對 183 天）；無忘記密碼' },
     { id: 'q2', impl: 'done', title: 'user 帳號', sub: '個資、改密碼、停用' },
-    { id: 'q3', impl: 'beyond', clar: 'open', tags: ['Q-34'], title: 'multitenancy', sub: '組織、專案、邀請（不寄信）' },
+    { id: 'q3', impl: 'beyond', clar: 'open', tags: ['Q-32'], title: 'multitenancy', sub: '組織、專案、邀請（不寄信）' },
     { id: 'q4', impl: 'done', title: 'rbac 權限', sub: '三層 scope、自訂角色、快取（功能遠多於合約）' },
     { id: 'q5', impl: 'done', title: '基礎', sub: 'database／storage（SigV4）／health／static_web' },
   ] });
@@ -295,27 +292,27 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   });
   d.group({ id: 'gL', x: 20, y: 110, w: 820, h: 1000, title: '現有資料表（migrations 0001～0102）' });
   d.node({ id: 't1', x: 40, y: 160, w: 380, h: 172, impl: 'partial', clar: 'open', tags: ['FR-001', 'FR-002', 'FR-014'], title: '主檔', sub: 'landowner：一案場只連一位地主\nstation：一案場一個電號；沒有子公司、區處、容量、併網日\ncontract：沒有類型、到期提醒、付款規則、合約檔\ncontract_station：契約×案場配對與參數' });
-  d.node({ id: 't2', x: 440, y: 160, w: 380, h: 172, impl: 'partial', clar: 'open', tags: ['Q-18'], title: '期數與行事曆', sub: 'installment：建設期保證金分期（付給地主？）\ncalendar_event：只產「期數到期」一種事件；不會由合約自動產生' });
+  d.node({ id: 't2', x: 440, y: 160, w: 380, h: 172, impl: 'partial', clar: 'open', tags: ['Q-16'], title: '期數與行事曆', sub: 'installment：建設期保證金分期（付給地主？）\ncalendar_event：只產「期數到期」一種事件；不會由合約自動產生' });
   d.node({ id: 't3', x: 40, y: 352, w: 380, h: 188, impl: 'partial', tags: ['B05', 'B06'], title: '收件與單據', sub: 'ingest_batch／ingest_item\nbill：三層值（辨識原始／抽取／最終）\n最終值只有期間、總額、度數、開單日、繳費期限；電表租費、使用電能費、BBR、下次抄表日仍只在辨識原始資料裡' });
   d.node({ id: 't4', x: 440, y: 352, w: 380, h: 188, impl: 'done', title: '附件', sub: 'attachment：MinIO、sha256、換版\nattachment_link：掛在哪個關卡\n（多流程時原檔歸屬會被後開的流程蓋掉，見程式碼比對紀錄）' });
   d.node({ id: 't5', x: 40, y: 560, w: 380, h: 190, impl: 'beyond', clar: 'open', tags: ['Q-04'], title: '系統內流程（11 張，合約外）', sub: 'workflow_definition／node／transition／action\nworkflow_binding／execution／task／task_candidate\ndelegation／side_effect／execution_lineage' });
-  d.node({ id: 't6', x: 440, y: 560, w: 380, h: 190, impl: 'partial', clar: 'open', tags: ['R01', 'Q-11'], title: '計費與應付', sub: 'rating_strategy：固定、售電比例、度數單價\nrating_strategy_binding：效期\npayout_record：每張單算一次、不可變\n（實際租金是「每期×每份合約×每位地主」）' });
+  d.node({ id: 't6', x: 440, y: 560, w: 380, h: 190, impl: 'partial', clar: 'open', tags: ['R01', 'Q-09'], title: '計費與應付', sub: 'rating_strategy：固定、售電比例、度數單價\nrating_strategy_binding：效期\npayout_record：每張單算一次、不可變\n（實際租金是「每期×每份合約×每位地主」）' });
   d.node({ id: 't7', x: 40, y: 770, w: 380, h: 120, impl: 'done', title: '組織', sub: 'department／department_member（主管）' });
   d.node({ id: 't8', x: 440, y: 770, w: 380, h: 120, impl: 'done', tags: ['R05'], title: '稽核', sub: 'audit_event：56 種事件、payload 白名單、前後值' });
-  d.node({ id: 't9', x: 40, y: 910, w: 780, h: 180, impl: 'done', tags: ['Q-34'], title: '平台（13 張）', sub: 'user／account_link／user_session：登入與 session\norganization／project／invitation：多組織與邀請（合約外）\nrbac_permission／complex／role／role_permission／user_rbac_role：權限' });
+  d.node({ id: 't9', x: 40, y: 910, w: 780, h: 180, impl: 'done', tags: ['Q-32'], title: '平台（13 張）', sub: 'user／account_link／user_session：登入與 session\norganization／project／invitation：多組織與邀請（合約外）\nrbac_permission／complex／role／role_permission／user_rbac_role：權限' });
   d.group({ id: 'gR', x: 860, y: 110, w: 840, h: 1000, title: '還需要的資料（DB 欄位字典與合約驗收）', clar: 'open', fill: '#FFFBF5' });
   d.node({ id: 'n1', x: 880, y: 160, w: 400, h: 140, impl: 'todo', tags: ['FR-001'], title: '案場主檔（擴充）', sub: '專案編號、簡稱、區域、分類、子公司（SPV）、容量 kWp、型別、併網日、狀態、內部負責人。由現有 station 擴充' });
-  d.node({ id: 'n2', x: 1300, y: 160, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['FR-002', 'Q-17'], title: '案場電號關聯', sub: '一案場多電號；用途（躉購／用電）；台電契約編號；躉售與綠電費率；有效起訖。新表，取代 station 的單一電號' });
-  d.node({ id: 'n3', x: 880, y: 320, w: 400, h: 140, impl: 'todo', clar: 'open', tags: ['FR-022', 'Q-29'], title: '子公司與受款人', sub: '對象類型、統編、地址、銀行帳號（需加密）、是否開發票、先開或後補。新表；現有 landowner 只涵蓋個人地主' });
-  d.node({ id: 'n4', x: 1300, y: 320, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['FR-019', 'FR-020', 'Q-22'], title: '多地主分配', sub: '比例或固定金額；有效起訖；繼承與異動文件、原因。新表；效期做法可沿用 bindings' });
+  d.node({ id: 'n2', x: 1300, y: 160, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['FR-002', 'Q-15'], title: '案場電號關聯', sub: '一案場多電號；用途（躉購／用電）；台電契約編號；躉售與綠電費率；有效起訖。新表，取代 station 的單一電號' });
+  d.node({ id: 'n3', x: 880, y: 320, w: 400, h: 140, impl: 'todo', clar: 'open', tags: ['FR-022', 'Q-27'], title: '子公司與受款人', sub: '對象類型、統編、地址、銀行帳號（需加密）、是否開發票、先開或後補。新表；現有 landowner 只涵蓋個人地主' });
+  d.node({ id: 'n4', x: 1300, y: 320, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['FR-019', 'FR-020', 'Q-20'], title: '多地主分配', sub: '比例或固定金額；有效起訖；繼承與異動文件、原因。新表；效期做法可沿用 bindings' });
   d.node({ id: 'n5', x: 880, y: 480, w: 400, h: 160, impl: 'todo', tags: ['FR-014', 'R06'], title: '合約（多類型）', sub: '租賃、綠電、維運上包、下包；簽約、起訖、續約提醒；條款版本；付款頻率與期限規則；合約檔案。由現有 contract 擴充' });
-  d.node({ id: 'n6', x: 1300, y: 480, w: 380, h: 160, impl: 'todo', clar: 'open', tags: ['R01', 'R02', 'Q-11'], title: '租金規則與每期明細', sub: '規則版本；餘電／轉供費率、租金率、固定、保底、年度基準；稅；每期計算明細＋人工覆核。由現有 rating 擴充' });
+  d.node({ id: 'n6', x: 1300, y: 480, w: 380, h: 160, impl: 'todo', clar: 'open', tags: ['R01', 'R02', 'Q-09'], title: '租金規則與每期明細', sub: '規則版本；餘電／轉供費率、租金率、固定、保底、年度基準；稅；每期計算明細＋人工覆核。由現有 rating 擴充' });
   d.node({ id: 'n7', x: 880, y: 660, w: 400, h: 140, impl: 'partial', tags: ['B05', 'B06'], title: '電費單明細（依版型）', sub: '通知單號、本次／下次抄表日、繳費期限、電表租費、使用電能費、基本／流動電費、載具與發票號碼。由現有 bill 擴充（辨識服務已輸出）' });
-  d.node({ id: 'n8', x: 1300, y: 660, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['B07', 'B08', 'Q-12'], title: '天能轉供單', sub: '一單多電號；轉供度數；購售電費率；未稅電能費；評鑑費、書審費。新表' });
+  d.node({ id: 'n8', x: 1300, y: 660, w: 380, h: 140, impl: 'todo', clar: 'open', tags: ['B07', 'B08', 'Q-10'], title: '天能轉供單', sub: '一單多電號；轉供度數；購售電費率；未稅電能費；評鑑費、書審費。新表' });
   d.node({ id: 'n9', x: 880, y: 820, w: 400, h: 130, impl: 'todo', tags: ['B14', 'B15', 'R04'], title: '發票與請款', sub: '類型、號碼、日期、金額、收票日、核對狀態、缺件提醒。新表' });
-  d.node({ id: 'n10', x: 1300, y: 820, w: 380, h: 130, impl: 'todo', clar: 'open', tags: ['B11', 'R08', 'Q-20'], title: '付款申請', sub: '申請金額、預計付款日、期限、EIP 單號、狀態、核准日、實際付款日。新表' });
+  d.node({ id: 'n10', x: 1300, y: 820, w: 380, h: 130, impl: 'todo', clar: 'open', tags: ['B11', 'R08', 'Q-18'], title: '付款申請', sub: '申請金額、預計付款日、期限、EIP 單號、狀態、核准日、實際付款日。新表' });
   d.node({ id: 'n11', x: 880, y: 970, w: 400, h: 120, impl: 'todo', clar: 'open', tags: ['FR-033', 'FR-034', 'Q-02'], title: '履保／保險／待辦', sub: '保證金餘額與分期退還、保險有效期、提醒、負責人。新表；與現有 installment 語意不同？' });
-  d.node({ id: 'n12', x: 1300, y: 970, w: 380, h: 120, impl: 'todo', clar: 'open', tags: ['B03', 'Q-16'], title: '收件設定與匯入批次', sub: '信箱、允許寄件者、預計到件日、漏件提醒天數；匯入錯誤。新表；可擴充 ingest_batch' });
+  d.node({ id: 'n12', x: 1300, y: 970, w: 380, h: 120, impl: 'todo', clar: 'open', tags: ['B03', 'Q-14'], title: '收件設定與匯入批次', sub: '信箱、允許寄件者、預計到件日、漏件提醒天數；匯入錯誤。新表；可擴充 ingest_batch' });
   d.legend(20, 1130, 1680);
 }
 
@@ -331,23 +328,23 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.row({ x: 40, y: 154, w: W, h: 146, gap: S - W, items: [
     { id: 'a1', impl: 'external', clar: 'open', tags: ['Q-06'], title: '公用信箱', sub: '台電、天能電費單；財務開好的發票' },
     { id: 'a2', impl: 'todo', tags: ['B01', 'B02'], title: '收件器', sub: '排程收信；寄件者與附件規則；sha256 去重' },
-    { id: 'a3', impl: 'partial', clar: 'open', tags: ['Q-14'], title: 'PDF 解密', sub: '依子公司密碼；現況只能逐檔輸入、不保存' },
+    { id: 'a3', impl: 'partial', clar: 'open', tags: ['Q-12'], title: 'PDF 解密', sub: '依子公司密碼；現況只能逐檔輸入、不保存' },
     { id: 'a4', impl: 'todo', clar: 'open', tags: ['B01', 'Q-07'], title: '檔案命名', sub: '日期_案場編號_(子公司)案場名［(逆變器)］' },
     { id: 'a5', impl: 'todo', clar: 'open', tags: ['B01', 'Q-07'], title: '存公槽＋系統', sub: '公槽指定資料夾；系統內同時存 MinIO' },
-    { id: 'a6', impl: 'todo', clar: 'open', tags: ['B02', 'Q-12'], title: '天能：合併檔案', sub: '台電轉供單清單＋天能電費單？' },
+    { id: 'a6', impl: 'todo', clar: 'open', tags: ['B02', 'Q-10'], title: '天能：合併檔案', sub: '台電轉供單清單＋天能電費單？' },
     { id: 'a7', impl: 'done', tags: ['FR-005'], title: '手動上傳（既有）', sub: '收件台一批 ≤50 檔；密碼可逐檔輸入' },
   ] });
   d.chain(['a1', 'a2', 'a3', 'a4', 'a5'], { impl: 'todo' });
   d.edge({ from: 'a2', to: 'a6', fromSide: 'b', toSide: 'b', fromAt: 0.5, toAt: 0.5, impl: 'todo', points: [[S + 147, 312], [5 * S + 147, 312]], label: '天能來源', labelAt: [3 * S + 147, 312] });
   d.group({ id: 'gB', x: 20, y: 340, w: 1680, h: 210, title: 'B. 辨識與覆核' });
   d.row({ x: 40, y: 384, w: W, h: 146, gap: S - W, items: [
-    { id: 'b1', impl: 'partial', data: 'uncertain', tags: ['B04–B08', 'Q-15'], title: 'OCR 辨識', sub: '文字層 PDF 4 範本已驗證；影像、傳真影本有誤' },
-    { id: 'b2', impl: 'partial', clar: 'open', tags: ['Q-15'], title: '分類單別', sub: '躉購有餘電／無餘電／逆變器；天能、退款補收未支援' },
+    { id: 'b1', impl: 'partial', data: 'uncertain', tags: ['B04–B08', 'Q-13'], title: 'OCR 辨識', sub: '文字層 PDF 4 範本已驗證；影像、傳真影本有誤' },
+    { id: 'b2', impl: 'partial', clar: 'open', tags: ['Q-13'], title: '分類單別', sub: '躉購有餘電／無餘電／逆變器；天能、退款補收未支援' },
     { id: 'b3', impl: 'partial', tags: ['B05', 'B06'], title: '抽取欄位', sub: '電號、期間、度數、金額已有；BBR、下次抄表日未成一級欄位' },
     { id: 'b4', impl: 'partial', tags: ['B04'], title: '對案場', sub: '電號正規化比對已有；子公司、區處要主檔' },
     { id: 'b5', impl: 'done', tags: ['FR-009'], title: '例外件', sub: '對不上或辨識失敗：人工指認（既有）' },
     { id: 'b6', impl: 'done', tags: ['FR-008'], title: '人工覆核', sub: '校對台：原檔高亮、改值留痕（既有）' },
-    { id: 'b7', impl: 'todo', clar: 'open', tags: ['B03', 'Q-16'], title: '未收單警示', sub: '比對預計到件日；系統內通知，Email 選配' },
+    { id: 'b7', impl: 'todo', clar: 'open', tags: ['B03', 'Q-14'], title: '未收單警示', sub: '比對預計到件日；系統內通知，Email 選配' },
   ] });
   d.edge({ from: 'a5', to: 'b1', fromSide: 'b', toSide: 't', impl: 'todo', route: 'v', mid: 330 });
   d.edge({ from: 'a7', to: 'b1', fromSide: 'b', toSide: 't', fromAt: 0.5, toAt: 0.8, impl: 'done', points: [[6 * S + 147, 336], [40 + W * 0.8, 336]], label: '既有路徑', labelAt: [5 * S + 40, 336] });
@@ -377,11 +374,11 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     { id: 'd2', impl: 'todo', tags: ['B14'], title: '發票收件', sub: '自信箱取發票附件' },
     { id: 'd3', impl: 'todo', tags: ['B14'], title: '發票存檔', sub: '(區域)子公司_發票號碼_案場-電號' },
     { id: 'd4', impl: 'todo', tags: ['B15'], title: '回寫紀錄單', sub: '更新發票開立日期' },
-    { id: 'd5', impl: 'dropped', clar: 'open', tags: ['Q-27'], title: '寄送台電區處', sub: '現行人工 Email／紙本；合約未列' },
+    { id: 'd5', impl: 'dropped', clar: 'open', tags: ['Q-25'], title: '寄送台電區處', sub: '現行人工 Email／紙本；合約未列' },
   ] });
   d.chain(['d1', 'd2', 'd3', 'd4', 'd5'], { impl: 'todo' });
   d.edge({ from: 'c7', to: 'd1', fromSide: 'b', toSide: 't', impl: 'external', route: 'v', mid: 812 });
-  d.note({ x: 5 * S + 40, y: 864, w: 2 * S - 20, h: 146, tone: 'warn', fs: 12, text: '注意：SOP 現在把台電電子帳單網站帳密與各子公司 PDF 密碼寫在文件裡。系統若要自動解密，密碼要由系統安全保管（Q-14），本文件不轉載任何密碼。' });
+  d.note({ x: 5 * S + 40, y: 864, w: 2 * S - 20, h: 146, tone: 'warn', fs: 12, text: '注意：SOP 現在把台電電子帳單網站帳密與各子公司 PDF 密碼寫在文件裡。系統若要自動解密，密碼要由系統安全保管（Q-12），本文件不轉載任何密碼。' });
   d.legend(20, 1050, 1680);
 }
 
@@ -399,7 +396,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
     { id: 'x2', impl: 'todo', tags: ['R05', 'FR-006'], title: '匯入＋驗證', sub: '主鍵、電號、子公司對應；錯誤報告' },
     { id: 'x3', impl: 'todo', tags: ['R05'], title: '主檔維護', sub: '查詢、篩選、修正、匯出' },
     { id: 'x4', impl: 'partial', tags: ['R05'], title: '操作紀錄＋權限', sub: '稽核與權限已具備，要接到主檔' },
-    { id: 'x5', impl: 'todo', clar: 'open', tags: ['R06', 'Q-25'], title: '合約上傳', sub: '判定到期日與付款日：OCR 或人工？' },
+    { id: 'x5', impl: 'todo', clar: 'open', tags: ['R06', 'Q-23'], title: '合約上傳', sub: '判定到期日與付款日：OCR 或人工？' },
     { id: 'x6', impl: 'todo', tags: ['R06', 'FR-015'], title: '提醒', sub: '續約（到期前 6／3／1 月）、付款日待辦' },
     { id: 'x7', impl: 'todo', clar: 'open', tags: ['FR-033', 'Q-02'], title: '履保金／保險', sub: '分期退還、續保；本期是否交付？' },
   ] });
@@ -407,25 +404,25 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.edge({ from: 'x5', to: 'x6', impl: 'todo' });
   d.group({ id: 'gB', x: 20, y: 340, w: 1680, h: 230, title: 'B. 每期租金計算（R01、R02）' });
   d.row({ x: 40, y: 384, w: W, h: 166, gap: S - W, items: [
-    { id: 'y1', impl: 'todo', clar: 'open', tags: ['R02', 'Q-24'], title: '付款期程', sub: '每月／每季／每年；固定或變動；公證日起 20 工作天等規則' },
+    { id: 'y1', impl: 'todo', clar: 'open', tags: ['R02', 'Q-22'], title: '付款期程', sub: '每月／每季／每年；固定或變動；公證日起 20 工作天等規則' },
     { id: 'y2', impl: 'todo', tags: ['R02'], title: '度數來源', sub: '台電餘電度數＋天能轉供度數（指定資料夾）' },
     { id: 'y3', impl: 'partial', clar: 'open', tags: ['R01', 'FR-016', 'FR-018'], title: '租金規則（版本）', sub: '固定、比例、階段、特殊年租；既有計費策略可擴充' },
-    { id: 'y4', impl: 'partial', clar: 'open', tags: ['R01', 'Q-11'], title: '計算', sub: '購電電費(未稅)＝餘電度×餘電費率＋轉供度×轉供費率；租金＝購電電費×租金率' },
-    { id: 'y5', impl: 'todo', clar: 'open', tags: ['Q-11'], title: '稅與扣繳', sub: '所得稅、補充保費、營業稅；四捨五入' },
-    { id: 'y6', impl: 'todo', clar: 'open', tags: ['FR-019', 'Q-22'], title: '多地主分配', sub: '比例或固定金額；繼承異動生效日' },
+    { id: 'y4', impl: 'partial', clar: 'open', tags: ['R01', 'Q-09'], title: '計算', sub: '購電電費(未稅)＝餘電度×餘電費率＋轉供度×轉供費率；租金＝購電電費×租金率' },
+    { id: 'y5', impl: 'todo', clar: 'open', tags: ['Q-09'], title: '稅與扣繳', sub: '所得稅、補充保費、營業稅；四捨五入' },
+    { id: 'y6', impl: 'todo', clar: 'open', tags: ['FR-019', 'Q-20'], title: '多地主分配', sub: '比例或固定金額；繼承異動生效日' },
     { id: 'y7', impl: 'todo', tags: ['FR-017'], title: '人工覆核', sub: '手動調整＋原因；確認金額；保留規則版本' },
   ] });
   d.chain(['y1', 'y2', 'y3', 'y4', 'y5', 'y6', 'y7'], { impl: 'todo' });
   d.edge({ from: 'x3', to: 'y1', fromSide: 'b', toSide: 't', impl: 'todo', route: 'v', mid: 330, label: '合約條款', labelAt: [S + 100, 330] });
   d.group({ id: 'gC', x: 20, y: 590, w: 1680, h: 230, title: 'C. 通知、發票與付款（R03、R04、R08）' });
   d.row({ x: 40, y: 634, w: W, h: 166, gap: S - W, items: [
-    { id: 'z1', impl: 'todo', clar: 'open', tags: ['R03', 'Q-19'], title: '付款通知', sub: '依受款人的罐頭訊息；紙本或 Email；附電費單' },
+    { id: 'z1', impl: 'todo', clar: 'open', tags: ['R03', 'Q-17'], title: '付款通知', sub: '依受款人的罐頭訊息；紙本或 Email；附電費單' },
     { id: 'z2', impl: 'todo', clar: 'open', tags: ['FR-027'], title: 'Outlook 批次寄送', sub: '技術與資安待驗證' },
-    { id: 'z3', impl: 'todo', clar: 'open', tags: ['R04', 'Q-23'], title: '受款人發票／收據', sub: '公司或機關才需要；先附或後補' },
+    { id: 'z3', impl: 'todo', clar: 'open', tags: ['R04', 'Q-21'], title: '受款人發票／收據', sub: '公司或機關才需要；先附或後補' },
     { id: 'z4', impl: 'todo', tags: ['R04', 'FR-025'], title: '未收提醒', sub: '後補沒收到就提醒' },
     { id: 'z5', impl: 'todo', clar: 'open', tags: ['R08'], title: '付款申請單', sub: '系統資訊帶入；附租金計算表、電費單、發票' },
     { id: 'z6', impl: 'external', clar: 'open', tags: ['Q-05'], title: 'EasyFlow／EIP', sub: '檢核與簽准' },
-    { id: 'z7', impl: 'todo', clar: 'open', tags: ['FR-030', 'Q-20'], title: '付款追蹤', sub: '單號、核准日、實際付款日：能否讀回？' },
+    { id: 'z7', impl: 'todo', clar: 'open', tags: ['FR-030', 'Q-18'], title: '付款追蹤', sub: '單號、核准日、實際付款日：能否讀回？' },
   ] });
   d.chain(['z1', 'z2'], { impl: 'todo' });
   d.chain(['z3', 'z4', 'z5', 'z6', 'z7'], { impl: 'todo' });
@@ -457,14 +454,14 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   };
   flow(290, 'bill-approval：躉購電費單核可（7 關，預設值）', [
     { id: 'f1a', t: '開始' }, { id: 'f1b', t: '承辦確認', s: '業務部' }, { id: 'f1c', t: '主管核准', s: '發起人主管' },
-    { id: 'f1d', t: '高層加簽', s: '≥100,000', clar: 'open', tags: ['Q-21'] }, { id: 'f1e', t: '計算應付', s: '計費引擎', impl: 'partial', clar: 'open', tags: ['Q-11'] },
+    { id: 'f1d', t: '高層加簽', s: '≥100,000', clar: 'open', tags: ['Q-19'] }, { id: 'f1e', t: '計算應付', s: '計費引擎', impl: 'partial', clar: 'open', tags: ['Q-09'] },
     { id: 'f1f', t: '財務放行', s: '財務' }, { id: 'f1g', t: '付款', s: '會計部；不可退' }, { id: 'f1h', t: '完成' },
   ]);
   flow(430, 'utility-bill：用電電費單付款（無計算節點）', [
     { id: 'f2a', t: '開始' }, { id: 'f2b', t: '承辦確認' }, { id: 'f2c', t: '主管核准' }, { id: 'f2d', t: '財務放行' }, { id: 'f2e', t: '付款' }, { id: 'f2f', t: '完成' },
   ]);
   flow(560, 'deposit-request：保證金請款（subject＝期數）', [
-    { id: 'f3a', t: '送審' }, { id: 'f3b', t: '財務放行' }, { id: 'f3c', t: '付款', clar: 'open', tags: ['Q-18'] }, { id: 'f3d', t: '完成' },
+    { id: 'f3a', t: '送審' }, { id: 'f3b', t: '財務放行' }, { id: 'f3c', t: '付款', clar: 'open', tags: ['Q-16'] }, { id: 'f3d', t: '完成' },
   ]);
   flow(680, 'invoice-issue：開立發票（與核可平行）', [
     { id: 'f4a', t: '開始' }, { id: 'f4b', t: '開立發票', s: '會計部' }, { id: 'f4c', t: '完成' },
@@ -478,7 +475,7 @@ const cover = (c) => ['done', 'partial', 'todo'].map((k) => `${{ done: '已具�
   d.edge({ from: 'ef1', to: 'ef2', impl: 'external' });
   d.edge({ from: 'ef2', to: 'ef3', impl: 'external' });
   d.edge({ from: 'ef4', to: 'ef3', impl: 'external' });
-  d.note({ x: 920, y: 490, w: 760, h: 52, tone: 'info', fs: 12, text: '簽核結果（核准日、付款日）能否從 EasyFlow／EIP 讀回，決定付款追蹤能不能自動化（Q-20）。' });
+  d.note({ x: 920, y: 490, w: 760, h: 52, tone: 'info', fs: 12, text: '簽核結果（核准日、付款日）能否從 EasyFlow／EIP 讀回，決定付款追蹤能不能自動化（Q-18）。' });
   d.group({ id: 'gD', x: 900, y: 580, w: 800, h: 330, title: '要決定：兩套簽核怎麼分工（Q-04）', clar: 'open', fill: '#FFFBF5' });
   d.row({ x: 920, y: 626, w: 245, h: 190, gap: 12, impl: 'todo', clar: 'open', items: [
     { id: 'o1', title: '方案 A：簽核全在 EasyFlow', sub: '系統只做收件、辨識、覆核、產生申請單內容並送 EasyFlow；系統內引擎停用或隱藏。最貼合合約、驗收面最小、教育訓練最單純。' },

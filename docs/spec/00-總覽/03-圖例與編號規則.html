@@ -111,6 +111,11 @@ table.reg.compact td { padding: 6px 10px; }
 .item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
 .item dd.answer { color: var(--ink-3); }
 .q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+.why-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; margin: 2px 0 6px; }
+.why-row .st { text-align: center; }
+.why-row ul { margin: 0; padding-left: 18px; }
+.why-row li { margin: 1px 0; }
+.why p { margin: 4px 0 0; color: var(--ink-2); }
 
 /* 提示框 */
 .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
@@ -232,7 +237,7 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <tr><td><span class="ref">D01～D08</span></td><td>其他交付與契約義務（期限、訓練、手冊、交付物、安裝包、維護）</td><td><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">開啟</a></td></tr>
 <tr><td><span class="ref">FR-001～035、NFR-001～003</span></td><td>需求總表 v0.1 的條目（沿用原編號）</td><td><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">開啟</a></td></tr>
 <tr><td><span class="ref">US-1～21</span></td><td>原版設計文件的使用者故事（沿用原編號）</td><td><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">開啟</a></td></tr>
-<tr><td><span class="ref">Q-01～48</span></td><td>待釐清問題；第一批 Q-01～13、第二批 Q-14～28、第三批 Q-29～38、第四批（測試資料索取）Q-39～48</td><td><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">開啟</a></td></tr>
+<tr><td><span class="ref">Q-01～45</span></td><td>待釐清問題；第一批 Q-01～11、第二批 Q-12～26、第三批 Q-27～35、第四批（測試資料索取）Q-36～45。每題都列出「已有」與「沒有」</td><td><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">開啟</a></td></tr>
 <tr><td><span class="ref">TD-01～22</span></td><td>測試資料盤點的項目</td><td><a href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html">開啟</a></td></tr>
 <tr><td><span class="ref">DATA-01～18</span></td><td>假資料與不確定資料</td><td><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">開啟</a></td></tr>
 <tr><td><span class="ref">DEC-01～20</span></td><td>決策紀錄</td><td><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">開啟</a></td></tr>
@@ -251,7 +256,8 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <h2>修訂紀錄</h2>
 <div class="tbl"><table class="reg"><thead><tr><th style="width:120px">版本</th><th style="width:110px">日期</th><th>內容</th></tr></thead><tbody>
 <tr><td>v0.1</td><td>2026-11-12</td><td>初版盤點：架構圖 A0～A7、合約驗收對照、需求總表、待釐清問題 Q-01～38、實作現況、假資料、決策紀錄、程式碼比對。</td></tr>
-<tr><td>v0.1（同日補充）</td><td>2026-11-12</td><td>加 PDF 輸出；加「測試資料盤點」（TD-01～22，含各 branch 的搜尋結果）與第四批問題 Q-39～48；驗收對照表每項加「測試資料」一列。</td></tr>
+<tr><td>v0.1（同日補充一）</td><td>2026-11-12</td><td>加 PDF 輸出；加「測試資料盤點」（TD-01～22，含各 branch 的搜尋結果）與第四批問題（測試資料索取）；驗收對照表每項加「測試資料」一列。</td></tr>
+<tr><td>v0.1（同日補充二）</td><td>2026-11-12</td><td>依使用者指示：拿掉所有對舊專案的問題（舊專案不保留也不維護）；離線安裝包標為已完成、不再提問；每題改寫成具體問法並逐項列出「已有」「沒有」；題號重排為 Q-01～45。</td></tr>
 </tbody></table></div>
 <footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
 </main>
