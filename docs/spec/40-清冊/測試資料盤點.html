@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="docs/spec/tools/build.mjs">
+<title>測試資料盤點｜電費單與租金管理系統 規格文件</title>
+<style>/* 規格文件的樣式。狀態顏色與 tools/lib.mjs 的 IMPL／CLAR 同一組，圖與網頁看起來是同一套。 */
+:root {
+  --ink: #1f2937; --ink-2: #4b5563; --ink-3: #6b7280; --line: #e3e7ed; --line-2: #cfd6df;
+  --bg: #f4f6f8; --paper: #ffffff; --navy: #1f2a44; --navy-2: #2c3b5e; --accent: #1f3a5f;
+  --open: #c2410c; --open-bg: #fff7ed;
+  --done: #2f6b41; --done-bg: #e3f1e6; --done-ink: #1e5631;
+  --partial: #b7791f; --partial-bg: #fff1cc; --partial-ink: #6b4508;
+  --todo: #6b7280; --todo-bg: #ffffff; --todo-ink: #374151;
+  --beyond: #3a5f8a; --beyond-bg: #e2ebf6; --beyond-ink: #1b3150;
+  --external: #5b4a96; --external-bg: #eee9f7; --external-ink: #2a2150;
+  --dropped: #a3a3a3; --dropped-bg: #f1f1f1; --dropped-ink: #5f5f5f;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.7 "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 12.5px; color: #374151; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; word-break: break-all; }
+
+/* 版面 */
+.top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--navy); color: #fff; padding: 10px 24px; border-bottom: 3px solid var(--navy-2); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+.brand span { font-weight: 400; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); color: #d6deeb; }
+.top .meta { font-size: 12.5px; color: #c7d0de; }
+.wrap { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 0; max-width: 1480px; margin: 0 auto; }
+.side { position: sticky; top: 50px; align-self: start; height: calc(100vh - 50px); overflow: auto; padding: 20px 14px 40px 20px; border-right: 1px solid var(--line); background: #fbfcfd; }
+.nav-sec { margin-bottom: 16px; }
+.nav-h { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .06em; margin: 0 0 6px; }
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 4px 10px; border-left: 3px solid transparent; color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.5; border-radius: 0 4px 4px 0; }
+.side li a:hover { background: #eef2f7; }
+.side li.on a { border-left-color: var(--accent); background: #e8eef6; font-weight: 600; }
+.doc { min-width: 0; background: var(--paper); padding: 28px 40px 48px; border-left: 0; }
+.page + .page { margin-top: 56px; padding-top: 32px; border-top: 4px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--ink-3); margin-bottom: 2px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; color: #111827; }
+h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: #111827; }
+h3 { font-size: 16px; margin: 0; }
+h4 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); }
+p { margin: 8px 0 12px; }
+.lead { font-size: 16px; color: var(--ink-2); max-width: 980px; }
+.muted { color: var(--ink-3); }
+.warn-text { color: var(--open); font-weight: 600; }
+.foot { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+ul.points li, ul.qlist li { margin: 6px 0; }
+
+/* 狀態標籤：文字＋底色＋邊框，不靠顏色單獨表達 */
+.st, .cl, .dt, .tag, .by, .verdict { display: inline-block; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; border: 1px solid; vertical-align: 1px; }
+.st-done { color: var(--done-ink); background: var(--done-bg); border-color: var(--done); }
+.st-partial { color: var(--partial-ink); background: var(--partial-bg); border-color: var(--partial); }
+.st-todo { color: var(--todo-ink); background: var(--todo-bg); border-color: var(--todo); }
+.st-beyond { color: var(--beyond-ink); background: var(--beyond-bg); border-color: var(--beyond); }
+.st-external { color: var(--external-ink); background: var(--external-bg); border-color: var(--external); }
+.st-dropped { color: var(--dropped-ink); background: var(--dropped-bg); border-color: var(--dropped); }
+.cl { background: #fff; color: #374151; }
+.cl-confirmed { border: 1px solid #4b5563; }
+.cl-assumed { border: 1.5px dashed #4b5563; }
+.cl-open { border: 2px dotted var(--open); color: var(--open); background: var(--open-bg); line-height: 18px; }
+.dt-mock { color: #374151; border-color: #6b7280; background: repeating-linear-gradient(45deg, #f3f4f6 0 4px, #e5e7eb 4px 8px); }
+.dt-uncertain { color: #92400e; border-color: #b45309; background: #fef3c7; }
+.tag { color: #374151; border-color: #9ca3af; background: #f3f4f6; font-weight: 500; }
+.by { font-weight: 500; }
+.by-user { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.by-contract { color: var(--beyond-ink); border-color: var(--beyond); background: var(--beyond-bg); }
+.by-proxy { color: var(--open); border-color: var(--open); background: var(--open-bg); }
+.by-doc, .by-client { color: #374151; border-color: #9ca3af; background: #f3f4f6; }
+.verdict.v-bad { color: #991b1b; border-color: #b91c1c; background: #fef2f2; }
+.verdict.v-mid { color: var(--partial-ink); border-color: var(--partial); background: var(--partial-bg); }
+.verdict.v-ok { color: var(--done-ink); border-color: var(--done); background: var(--done-bg); }
+.ref { font-family: var(--mono); font-size: 12px; padding: 0 5px; border: 1px solid #cbd5e1; border-radius: 3px; background: #f8fafc; color: var(--accent); text-decoration: none; white-space: nowrap; line-height: 18px; display: inline-block; }
+a.ref:hover { border-color: var(--accent); }
+.ref-q { color: var(--open); border-color: #f0b48f; background: var(--open-bg); }
+
+/* 表格 */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 18px; }
+table.reg { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.6; }
+table.reg th { position: sticky; top: 0; background: #eef1f5; color: #374151; text-align: left; font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.reg td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+table.reg tbody tr:nth-child(even) td { background: #fafbfc; }
+table.reg tbody tr:target td { background: #fff7ed; }
+table.reg.compact td { padding: 6px 10px; }
+.where { margin-top: 4px; }
+.filter { margin: 10px 0 0; }
+.filter input { font: inherit; font-size: 14px; padding: 5px 10px; width: 320px; max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+
+/* 逐項卡片（驗收項、問題） */
+.item { border: 1px solid var(--line); border-radius: 6px; margin: 14px 0; background: #fff; }
+.item:target { outline: 3px solid #f0b48f; }
+.item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.item-id { font-family: var(--mono); font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 3px; }
+.q-id { background: var(--open); }
+.item-area { font-size: 12.5px; color: var(--ink-3); }
+.item .badges { margin-left: auto; display: flex; gap: 6px; }
+.item dl { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 0; margin: 0; }
+.item dt { padding: 8px 14px; color: var(--ink-2); font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--line); background: #fcfcfd; }
+.item dd { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.item dl > dt:first-child, .item dl > dt:first-child + dd { border-top: 0; }
+.item dd.quote { color: #111827; background: #fbfaf6; border-left: 3px solid #d6c9a3; }
+.item dd.answer { color: var(--ink-3); }
+.q-text { padding: 10px 14px 4px; margin: 0; font-size: 15px; font-weight: 600; }
+
+/* 提示框 */
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: #f7f9fc; padding: 12px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+.callout h4 { margin: 0 0 4px; font-size: 14.5px; color: #111827; }
+.callout p { margin: 4px 0; }
+.callout.risk { border-left-color: #b91c1c; background: #fef6f6; }
+.callout.warn { border-left-color: var(--open); background: #fffaf5; }
+.callout.note { border-left-color: #6b7280; background: #f8f9fa; }
+
+/* 數字摘要 */
+.hero { display: flex; align-items: baseline; gap: 14px; margin: 6px 0 4px; }
+.hero .num { font-size: 56px; font-weight: 600; line-height: 1; color: #111827; }
+.hero .unit { font-size: 20px; font-weight: 600; color: #111827; }
+.hero .what { font-size: 15px; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.t-label { font-size: 13px; color: var(--ink-3); }
+.t-value { font-size: 26px; font-weight: 600; color: #111827; line-height: 1.35; }
+.t-sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 驗收覆蓋分段條：高 28px、段與段之間 2px 間隙 */
+figure.cover { margin: 8px 0 22px; }
+figure.cover figcaption { font-size: 13.5px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+.bar { display: flex; gap: 2px; height: 28px; }
+.seg { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; min-width: 2px; overflow: visible; white-space: nowrap; }
+.seg:focus { outline: 2px solid #111827; outline-offset: 1px; }
+.seg-done { background: var(--done); color: #fff; }
+.seg-partial { background: var(--partial); color: #fff; }
+.seg-todo { background: #e5e7eb; color: #374151; }
+.bar-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.sw-done { background: var(--done); } .sw-partial { background: var(--partial); } .sw-todo { background: #e5e7eb; border: 1px solid #c4c9d1; }
+
+/* 圖例 */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px 28px; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; background: #fbfcfd; margin: 12px 0 18px; }
+.legend ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.legend li { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13.5px; }
+.legend li .st, .legend li .cl, .legend li .dt { min-width: 96px; text-align: center; }
+
+/* 架構圖 */
+figure.diagram { margin: 14px 0 22px; }
+figure.diagram a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: zoom-in; background: #fff; }
+figure.diagram img { display: block; width: 100%; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 12px 0; }
+.thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; display: block; }
+.thumb img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+.thumb div { padding: 8px 12px; font-size: 13.5px; }
+.thumb strong { display: block; color: #111827; }
+
+/* 放大檢視 */
+.zoom { position: fixed; inset: 0; z-index: 50; background: rgba(17, 24, 39, .82); display: flex; flex-direction: column; }
+.zoom[hidden] { display: none; }
+.zoom-bar { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; padding: 8px 16px; font-size: 13px; }
+.zoom-bar button { font: inherit; background: #fff; color: #111827; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+.zoom-body { flex: 1; overflow: auto; padding: 0 16px 16px; }
+.zoom-body img { display: block; max-width: none; background: #fff; border-radius: 4px; }
+
+@media (max-width: 1000px) {
+  .wrap { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .doc { padding: 20px; }
+  .item dl { grid-template-columns: 1fr; }
+}
+/* 列印與 PDF（tools/pdf.mjs 以 A4 橫向輸出）：保留底色與狀態標籤顏色、每頁重複表頭、圖不切頁。 */
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .top, .side, .filter, .zoom, .foot { display: none !important; }
+  .wrap { display: block; max-width: none; }
+  .doc { padding: 0; }
+  body { background: #fff; font-size: 11.5px; line-height: 1.6; }
+  h1 { font-size: 21px; margin-bottom: 10px; }
+  h2 { font-size: 16px; margin: 20px 0 8px; break-after: avoid; }
+  .lead { font-size: 13px; }
+  .page { break-before: page; }
+  .page:first-of-type { break-before: auto; }
+  .page + .page { margin-top: 0; padding-top: 0; border-top: 0; }
+  .tbl { overflow: visible; }
+  table.reg { font-size: 10.5px; }
+  table.reg th { position: static; }
+  thead { display: table-header-group; }
+  tr, .item, .tile, .callout, figure, .legend { break-inside: avoid; }
+  .item dl { grid-template-columns: 150px minmax(0, 1fr); }
+  .item dd, .item dt { font-size: 11px; padding: 5px 10px; }
+  .tiles { grid-template-columns: repeat(4, 1fr); }
+  .thumbs { display: none; }  /* 首頁縮圖在 PDF 裡省略：後面每張圖各有一整頁 */
+  figure.diagram a { border: 0; }
+  .hero .num { font-size: 44px; }
+  a { color: inherit; text-decoration: none; }
+  .ref { color: #1f3a5f; }
+  .ref-q { color: #c2410c; }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">電費單與租金管理系統<span>規格文件</span></div><div class="meta">v0.1 盤點版 · 2026-11-12 · 以 energy-ops-rust 為主</div></header>
+<div class="wrap">
+<nav class="side" aria-label="文件目錄"><div class="nav-sec"><div class="nav-h">首頁</div><ul><li><a href="../index.html">首頁</a></li></ul></div><div class="nav-sec"><div class="nav-h">00 總覽</div><ul><li><a href="../00-%E7%B8%BD%E8%A6%BD/01-%E5%B0%88%E6%A1%88%E6%91%98%E8%A6%81.html">專案摘要</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/02-%E8%A6%8F%E6%A0%BC%E4%BE%86%E6%BA%90%E8%88%87%E4%B8%96%E4%BB%A3.html">規格來源與世代</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/03-%E5%9C%96%E4%BE%8B%E8%88%87%E7%B7%A8%E8%99%9F%E8%A6%8F%E5%89%87.html">圖例與編號規則</a></li><li><a href="../00-%E7%B8%BD%E8%A6%BD/04-%E5%90%8D%E8%A9%9E%E8%A1%A8.html">名詞表</a></li></ul></div><div class="nav-sec"><div class="nav-h">10 架構（全局→細節）</div><ul><li><a href="../10-%E6%9E%B6%E6%A7%8B/A0-%E7%B3%BB%E7%B5%B1%E6%83%85%E5%A2%83.html">A0 系統情境</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A1-%E6%A5%AD%E5%8B%99%E6%B5%81%E7%A8%8B.html">A1 業務流程全景</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A2-%E9%83%A8%E7%BD%B2%E8%88%87%E5%AE%B9%E5%99%A8.html">A2 部署與容器</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A3-%E6%87%89%E7%94%A8%E5%85%83%E4%BB%B6.html">A3 應用元件</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A4-%E8%B3%87%E6%96%99%E6%A8%A1%E5%9E%8B.html">A4 資料模型</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A5-%E9%9B%BB%E8%B2%BB%E5%96%AE%E8%99%95%E7%90%86.html">A5 電費單處理細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A6-%E7%A7%9F%E9%87%91%E8%88%87%E8%B3%87%E7%94%A2.html">A6 租金與資產細部</a></li><li><a href="../10-%E6%9E%B6%E6%A7%8B/A7-%E7%B0%BD%E6%A0%B8%E5%88%86%E5%B7%A5.html">A7 簽核分工（決策點）</a></li></ul></div><div class="nav-sec"><div class="nav-h">20 驗收</div><ul><li><a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a></li></ul></div><div class="nav-sec"><div class="nav-h">30 需求</div><ul><li><a href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html">需求總表與使用者故事</a></li></ul></div><div class="nav-sec"><div class="nav-h">40 清冊</div><ul><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html">待釐清問題（分四批）</a></li><li class="on"><a href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html">測試資料盤點</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%AF%A6%E4%BD%9C%E7%8F%BE%E6%B3%81.html">實作現況清冊</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E5%81%87%E8%B3%87%E6%96%99%E8%88%87%E4%B8%8D%E7%A2%BA%E5%AE%9A%E8%B3%87%E6%96%99.html">假資料與不確定資料</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E6%B1%BA%E7%AD%96%E7%B4%80%E9%8C%84.html">決策紀錄</a></li><li><a href="../40-%E6%B8%85%E5%86%8A/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E6%AF%94%E5%B0%8D%E7%B4%80%E9%8C%84.html">程式碼比對紀錄</a></li></ul></div></nav>
+<main class="doc">
+<div class="crumb">40 清冊</div><h1>測試資料盤點</h1>
+<p class="lead">驗收要能判定合格，每一項都需要測試資料與標準答案。這一頁盤點每類測試資料現在有沒有、在哪裡（包含各 repo 的 branch），沒有的都轉成第四批問題向雲豹索取。</p>
+<div class="callout warn"><h4>案場與地主的資料有了嗎？</h4>
+<p><strong>案場：有名單，還沒進系統。</strong>使用者提供的「1.發電案場清單」有 98 個真實案場（11 家子公司、16 個區處、電號、容量、發票寄送方式）；系統內與各 branch 只有同一套示範種子的 6 個虛構案場，其中 4 個電號與真實案場相同。名單缺專案編號、型別、併網日、案場分類與合約關聯（<a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a>、<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-39">Q-39</a>）。</p>
+<p><strong>地主：沒有。</strong>資產管理清單的地主頁只有表頭與一列「我是範例」；原版、App 5、energy-ops-next、energy-ops-rust 的示範種子都是同兩位虛構地主（含假身分證字號與銀行帳號）。多地主比例、繼承異動、公司或機關受款人都沒有資料（<a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-02">TD-02</a>、<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-40">Q-40</a>）。</p></div>
+<div class="callout note"><h4>搜尋範圍（2026-11-12）</h4>
+<p>az repo 全部 branch 與歷史（含 feat-energy-ops-next、feat-tenant-console-route-transition、archive 與 backup 分支）、App 5 的全部 branch、energy-ops-rust（master、rust-port）、辨識服務的 samples 與 fixtures、az repo 的 temp 與本機上傳區。除了使用者這次提供的附件，找到的案場與地主資料都是示範種子；沒有任何真實地主名冊、合約檔、天能電費單或發票檔。</p></div>
+<p>建議做法：與雲豹約定一個「驗收基準月」（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-48">Q-48</a>），由雲豹提供該月全部輸入與人工結果，同一批資料同時當作開發測試資料與驗收的標準答案。含個資的資料可以先去識別化，但要保留結構、比例與金額。</p><div class="tiles"><div class="tile"><div class="t-label">已有，可用</div><div class="t-value">1 類</div><div class="t-sub">可直接當測試輸入</div></div><div class="tile"><div class="t-label">部分，不足或不可靠</div><div class="t-value">10 類</div><div class="t-sub">有來源，但缺欄位、缺答案或對不上</div></div><div class="tile"><div class="t-label">沒有</div><div class="t-value">11 類</div><div class="t-sub">需要向雲豹索取（第四批問題）</div></div></div><h2 id="list">測試資料清單</h2><div class="filter"><label>篩選 <input type="search" placeholder="輸入關鍵字、編號或狀態" data-filter></label></div><div class="tbl"><table class="reg"><thead><tr><th style="width:70px">編號</th><th style="width:170px">資料</th><th style="width:64px">現況</th><th>來源與位置（含 branch）</th><th>缺什麼</th><th style="width:130px">用於驗收</th><th style="width:120px">問題</th></tr></thead><tbody>
+<tr id="TD-01"><td><span class="ref">TD-01</span></td><td>案場主檔（名稱、子公司、區處、電號、容量）</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>使用者提供「1.發電案場清單.xlsx」：98 個真實案場、11 家子公司、16 個區處，另含發票寄送方式；超強表格「自動化所需欄位」同內容。系統內與各 branch（原版、App 5、energy-ops-next、energy-ops-rust）只有同一套示範種子：6 個虛構案場，其中 4 個電號與真實案場相同。</td><td>尚未匯入系統；缺專案編號、型別、併網日、案場分類與合約關聯（資產管理清單有欄位但幾乎沒有資料）。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-39">Q-39</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-17">Q-17</a></td></tr>
+<tr id="TD-02"><td><span class="ref">TD-02</span></td><td>地主與受款人名冊</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>資產管理清單（範例）「1. 土地所有權人清單」只有表頭與一列「我是範例」；所有 branch 的示範種子都是 2 位虛構地主（含假身分證字號與銀行帳號）。</td><td>沒有任何真實地主、多地主比例、繼承異動、公司或機關受款人、發票先附或後補的資料。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-40">Q-40</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-22">Q-22</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-23">Q-23</a></td></tr>
+<tr id="TD-03"><td><span class="ref">TD-03</span></td><td>合約主檔與合約檔（租賃、綠電、維運）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>資產管理清單（範例）「0. 資產及義務項目清單」只有 4 列，多為 #N/A 公式；沒有任何合約 PDF；系統內示範契約為虛構。</td><td>合約類型、起訖、續約提醒、付款頻率與期限規則、租金條款、合約檔。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-41">Q-41</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-25">Q-25</a></td></tr>
+<tr id="TD-04"><td><span class="ref">TD-04</span></td><td>台電電費單樣本（各樣態）與標準答案</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>使用者提供 8 份範例 PDF：4 份與 energy-ops-rust 測試範本相同，標準答案在 tests/fixtures/canonical-samples.json；另 4 份新樣態（無餘電含使用電能費、退款、補收、監控攝影機）沒有標準答案。辨識服務（feat-energy-ops-next 的 serverless-apps/taipower-recognition）另有 1 份 ready-01.pdf 與合成測試檔；其 README 提到的 5 份真實驗收 PDF 不在 repo。</td><td>每種樣態至少 3 份與標準答案；高壓用電單樣本。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B05">B05</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B06">B06</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-15">Q-15</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-48">Q-48</a></td></tr>
+<tr id="TD-05"><td><span class="ref">TD-05</span></td><td>加密 PDF 樣本與測試密碼</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>辨識服務有產生加密 PDF 的合成測試檔（tests/fixtures/encryptedPdf.ts）；真實密碼只寫在 SOP（不轉載）。</td><td>真實加密電費單樣本；測試環境可用的密碼與保管方式。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-43">Q-43</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-14">Q-14</a></td></tr>
+<tr id="TD-06"><td><span class="ref">TD-06</span></td><td>天能轉供電費單與台電轉供單清單</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>只有「天能轉供電費開立發票欄位對照圖」（一張截圖，含天能單的局部畫面）與一份已核准的 EasyFlow 開票申請 PDF。</td><td>天能電費單 PDF 原檔、台電轉供單清單、標準答案。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B02">B02</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B08">B08</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B13">B13</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-42">Q-42</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-12">Q-12</a></td></tr>
+<tr id="TD-07"><td><span class="ref">TD-07</span></td><td>傳真影本（電能躉售通知）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>整併版的單據類型表提到一份傳真影本，但沒有提供檔案。</td><td>樣本與標準答案。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B05">B05</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B06">B06</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-43">Q-43</a></td></tr>
+<tr id="TD-08"><td><span class="ref">TD-08</span></td><td>測試信箱與測試郵件</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>—</td><td>測試信箱、寄件者、含附件的測試郵件（台電、天能、發票）。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B02">B02</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-06">Q-06</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-38">Q-38</a></td></tr>
+<tr id="TD-09"><td><span class="ref">TD-09</span></td><td>公槽測試路徑與現行歸檔</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>SOP 寫明現行路徑與檔名範例；超強表格有掃描檔名與發票檔名公式。</td><td>測試用資料夾、寫入權限、現有檔案的實際命名樣本。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B10">B10</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-07">Q-07</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-38">Q-38</a></td></tr>
+<tr id="TD-10"><td><span class="ref">TD-10</span></td><td>電費紀錄單（現行檔與歷史內容）</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>只有「0.文件記錄需要產出的欄位.xlsx」的 15 個欄位表頭。</td><td>現行【電費單紀錄】Excel 與至少一個月的實際內容（當作比對答案）。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B10">B10</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B15">B15</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-08">Q-08</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-48">Q-48</a></td></tr>
+<tr id="TD-11"><td><span class="ref">TD-11</span></td><td>EasyFlow 表單樣本與測試環境</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>一份已核准的開立發票申請單（天能，單別 ODMMFA012）PDF；SOP 有付款申請單 9 個欄位的說明。</td><td>付款申請單樣本（有合約、無合約）、台電開票申請單樣本、EasyFlow 測試環境與帳號。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B12">B12</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B13">B13</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-47">Q-47</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-05">Q-05</a></td></tr>
+<tr id="TD-12"><td><span class="ref">TD-12</span></td><td>已開發票樣本（電子、紙本）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>SOP 只有發票檔名範例與寄送方式。</td><td>電子發票 PDF、紙本掃描、存放資料夾。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B15">B15</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-44">Q-44</a></td></tr>
+<tr id="TD-13"><td><span class="ref">TD-13</span></td><td>度數資料（餘電、轉供，按月）</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>租金計算（範例）的「餘電度數」「轉供度數」工作表有約百列、2026 年 1～5 月的月度數。</td><td>案場欄是錯誤公式，度數對不回案場；是否為真實數據未知。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-45">Q-45</a></td></tr>
+<tr id="TD-14"><td><span class="ref">TD-14</span></td><td>租金標準答案（已實際付款的案例）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>租金計算（範例）有 #VALUE! 與範圍錯位，不能當答案。</td><td>每種租金類型至少一個已實際付款的案例（含稅與扣繳）。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-11">Q-11</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-48">Q-48</a></td></tr>
+<tr id="TD-15"><td><span class="ref">TD-15</span></td><td>歷史付款紀錄（租金、轉供開票、模組回收費）</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>資產管理清單（範例）2-1、2-3、2-4、2-5 各有一到數列實際紀錄（日期、金額、申請單號）。</td><td>最近 12 個月、可對應案場的完整紀錄。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a> <a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-46">Q-46</a></td></tr>
+<tr id="TD-16"><td><span class="ref">TD-16</span></td><td>履保金與保險紀錄</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>資產管理清單（範例）第 4、5 頁有 1～2 列（第 5 頁公式多為 #REF!）。</td><td>先確認本期是否交付（<a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-02">Q-02</a>），再補完整紀錄。</td><td><a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-033">FR-033</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-034">FR-034</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-46">Q-46</a> <a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-02">Q-02</a></td></tr>
+<tr id="TD-17"><td><span class="ref">TD-17</span></td><td>使用者名單與角色（測試帳號）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>只有示範種子的 7 個示範帳號；SOP 提到各子公司的財會窗口（不轉載姓名）。</td><td>實際使用者、職務與權限對應。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#NFR-003">NFR-003</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-30">Q-30</a></td></tr>
+<tr id="TD-18"><td><span class="ref">TD-18</span></td><td>工作天與國定假日表</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>—</td><td>假日資料來源與例外規則。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-021">FR-021</a> <a class="ref" href="../30-%E9%9C%80%E6%B1%82/%E9%9C%80%E6%B1%82%E7%B8%BD%E8%A1%A8.html#FR-031">FR-031</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-24">Q-24</a></td></tr>
+<tr id="TD-19"><td><span class="ref">TD-19</span></td><td>每案場的預計到件日</td><td><span class="st st-partial" title="測試資料">部分</span></td><td>資產管理清單（範例）2-1 有「轉供電費單：月中 11～17 日」「台電電費單：轉供單後 5～6 天」等文字。</td><td>每個案場的收件週期與容忍天數。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-16">Q-16</a></td></tr>
+<tr id="TD-20"><td><span class="ref">TD-20</span></td><td>付款通知範本（罐頭訊息、紙本）</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>—</td><td>每類受款人的訊息範本與紙本格式。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-19">Q-19</a></td></tr>
+<tr id="TD-21"><td><span class="ref">TD-21</span></td><td>報表樣式範例</td><td><span class="st st-todo" title="測試資料">沒有</span></td><td>—</td><td>欄位、篩選條件、輸出格式。</td><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-26">Q-26</a></td></tr>
+<tr id="TD-22"><td><span class="ref">TD-22</span></td><td>發票寄送對象（區處 Email、地址）</td><td><span class="st st-done" title="測試資料">已有</span></td><td>發電案場清單含各區處的 Email 與發票寄送方式（雲林、南投為紙本）；SOP 有寄送內容範本。</td><td>合約未列此步驟；是否納入待定。</td><td><span class="muted">—</span></td><td><a class="ref ref-q" href="../40-%E6%B8%85%E5%86%8A/%E5%BE%85%E9%87%90%E6%B8%85%E5%95%8F%E9%A1%8C.html#Q-27">Q-27</a></td></tr>
+</tbody></table></div><h2 id="by-acceptance">依驗收項看測試資料</h2><p class="muted">每個驗收項需要哪些測試資料、現在有沒有。任一項標「沒有」，該驗收項就無法完整測試。</p><div class="tbl"><table class="reg compact"><thead><tr><th style="width:64px">驗收項</th><th style="width:260px">項目</th><th>需要的測試資料</th><th style="width:96px">可測程度</th></tr></thead><tbody>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B01">B01</a></td><td>台電電費單收件</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-05">TD-05</a> <span class="st st-partial" title="測試資料">部分</span> 加密 PDF 樣本與測試密碼<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-08">TD-08</a> <span class="st st-todo" title="測試資料">沒有</span> 測試信箱與測試郵件<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-09">TD-09</a> <span class="st st-partial" title="測試資料">部分</span> 公槽測試路徑與現行歸檔</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B02">B02</a></td><td>天能電費單收件</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-06">TD-06</a> <span class="st st-todo" title="測試資料">沒有</span> 天能轉供電費單與台電轉供單清單<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-08">TD-08</a> <span class="st st-todo" title="測試資料">沒有</span> 測試信箱與測試郵件</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B03">B03</a></td><td>警示系統（未收到電費單）</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-19">TD-19</a> <span class="st st-partial" title="測試資料">部分</span> 每案場的預計到件日</td><td><span class="st st-partial">可部分測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B04">B04</a></td><td>電號→案場、持有公司、台電區處</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a> <span class="st st-partial" title="測試資料">部分</span> 案場主檔（名稱、子公司、區處、電號、容量）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-04">TD-04</a> <span class="st st-partial" title="測試資料">部分</span> 台電電費單樣本（各樣態）與標準答案<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-07">TD-07</a> <span class="st st-todo" title="測試資料">沒有</span> 傳真影本（電能躉售通知）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B05">B05</a></td><td>費用欄位與發票 BBR 號碼</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-04">TD-04</a> <span class="st st-partial" title="測試資料">部分</span> 台電電費單樣本（各樣態）與標準答案<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-07">TD-07</a> <span class="st st-todo" title="測試資料">沒有</span> 傳真影本（電能躉售通知）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B06">B06</a></td><td>計費期間與下次抄表日</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-04">TD-04</a> <span class="st st-partial" title="測試資料">部分</span> 台電電費單樣本（各樣態）與標準答案<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-07">TD-07</a> <span class="st st-todo" title="測試資料">沒有</span> 傳真影本（電能躉售通知）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B07">B07</a></td><td>天能轉供單：電號→案場、持有公司、計費期間</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a> <span class="st st-partial" title="測試資料">部分</span> 案場主檔（名稱、子公司、區處、電號、容量）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-06">TD-06</a> <span class="st st-todo" title="測試資料">沒有</span> 天能轉供電費單與台電轉供單清單</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B08">B08</a></td><td>天能轉供單：購電電費、營業稅</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-06">TD-06</a> <span class="st st-todo" title="測試資料">沒有</span> 天能轉供電費單與台電轉供單清單</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B09">B09</a></td><td>電費紀錄單內容</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a> <span class="st st-partial" title="測試資料">部分</span> 案場主檔（名稱、子公司、區處、電號、容量）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-04">TD-04</a> <span class="st st-partial" title="測試資料">部分</span> 台電電費單樣本（各樣態）與標準答案<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-10">TD-10</a> <span class="st st-partial" title="測試資料">部分</span> 電費紀錄單（現行檔與歷史內容）</td><td><span class="st st-partial">可部分測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B10">B10</a></td><td>電費紀錄單存檔</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-09">TD-09</a> <span class="st st-partial" title="測試資料">部分</span> 公槽測試路徑與現行歸檔<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-10">TD-10</a> <span class="st st-partial" title="測試資料">部分</span> 電費紀錄單（現行檔與歷史內容）</td><td><span class="st st-partial">可部分測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B11">B11</a></td><td>EasyFlow 付款申請單</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-11">TD-11</a> <span class="st st-partial" title="測試資料">部分</span> EasyFlow 表單樣本與測試環境</td><td><span class="st st-partial">可部分測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B12">B12</a></td><td>EasyFlow 發票開立申請單（台電）</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-11">TD-11</a> <span class="st st-partial" title="測試資料">部分</span> EasyFlow 表單樣本與測試環境</td><td><span class="st st-partial">可部分測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B13">B13</a></td><td>EasyFlow 發票開立申請單（天能）</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-06">TD-06</a> <span class="st st-todo" title="測試資料">沒有</span> 天能轉供電費單與台電轉供單清單<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-11">TD-11</a> <span class="st st-partial" title="測試資料">部分</span> EasyFlow 表單樣本與測試環境</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B14">B14</a></td><td>已開發票自動收件存檔</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-08">TD-08</a> <span class="st st-todo" title="測試資料">沒有</span> 測試信箱與測試郵件<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-09">TD-09</a> <span class="st st-partial" title="測試資料">部分</span> 公槽測試路徑與現行歸檔<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-12">TD-12</a> <span class="st st-todo" title="測試資料">沒有</span> 已開發票樣本（電子、紙本）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#B15">B15</a></td><td>回寫發票開立日期</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-10">TD-10</a> <span class="st st-partial" title="測試資料">部分</span> 電費紀錄單（現行檔與歷史內容）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-12">TD-12</a> <span class="st st-todo" title="測試資料">沒有</span> 已開發票樣本（電子、紙本）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R01">R01</a></td><td>通用租金計算表</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-02">TD-02</a> <span class="st st-todo" title="測試資料">沒有</span> 地主與受款人名冊<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-14">TD-14</a> <span class="st st-todo" title="測試資料">沒有</span> 租金標準答案（已實際付款的案例）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R02">R02</a></td><td>依合約付款期程產出租金計算表</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-03">TD-03</a> <span class="st st-todo" title="測試資料">沒有</span> 合約主檔與合約檔（租賃、綠電、維運）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-13">TD-13</a> <span class="st st-partial" title="測試資料">部分</span> 度數資料（餘電、轉供，按月）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-14">TD-14</a> <span class="st st-todo" title="測試資料">沒有</span> 租金標準答案（已實際付款的案例）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-18">TD-18</a> <span class="st st-todo" title="測試資料">沒有</span> 工作天與國定假日表</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R03">R03</a></td><td>付款通知產出</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-02">TD-02</a> <span class="st st-todo" title="測試資料">沒有</span> 地主與受款人名冊<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-20">TD-20</a> <span class="st st-todo" title="測試資料">沒有</span> 付款通知範本（罐頭訊息、紙本）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R04">R04</a></td><td>發票上傳及存檔（先附／後補，未收提醒）</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-02">TD-02</a> <span class="st st-todo" title="測試資料">沒有</span> 地主與受款人名冊<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-12">TD-12</a> <span class="st st-todo" title="測試資料">沒有</span> 已開發票樣本（電子、紙本）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R05">R05</a></td><td>資產管理表匯入、查詢、修正、匯出、操作紀錄、權限</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a> <span class="st st-partial" title="測試資料">部分</span> 案場主檔（名稱、子公司、區處、電號、容量）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-17">TD-17</a> <span class="st st-todo" title="測試資料">沒有</span> 使用者名單與角色（測試帳號）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R06">R06</a></td><td>合約到期及待辦提醒</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-03">TD-03</a> <span class="st st-todo" title="測試資料">沒有</span> 合約主檔與合約檔（租賃、綠電、維運）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R07">R07</a></td><td>相關報表產出</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-01">TD-01</a> <span class="st st-partial" title="測試資料">部分</span> 案場主檔（名稱、子公司、區處、電號、容量）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-13">TD-13</a> <span class="st st-partial" title="測試資料">部分</span> 度數資料（餘電、轉供，按月）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-15">TD-15</a> <span class="st st-partial" title="測試資料">部分</span> 歷史付款紀錄（租金、轉供開票、模組回收費）<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-21">TD-21</a> <span class="st st-todo" title="測試資料">沒有</span> 報表樣式範例</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+<tr><td><a class="ref" href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html#R08">R08</a></td><td>租金付款申請單</td><td><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-02">TD-02</a> <span class="st st-todo" title="測試資料">沒有</span> 地主與受款人名冊<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-11">TD-11</a> <span class="st st-partial" title="測試資料">部分</span> EasyFlow 表單樣本與測試環境<br><a class="ref" href="../40-%E6%B8%85%E5%86%8A/%E6%B8%AC%E8%A9%A6%E8%B3%87%E6%96%99%E7%9B%A4%E9%BB%9E.html#TD-15">TD-15</a> <span class="st st-partial" title="測試資料">部分</span> 歷史付款紀錄（租金、轉供開票、模組回收費）</td><td><span class="st st-todo">無法完整測試</span></td></tr>
+</tbody></table></div>
+<footer class="foot">本頁由 <code>docs/spec/tools/build.mjs</code> 產生，內容來源為 <code>docs/spec/src/</code>；請改來源後重新產生，不要直接改 HTML。v0.1・2026-11-12</footer>
+</main>
+</div>
+<div class="zoom" hidden><div class="zoom-bar"><span>拖曳或捲動檢視，按 Esc 關閉</span><button type="button" data-zoom-close>關閉</button></div><div class="zoom-body"><img alt=""></div></div>
+<script>// 規格文件的少量互動：架構圖放大檢視、表格關鍵字篩選。沒有外部相依，離線可用。
+(function () {
+  var zoom = document.querySelector('.zoom');
+  var zimg = zoom && zoom.querySelector('img');
+  function close() { if (zoom) { zoom.hidden = true; zimg.removeAttribute('src'); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-zoom]');
+    if (a && zoom) {
+      e.preventDefault();
+      zimg.src = a.getAttribute('href');
+      zimg.alt = (a.querySelector('img') || {}).alt || '';
+      zoom.hidden = false;
+      return;
+    }
+    if (e.target.closest && e.target.closest('[data-zoom-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+  document.querySelectorAll('input[data-filter]').forEach(function (input) {
+    var box = input.closest('.filter').nextElementSibling;
+    var rows = box ? box.querySelectorAll('tbody tr') : [];
+    input.addEventListener('input', function () {
+      var q = input.value.trim().toLowerCase();
+      rows.forEach(function (tr) {
+        tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

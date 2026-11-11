@@ -20,7 +20,7 @@ const DEADLINE = '2026-11-30';
 const PAGE_OF = {
   Q: '40-清冊/待釐清問題.html', B: '20-驗收/合約驗收對照表.html', R: '20-驗收/合約驗收對照表.html', D: '20-驗收/合約驗收對照表.html',
   FR: '30-需求/需求總表.html', NFR: '30-需求/需求總表.html', US: '30-需求/需求總表.html',
-  DATA: '40-清冊/假資料與不確定資料.html', DEC: '40-清冊/決策紀錄.html',
+  DATA: '40-清冊/假資料與不確定資料.html', DEC: '40-清冊/決策紀錄.html', TD: '40-清冊/測試資料盤點.html',
 };
 const archPath = (id) => `10-架構/${id}-${ARCH[id].slug}.html`;
 
@@ -47,7 +47,7 @@ const anchorOf = (path) => `p-${path.replace(/\.html$/, '').replace(/[^\w一-鿿
 
 function refPath(id) {
   if (/^A[0-7]$/.test(id)) return [archPath(id), null];
-  const m = id.match(/^(DATA|DEC|NFR|FR|US|Q|B|R|D)-?/);
+  const m = id.match(/^(DATA|DEC|NFR|FR|US|TD|Q|B|R|D)-?/);
   if (!m) return null;
   // 範圍標籤（例如 B04–B08）連到第一項。
   return [PAGE_OF[m[1]], id.split('–')[0]];
@@ -61,11 +61,12 @@ export const H = {
   cl: (k) => `<span class="cl cl-${k}" title="釐清狀態">${esc(CLAR_TEXT[k] || k)}</span>`,
   dt: (k) => `<span class="dt dt-${k}">${k === 'mock' ? '假資料' : '資料不確定'}</span>`,
   tag: (t) => `<span class="tag">${esc(t)}</span>`,
+  av: (k) => `<span class="st st-${{ yes: 'done', partial: 'partial', no: 'todo' }[k]}" title="測試資料">${{ yes: '已有', partial: '部分', no: '沒有' }[k]}</span>`,
 };
 
 function linkRefs(ctx, text) {
   // 把文字中的編號（Q-05、B01、FR-012、A3…）變成連結；只處理純文字，不碰已含 HTML 的字串。
-  return esc(text).replace(/\b(Q-\d{2}|B\d{2}|R0\d|D0\d|FR-\d{3}|NFR-\d{3}|US-\d{1,2}|DATA-\d{2}|DEC-\d{2}|A[0-7])\b/g, (m) => refLink(ctx, m));
+  return esc(text).replace(/\b(Q-\d{2}|B\d{2}|R0\d|D0\d|FR-\d{3}|NFR-\d{3}|US-\d{1,2}|DATA-\d{2}|DEC-\d{2}|TD-\d{2}|A[0-7])\b/g, (m) => refLink(ctx, m));
 }
 function refLink(ctx, id) {
   const p = refPath(id);
@@ -154,6 +155,7 @@ function acceptancePage(ctx) {
 <dt>驗收方法（草案）</dt><dd>${linkRefs(ctx, a.verify)}</dd>
 <dt>對應需求</dt><dd>${refs(ctx, a.fr)}</dd>
 <dt>待釐清</dt><dd>${refs(ctx, a.qs)}</dd>
+<dt>測試資料</dt><dd>${tdFor(ctx, a.id)}</dd>
 <dt>證據</dt><dd>${a.evidence && a.evidence !== '—' ? `<code>${esc(a.evidence)}</code>` : '<span class="muted">—</span>'}</dd>
 ${a.note ? `<dt>備註</dt><dd>${linkRefs(ctx, a.note)}</dd>` : ''}
 </dl></article>`;
@@ -185,12 +187,12 @@ function requirementsPage(ctx) {
 
 function questionsPage(ctx) {
   let out = PAGES.questionsIntro(ctx, H);
-  const byBatch = [1, 2, 3].map((b) => R.questions.filter((q) => q.batch === b));
-  out += tiles(byBatch.map((list, i) => ({ label: R.BATCHES[i + 1].title.split('：')[0], value: `${list.length} 題`, sub: esc(R.BATCHES[i + 1].who) })));
+  const batches = Object.keys(R.BATCHES).map(Number);
+  out += tiles(batches.map((b) => ({ label: R.BATCHES[b].title.split('：')[0], value: `${R.questions.filter((q) => q.batch === b).length} 題`, sub: esc(R.BATCHES[b].who) })));
   out += '<h2 id="summary">總覽</h2>';
   out += table([{ t: '編號', w: '64px' }, { t: '批次', w: '64px' }, { t: '主題', w: '150px' }, '問題', { t: '建議回答者', w: '130px' }, { t: '關聯', w: '160px' }, { t: '狀態', w: '64px' }],
     R.questions.map((q) => ({ cells: [`<a class="ref ref-q" href="#${ctx.anchor(q.id)}">${q.id}</a>`, `第 ${q.batch} 批`, esc(q.topic), esc(q.q), esc(q.who), refs(ctx, q.refs), '<span class="cl cl-open">未回覆</span>'] })), { filter: true, compact: true });
-  for (const b of [1, 2, 3]) {
+  for (const b of batches) {
     out += `<h2 id="${ctx.anchor(`batch-${b}`)}">${esc(R.BATCHES[b].title)}</h2><p class="muted">建議回答者：${esc(R.BATCHES[b].who)}</p>`;
     for (const q of R.questions.filter((x) => x.batch === b)) {
       out += `<article class="item q" id="${ctx.anchor(q.id)}">
@@ -206,6 +208,35 @@ function questionsPage(ctx) {
 </dl></article>`;
     }
   }
+  return out;
+}
+
+/** 某個驗收項要用到的測試資料（由 testData.need 反查）。 */
+function tdFor(ctx, id) {
+  const list = R.testData.filter((t) => t.need.includes(id));
+  if (!list.length) return '<span class="muted">—</span>';
+  return list.map((t) => `${refLink(ctx, t.id)} ${H.av(t.have)} ${esc(t.item)}`).join('<br>');
+}
+
+function testDataPage(ctx) {
+  let out = PAGES.testDataIntro(ctx, H, { refLink: (id) => refLink(ctx, id) });
+  const c = R.countBy(R.testData, 'have');
+  out += tiles([
+    { label: '已有，可用', value: `${c.yes || 0} 類`, sub: '可直接當測試輸入' },
+    { label: '部分，不足或不可靠', value: `${c.partial || 0} 類`, sub: '有來源，但缺欄位、缺答案或對不上' },
+    { label: '沒有', value: `${c.no || 0} 類`, sub: '需要向雲豹索取（第四批問題）' },
+  ]);
+  out += '<h2 id="list">測試資料清單</h2>';
+  out += table([{ t: '編號', w: '70px' }, { t: '資料', w: '170px' }, { t: '現況', w: '64px' }, '來源與位置（含 branch）', '缺什麼', { t: '用於驗收', w: '130px' }, { t: '問題', w: '120px' }],
+    R.testData.map((t) => ({ id: ctx.anchor(t.id), cells: [`<span class="ref">${t.id}</span>`, esc(t.item), H.av(t.have), linkRefs(ctx, t.where), linkRefs(ctx, t.gap), refs(ctx, t.need), refs(ctx, t.qs)] })), { filter: true });
+  out += '<h2 id="by-acceptance">依驗收項看測試資料</h2><p class="muted">每個驗收項需要哪些測試資料、現在有沒有。任一項標「沒有」，該驗收項就無法完整測試。</p>';
+  out += table([{ t: '驗收項', w: '64px' }, { t: '項目', w: '260px' }, '需要的測試資料', { t: '可測程度', w: '96px' }],
+    R.acceptance.filter((a) => a.table !== '交付').map((a) => {
+      const list = R.testData.filter((t) => t.need.includes(a.id));
+      const worst = list.some((t) => t.have === 'no') ? 'no' : list.some((t) => t.have === 'partial') ? 'partial' : list.length ? 'yes' : null;
+      const verdict = worst === 'no' ? '<span class="st st-todo">無法完整測試</span>' : worst === 'partial' ? '<span class="st st-partial">可部分測試</span>' : worst === 'yes' ? '<span class="st st-done">可測試</span>' : '<span class="muted">—</span>';
+      return { cells: [refLink(ctx, a.id), esc(a.item), list.length ? list.map((t) => `${refLink(ctx, t.id)} ${H.av(t.have)} ${esc(t.item)}`).join('<br>') : '<span class="muted">—</span>', verdict] };
+    }), { compact: true });
   return out;
 }
 
@@ -281,7 +312,8 @@ const SITE = [
   { section: '20 驗收', pages: [{ path: '20-驗收/合約驗收對照表.html', title: '合約驗收對照表', render: acceptancePage }] },
   { section: '30 需求', pages: [{ path: '30-需求/需求總表.html', title: '需求總表與使用者故事', render: requirementsPage }] },
   { section: '40 清冊', pages: [
-    { path: '40-清冊/待釐清問題.html', title: '待釐清問題（分三批）', render: questionsPage },
+    { path: '40-清冊/待釐清問題.html', title: '待釐清問題（分四批）', render: questionsPage },
+    { path: '40-清冊/測試資料盤點.html', title: '測試資料盤點', render: testDataPage },
     { path: '40-清冊/實作現況.html', title: '實作現況清冊', render: inventoryPage },
     { path: '40-清冊/假資料與不確定資料.html', title: '假資料與不確定資料', render: dataPage },
     { path: '40-清冊/決策紀錄.html', title: '決策紀錄', render: decisionsPage },

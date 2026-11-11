@@ -5,7 +5,7 @@ import * as R from './registers.mjs';
 
 const P = {
   summary: '00-總覽/01-專案摘要.html', sources: '00-總覽/02-規格來源與世代.html', legend: '00-總覽/03-圖例與編號規則.html', glossary: '00-總覽/04-名詞表.html',
-  acceptance: '20-驗收/合約驗收對照表.html', requirements: '30-需求/需求總表.html', questions: '40-清冊/待釐清問題.html',
+  acceptance: '20-驗收/合約驗收對照表.html', requirements: '30-需求/需求總表.html', questions: '40-清冊/待釐清問題.html', testdata: '40-清冊/測試資料盤點.html',
   inventory: '40-清冊/實作現況.html', data: '40-清冊/假資料與不確定資料.html', decisions: '40-清冊/決策紀錄.html', compare: '40-清冊/程式碼比對紀錄.html',
 };
 
@@ -133,7 +133,8 @@ export const PAGES = {
       [archPath('A0'), '架構圖 A0～A7', '從系統情境、業務流程、部署、元件、資料，到電費單與租金的細部，以及簽核分工的決策點。'],
       [P.acceptance, '合約驗收對照表', '表一 B01～B15、表二 R01～R08、交付 D01～D08：合約原文、現況、缺口、驗收方法草案、待釐清問題。'],
       [P.requirements, '需求總表與使用者故事', 'FR-001～035、NFR-001～003 的現況與對應驗收；原版設計的 US-1～21。'],
-      [P.questions, '待釐清問題（分三批）', `Q-01～Q-38；第一批 ${b1} 題是排工前必須決定的。`],
+      [P.questions, '待釐清問題（分四批）', `Q-01～Q-${R.questions.length}；第一批 ${b1} 題是排工前必須決定的；第四批是測試資料索取。`],
+      [P.testdata, '測試資料盤點', '每個驗收項需要哪些測試資料、現在有沒有、在哪裡（含各 branch）；案場與地主資料的現況。'],
       [P.inventory, '實作現況清冊', 'energy-ops-rust 每個元件的狀態、對合約的意義與證據路徑。'],
       [P.data, '假資料與不確定資料', '示範資料、mock、預設值、範例錯誤、未驗證的辨識與容量。'],
       [P.decisions, '決策紀錄', '已經決定的事、誰決定的、在新合約脈絡下是否要重新確認。'],
@@ -146,6 +147,7 @@ ${tiles([
   { label: '表二　租金驗收項', value: '8 項', sub: `已具備 ${c2.done || 0}、部分 ${c2.partial || 0}、未實作 ${c2.todo || 0}` },
   { label: '待釐清問題', value: `${R.questions.length} 題`, sub: `第一批 ${b1} 題要先回覆` },
   { label: '假資料與不確定資料', value: `${R.dataIssues.length} 筆`, sub: '示範資料、mock、範例錯誤、未驗證' },
+  { label: '測試資料', value: `${R.testData.length} 類`, sub: `已有 ${R.countBy(R.testData, 'have').yes || 0}、部分 ${R.countBy(R.testData, 'have').partial || 0}、沒有 ${R.countBy(R.testData, 'have').no || 0}` },
 ])}
 ${coverageBar(ab, '合約驗收項的實作覆蓋')}
 <h2>關鍵發現</h2>
@@ -154,7 +156,7 @@ ${findings(ctx)}
 <div class="tbl"><table class="reg"><thead><tr><th style="width:150px">讀者</th><th>建議順序</th></tr></thead><tbody>
 <tr><td>決策者（甲方 PM）</td><td><a href="${ctx.href(P.summary)}">專案摘要</a> → <a href="${ctx.href(archPath('A0'))}">A0 系統情境</a> → <a href="${ctx.href(archPath('A7'))}">A7 簽核分工</a> → <a href="${ctx.href(P.questions, 'batch-1')}">第一批問題</a></td></tr>
 <tr><td>開發者</td><td><a href="${ctx.href(archPath('A3'))}">A3 應用元件</a> → <a href="${ctx.href(archPath('A4'))}">A4 資料模型</a> → <a href="${ctx.href(P.acceptance)}">合約驗收對照表</a> → <a href="${ctx.href(P.inventory)}">實作現況清冊</a> → <a href="${ctx.href(P.compare)}">程式碼比對紀錄</a></td></tr>
-<tr><td>與雲豹確認時</td><td><a href="${ctx.href(archPath('A1'))}">A1 業務流程全景</a> → <a href="${ctx.href(archPath('A5'))}">A5 電費單處理</a> → <a href="${ctx.href(archPath('A6'))}">A6 租金與資產</a> → <a href="${ctx.href(P.questions, 'batch-2')}">第二批問題</a>（注意：來源檔案清冊標示為機敏的內容不要外流）</td></tr>
+<tr><td>與雲豹確認時</td><td><a href="${ctx.href(archPath('A1'))}">A1 業務流程全景</a> → <a href="${ctx.href(archPath('A5'))}">A5 電費單處理</a> → <a href="${ctx.href(archPath('A6'))}">A6 租金與資產</a> → <a href="${ctx.href(P.questions, 'batch-2')}">第二批問題</a> → <a href="${ctx.href(P.testdata)}">測試資料盤點</a> → <a href="${ctx.href(P.questions, 'batch-4')}">第四批問題</a>（注意：來源檔案清冊標示為機敏的內容不要外流）</td></tr>
 </tbody></table></div>
 <h2>文件目錄</h2>
 <div class="tbl"><table class="reg"><thead><tr><th style="width:200px">文件</th><th>內容</th></tr></thead><tbody>
@@ -176,6 +178,7 @@ ${legend()}`;
       ['辨識準確度', '只有 4 種樣態驗證過；天能、影像、傳真影本與新樣態未驗證；合約沒有正確率門檻。', 'B04～B08 的驗收爭議。', '擴充樣本與標準答案，並約定門檻。', ['Q-03', 'Q-15']],
       ['機敏資料', 'SOP 寫著台電網站帳密與 PDF 密碼；資產表含個資與銀行帳號；示範資料用了真實電號。', '資安與個資風險；合約有保密條款。', '密碼改由系統安全保管；銀行帳號加密；示範資料改用虛構電號。', ['Q-14', 'Q-29', 'Q-36']],
       ['維運', '開機自啟、備份、監控、日誌都未規劃。', '維護期 4 小時回應、逾期每日罰款。', '在交付前把維運手冊與工具補齊。', ['Q-31', 'Q-32']],
+      ['測試資料不足', '22 類測試資料中，沒有任何真實地主、合約、天能轉供單、已開發票與租金標準答案；案場只有名單、尚未匯入。', '表二幾乎全部、表一的天能與發票各項無法開發或驗收。', '第四批問題與第一批同時發出；建議約定一個「驗收基準月」資料集。', ['Q-40', 'Q-42', 'Q-48']],
     ];
     return `<p class="lead">一頁看懂：合約要什麼、現在做到哪、最大的落差與風險、下一步該先決定什麼。</p>
 <h2>一、合約要點</h2>
@@ -209,6 +212,7 @@ ${risks.map(([t, d, i, a, q]) => `<tr><td><strong>${esc(t)}</strong></td><td>${e
 <li>回覆<a href="${ctx.href(P.questions, 'batch-1')}">第一批待釐清問題</a>（13 題），其中 ${refLink('Q-01')} 期限與 ${refLink('Q-04')} 簽核分工最優先。</li>
 <li>與雲豹簽一份「驗收測試清單」：每個驗收項列出測試資料、步驟、預期結果、判定人（${refLink('Q-03')}）。</li>
 <li>請雲豹 IT 開出測試信箱、測試公槽路徑、EasyFlow 測試環境與帳號（${refLink('Q-38')}）。</li>
+<li>同時發出<a href="${ctx.href(P.questions, 'batch-4')}">第四批問題</a>（測試資料索取），並與雲豹約定一個驗收基準月（${refLink('Q-48')}）。</li>
 <li>依上述答案，進入第二階段：把每個驗收項展開成可逐條驗收的規格（情境、步驟、預期結果、資料），並更新本文件的狀態。</li>
 </ol>`;
   },
@@ -249,7 +253,8 @@ ${table([{ t: '類別', w: '150px' }, '檔案', { t: '大小', w: '80px' }, { t:
       ['D01～D08', '其他交付與契約義務（期限、訓練、手冊、交付物、安裝包、維護）', P.acceptance],
       ['FR-001～035、NFR-001～003', '需求總表 v0.1 的條目（沿用原編號）', P.requirements],
       ['US-1～21', '原版設計文件的使用者故事（沿用原編號）', P.requirements],
-      ['Q-01～38', '待釐清問題；第一批 Q-01～13、第二批 Q-14～28、第三批 Q-29～38', P.questions],
+      ['Q-01～48', '待釐清問題；第一批 Q-01～13、第二批 Q-14～28、第三批 Q-29～38、第四批（測試資料索取）Q-39～48', P.questions],
+      ['TD-01～22', '測試資料盤點的項目', P.testdata],
       ['DATA-01～18', '假資料與不確定資料', P.data],
       ['DEC-01～20', '決策紀錄', P.decisions],
       ['A0～A7', '架構圖，由全局到細節', archPath('A0')],
@@ -276,7 +281,12 @@ ${table([{ t: '編號', w: '220px' }, '意義', { t: '所在文件', w: '200px' 
 <li>每張圖的頁面下方有「圖中元素一覽」表格，內容由圖的定義自動產生，與圖面一致。</li>
 </ul>
 <h2>版本</h2>
-<p>v0.1（2026-11-12）：盤點版。只盤點現況、標出狀態與問題，不展開逐條驗收規格。第一批問題回覆後出 v0.2，開始把每個驗收項展開成可逐條驗收的規格。</p>`;
+<p>v0.1（2026-11-12）：盤點版。只盤點現況、標出狀態與問題，不展開逐條驗收規格。第一批問題回覆後出 v0.2，開始把每個驗收項展開成可逐條驗收的規格。</p>
+<h2>修訂紀錄</h2>
+<div class="tbl"><table class="reg"><thead><tr><th style="width:120px">版本</th><th style="width:110px">日期</th><th>內容</th></tr></thead><tbody>
+<tr><td>v0.1</td><td>2026-11-12</td><td>初版盤點：架構圖 A0～A7、合約驗收對照、需求總表、待釐清問題 Q-01～38、實作現況、假資料、決策紀錄、程式碼比對。</td></tr>
+<tr><td>v0.1（同日補充）</td><td>2026-11-12</td><td>加 PDF 輸出；加「測試資料盤點」（TD-01～22，含各 branch 的搜尋結果）與第四批問題 Q-39～48；驗收對照表每項加「測試資料」一列。</td></tr>
+</tbody></table></div>`;
   },
 
   glossary(ctx, H, { table }) {
@@ -296,9 +306,18 @@ ${table([{ t: '編號', w: '220px' }, '意義', { t: '所在文件', w: '200px' 
     return `<p>以下是原版設計（2026-08）定義的使用者故事，energy-ops-rust 就是照它們做出來的。對照合約可以看出：多數故事已實作，但其中一半屬於系統內簽核，合約沒有要求。</p>`;
   },
   questionsIntro(ctx) {
-    return `<p class="lead">所有不清楚的地方都整理成問題，分三批問：第一批是排工前必須決定的範圍、架構與外部系統；第二批是業務規則與資料；第三批是非功能、維運與交付。</p>
+    return `<p class="lead">所有不清楚的地方都整理成問題，分四批問：第一批是排工前必須決定的範圍、架構與外部系統；第二批是業務規則與資料；第三批是非功能、維運與交付；第四批是測試資料索取，可與第一批同時發出。</p>
 <div class="callout note"><p>回覆方式：依批次回覆，每題註明編號即可（例如「Q-04：方案 A」）。不確定的可以回「轉問雲豹」，我們會把該題整理成給雲豹的版本。回覆後本頁的「回覆」欄與相關文件的狀態會一併更新。</p></div>
 <p class="muted">問題已與雲豹提供的兩份清單合併去重（需求總表的 Q-01～Q-10、整併版的待確認事項與驗收缺口），「出處」欄註明原編號。</p>`;
+  },
+  testDataIntro(ctx, H, { refLink }) {
+    return `<p class="lead">驗收要能判定合格，每一項都需要測試資料與標準答案。這一頁盤點每類測試資料現在有沒有、在哪裡（包含各 repo 的 branch），沒有的都轉成第四批問題向雲豹索取。</p>
+<div class="callout warn"><h4>案場與地主的資料有了嗎？</h4>
+<p><strong>案場：有名單，還沒進系統。</strong>使用者提供的「1.發電案場清單」有 98 個真實案場（11 家子公司、16 個區處、電號、容量、發票寄送方式）；系統內與各 branch 只有同一套示範種子的 6 個虛構案場，其中 4 個電號與真實案場相同。名單缺專案編號、型別、併網日、案場分類與合約關聯（${refLink('TD-01')}、${refLink('Q-39')}）。</p>
+<p><strong>地主：沒有。</strong>資產管理清單的地主頁只有表頭與一列「我是範例」；原版、App 5、energy-ops-next、energy-ops-rust 的示範種子都是同兩位虛構地主（含假身分證字號與銀行帳號）。多地主比例、繼承異動、公司或機關受款人都沒有資料（${refLink('TD-02')}、${refLink('Q-40')}）。</p></div>
+<div class="callout note"><h4>搜尋範圍（2026-11-12）</h4>
+<p>az repo 全部 branch 與歷史（含 feat-energy-ops-next、feat-tenant-console-route-transition、archive 與 backup 分支）、App 5 的全部 branch、energy-ops-rust（master、rust-port）、辨識服務的 samples 與 fixtures、az repo 的 temp 與本機上傳區。除了使用者這次提供的附件，找到的案場與地主資料都是示範種子；沒有任何真實地主名冊、合約檔、天能電費單或發票檔。</p></div>
+<p>建議做法：與雲豹約定一個「驗收基準月」（${refLink('Q-48')}），由雲豹提供該月全部輸入與人工結果，同一批資料同時當作開發測試資料與驗收的標準答案。含個資的資料可以先去識別化，但要保留結構、比例與金額。</p>`;
   },
   inventoryIntro() {
     return `<p class="lead">energy-ops-rust（cf7a330）每個元件的狀態，以及它對合約的意義：驗收需要、可沿用、要擴充、要改，或屬於合約外。</p>
