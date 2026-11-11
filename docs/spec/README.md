@@ -13,6 +13,7 @@
 | `index.html` | 入口。用瀏覽器直接開啟，左側是文件目錄，各頁以相對路徑互連。 |
 | `dist/energy-ops-spec-v0.1.html` | 單檔可攜版：全部頁面與架構圖都內嵌在一個檔案裡，可直接寄送或離線開啟。 |
 | `diagrams/A0.svg`～`A7.svg` | 架構圖原檔（由全局到細節），也可以單獨開啟。 |
+| `dist/energy-ops-spec-v0.1.pdf` | PDF 版（A4 橫向，頁首頁尾含版本與頁碼，架構圖為向量）。由 `node docs/spec/tools/pdf.mjs` 從單檔版產生，不進版控；需要 `web/` 已 `npm install`（沿用其 puppeteer）。 |
 
 ## 目錄
 
@@ -24,7 +25,7 @@
 | `30-需求/` | 需求總表 v0.1（FR、NFR）與原版設計的使用者故事 |
 | `40-清冊/` | 待釐清問題（分三批）、實作現況、假資料與不確定資料、決策紀錄、程式碼比對紀錄 |
 | `src/` | 內容來源：`registers.mjs`（所有清冊資料）、`pages.mjs`（敘述文字） |
-| `tools/` | 產生器：`lib.mjs`（狀態定義與畫圖工具）、`diagrams.mjs`（架構圖定義）、`build.mjs`（產生網頁）、`site.css`、`site.js` |
+| `tools/` | 產生器：`lib.mjs`（狀態定義與畫圖工具）、`diagrams.mjs`（架構圖定義）、`build.mjs`（產生網頁）、`pdf.mjs`（輸出 PDF）、`site.css`、`site.js` |
 
 ## 怎麼改
 
@@ -40,6 +41,8 @@ node docs/spec/tools/build.mjs
 ```
 
 會重畫 `diagrams/*.svg`、重寫所有頁面與 `dist/` 的單檔版。Node 18 以上即可，沒有外部相依。
+
+要 PDF 時再跑 `node docs/spec/tools/pdf.mjs [輸出路徑]`。
 
 ## 狀態代碼
 

@@ -1,0 +1,2 @@
+# 由 tools/pdf.mjs 產生的 PDF 不進版控（可隨時重產）。
+dist/*.pdf
