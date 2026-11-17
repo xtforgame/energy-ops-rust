@@ -685,6 +685,8 @@ const customChineseTWMessages: TranslationMessages = {
       taskState: '狀態',
       assignee: '處理人',
       outcome: '結果',
+      outcomeValue: { approved: '通過', sentBack: '退回' },
+      completedAt: '完成時間',
       // 「它的對象」—— 具名連結（不是把整列變成對象的入口）。
       openBill: '看這張電費單',
       openContract: '看合約與期數',
@@ -865,6 +867,8 @@ const customChineseTWMessages: TranslationMessages = {
       sendBack: '退回',
       release: '放行',
       markPaid: '標記已付款',
+      // Q-04 平台資料審核：單一審核步驟，任一位通過即完成。
+      pass: '審核通過',
       // 開立發票流程（`invoice-issue`）那一關的動作。少了這一條，
       // 按鈕上會直接印出 `markInvoiced` —— 畫面上不可以出現 raw key。
       markInvoiced: '登記已開立發票',

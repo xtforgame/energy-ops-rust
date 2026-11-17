@@ -385,11 +385,13 @@ pub async fn insert_station_binding(
     .await?)
 }
 
-/// 內建流程的部門（定義的指派規則用這三個 key）。
-const BUILTIN_DEPARTMENTS: [(&str, &str); 3] = [
+/// 內建流程的部門（定義的指派規則用這幾個 key）。
+const BUILTIN_DEPARTMENTS: [(&str, &str); 5] = [
     (eo_domain::workflow_defs::DEPT_SALES, "業務部"),
     (eo_domain::workflow_defs::DEPT_ACCOUNTING, "會計部門"),
     (eo_domain::workflow_defs::DEPT_FINANCE, "財務部"),
+    (eo_domain::workflow_defs::DEPT_BILL_REVIEW, "電費單平台資料審核人員"),
+    (eo_domain::workflow_defs::DEPT_RENT_REVIEW, "租金平台資料審核人員"),
 ];
 
 /// 安裝結果：這次真的新裝了哪些（已存在的略過）。
@@ -401,12 +403,12 @@ pub struct InstallReport {
     pub departments: Vec<Value>,
 }
 
-/// 冪等地安裝內建流程定義（現行四份）、預設計算策略與定義引用到的部門。
-/// 同 key 已有任何版本就不再裝（新版本要走換版，不是重裝）。
+/// 冪等地安裝內建流程定義（現行四份：Q-04 平台資料審核、保證金請款、用電電費單、開立發票）、
+/// 預設計算策略與定義引用到的部門。同 key 已有任何版本就不再裝（新版本要走換版，不是重裝）。
 pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<InstallReport> {
     let mut report = InstallReport::default();
     let defs = [
-        eo_domain::workflow_defs::default_bill_approval(),
+        eo_domain::workflow_defs::platform_review_bill(),
         eo_domain::workflow_defs::deposit_request(),
         eo_domain::workflow_defs::utility_bill(),
         eo_domain::workflow_defs::invoice_issue(),

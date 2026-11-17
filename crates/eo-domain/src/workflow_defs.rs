@@ -475,6 +475,10 @@ pub const DEPT_SALES: &str = "sales";
 pub const DEPT_ACCOUNTING: &str = "accounting";
 /// 財務部（`deposit-request` 的放行關）。
 pub const DEPT_FINANCE: &str = "finance";
+/// 電費單平台資料審核人員（Q-04：單一審核步驟，任一位通過即完成）。
+pub const DEPT_BILL_REVIEW: &str = "bill-reviewers";
+/// 租金平台資料審核人員（Q-04：名單先建好，租金審核流程待 R08 的租金付款申請單）。
+pub const DEPT_RENT_REVIEW: &str = "rent-reviewers";
 
 fn submit(sort: i64) -> ActionDef {
     ActionDef::new("submit", "flow.action.submit", ActionKind::Advance, sort)
@@ -556,6 +560,7 @@ pub fn minimal_bill_approval_binding() -> SeedBinding {
 /// start → clerk-review → manager-approve ─(金額 ≥ 門檻)→ exec-approve ─┐
 ///                                 └───────(預設邊)──────────────────────┴→ calc → finance-release → payment → end
 /// ```
+/// Q-04（2026-11-16）起不再內建安裝，換成 `platform_review_bill()`；七關樣本留給引擎測試。
 pub fn default_bill_approval() -> WorkflowDefinition {
     let mut d = WorkflowDefinition::new(
         "bill-approval",
@@ -615,6 +620,32 @@ pub fn default_bill_approval() -> WorkflowDefinition {
 /// 綁在躉購那一家族：細分的 `renewableSurplus` 會回退到這裡。
 pub fn default_bill_approval_binding() -> SeedBinding {
     binding(&default_bill_approval(), Some(EnergyDocType::ElectricityBill), "DESIGN.md §3 預設流程")
+}
+
+/// Q-04（2026-11-16 Marrash 確認）：單一審核步驟，電費單平台資料審核人員任一位通過即完成。
+/// 平台審核通過不代表 EasyFlow 已核准或已付款。
+pub fn platform_review_bill() -> WorkflowDefinition {
+    let mut d = WorkflowDefinition::new(
+        "bill-approval",
+        "電費單平台資料審核",
+        "energyBill",
+        "Q-04（2026-11-16 Marrash 確認）：單一審核步驟，電費單平台資料審核人員任一位通過即完成。平台審核通過不代表 EasyFlow 已核准或已付款。",
+    );
+    d.nodes = vec![
+        NodeDef::new("start", "開始", NodeType::Start).layout(0, 120),
+        NodeDef::new("platform-review", "平台資料審核", NodeType::HumanTask)
+            .rule(AssignmentRule::department(DEPT_BILL_REVIEW, "all"))
+            .layout(220, 120)
+            .actions(vec![ActionDef::new("pass", "flow.action.pass", ActionKind::Advance, 0)]),
+        NodeDef::new("end", "平台審核通過", NodeType::End).layout(440, 120),
+    ];
+    d.transitions =
+        vec![TransitionDef::new("start", "platform-review", 0), TransitionDef::new("platform-review", "end", 0)];
+    d
+}
+
+pub fn platform_review_bill_binding() -> SeedBinding {
+    binding(&platform_review_bill(), Some(EnergyDocType::ElectricityBill), "Q-04 平台資料審核")
 }
 
 /// 保證金請款（三節點）。沒有計算節點：金額來自合約，不用算也不取掃描件的。
@@ -731,11 +762,12 @@ pub fn invoice_issue_binding() -> SeedBinding {
     binding(&invoice_issue(), Some(EnergyDocType::RenewableSurplus), "躉購有餘電：開發票給台電（與核可流程平行）")
 }
 
-/// 五份內建定義與各自的 seed 綁定。`minimal` 與 `default` 同 key（`bill-approval`），是兩個版本的候選。
+/// 五份內建定義與各自的 seed 綁定。`minimal` 與 `platform_review_bill` 同 key（`bill-approval`），是兩個版本的候選。
+/// Q-04（2026-11-16）起內建安裝換成單一審核步驟；舊的七關 `default_bill_approval()` 不再內建安裝，留給引擎測試。
 pub fn builtin_definitions() -> Vec<(WorkflowDefinition, SeedBinding)> {
     vec![
         (minimal_bill_approval(), minimal_bill_approval_binding()),
-        (default_bill_approval(), default_bill_approval_binding()),
+        (platform_review_bill(), platform_review_bill_binding()),
         (deposit_request(), deposit_request_binding()),
         (utility_bill(), utility_bill_binding()),
         (invoice_issue(), invoice_issue_binding()),

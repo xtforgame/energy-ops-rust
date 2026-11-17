@@ -16,7 +16,7 @@ use chrono::NaiveDate;
 use eo_domain::business_key::normalize_customer_number;
 use eo_domain::rbac::RbacScope;
 use eo_domain::schemas::DepartmentMemberRole;
-use eo_domain::workflow_defs::{self as defs, DEPT_ACCOUNTING, DEPT_FINANCE, DEPT_SALES};
+use eo_domain::workflow_defs::{self as defs, DEPT_ACCOUNTING, DEPT_BILL_REVIEW, DEPT_FINANCE, DEPT_SALES};
 use eo_platform::auth::CurrentUser;
 use eo_platform::core::CoreRef;
 use eo_platform::error::{ApiError, ApiResult};
@@ -603,12 +603,15 @@ async fn seed_flows(
         (DEPT_ACCOUNTING, "admin", Member),
         (DEPT_FINANCE, "finance", Manager),
         (DEPT_FINANCE, "admin", Member),
+        (DEPT_BILL_REVIEW, "manager", Member),
+        (DEPT_BILL_REVIEW, "finance", Member),
+        (DEPT_BILL_REVIEW, "accounting", Member),
     ];
     for (dept, who, role) in members {
         ensure_member(tx, ctx, dept, ids[who], role, created).await?;
     }
 
-    let bill = defs::default_bill_approval();
+    let bill = defs::platform_review_bill();
     let utility_key = defs::utility_bill().key;
     let invoice_key = defs::invoice_issue().key;
     let deposit_key = defs::deposit_request().key;
@@ -952,7 +955,7 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
         out.candidate_execution_id = Some(exec.id);
     }
 
-    // 主線：用紙上的金額（127,848，≥ 加簽門檻）開核可流程，停在承辦確認等人認領。
+    // 主線：用紙上的金額（127,848，≥ 加簽門檻）開核可流程，停在平台資料審核等人認領。
     if let Some(bill_id) = main_bill {
         let mut tx = core.pool.begin().await?;
         let exec = start_execution(
@@ -960,7 +963,7 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
             &admin,
             StartExecution {
                 station_key: "00-60-1600-79-5".into(),
-                workflow_key: defs::default_bill_approval().key,
+                workflow_key: defs::platform_review_bill().key,
                 subject_type: "energyBill".into(),
                 subject_id: bill_id.to_string(),
                 business_date: date("2026-08-10"),
