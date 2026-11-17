@@ -231,14 +231,12 @@ figure.diagram figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6p
 <h2>二、現況</h2>
 <p>energy-ops-rust 已有「手動收件 → 辨識 → 校對 → 系統內簽核 → 計算 → 稽核」的完整骨幹，以及多組織與完整的權限管理；但合約驗收的重心——自動收件、EasyFlow 申請單、電費紀錄單、發票存檔、租金與資產管理——大多尚未實作。</p>
 <div class="tiles"><div class="tile"><div class="t-label">表一　電費單</div><div class="t-value">15 項</div><div class="t-sub">已具備 0、部分 3、未實作 12</div></div><div class="tile"><div class="t-label">表二　租金</div><div class="t-value">8 項</div><div class="t-sub">已具備 0、部分 2、未實作 6</div></div><div class="tile"><div class="t-label">交付與義務</div><div class="t-value">8 項</div><div class="t-sub">部分 4、未實作 4</div></div></div>
-<figure class="cover"><figcaption>表一＋表二驗收項的實作覆蓋（共 23 項）</figcaption><div class="bar" role="img" aria-label="表一＋表二驗收項的實作覆蓋：已具備 0 項、部分具備 5 項、未實作 18 項"><div class="seg seg-partial" style="flex:5" tabindex="0" title="部分具備：5 項（22%）" aria-label="部分具備 5 項，占 22%"><span>部分具備 5</span></div><div class="seg seg-todo" style="flex:18" tabindex="0" title="未實作：18 項（78%）" aria-label="未實作 18 項，占 78%"><span>未實作 18</span></div></div><ul class="bar-legend"><li><i class="sw sw-done"></i>已具備 0</li><li><i class="sw sw-partial"></i>部分具備 5</li><li><i class="sw sw-todo"></i>未實作 18</li></ul></figure>
+<figure class="cover"><figcaption>表一＋表二驗收項的實作覆蓋（共 23 項）</figcaption><div class="bar" role="img" aria-label="表一＋表二驗收項的實作覆蓋：已具備 0 項、部分具備 6 項、未實作 17 項"><div class="seg seg-partial" style="flex:6" tabindex="0" title="部分具備：6 項（26%）" aria-label="部分具備 6 項，占 26%"><span>部分具備 6</span></div><div class="seg seg-todo" style="flex:17" tabindex="0" title="未實作：17 項（74%）" aria-label="未實作 17 項，占 74%"><span>未實作 17</span></div></div><ul class="bar-legend"><li><i class="sw sw-done"></i>已具備 0</li><li><i class="sw sw-partial"></i>部分具備 6</li><li><i class="sw sw-todo"></i>未實作 17</li></ul></figure>
 <p class="muted">判定依據：energy-ops-rust cf7a330 的程式與文件（靜態閱讀）。逐項明細見 <a href="../20-%E9%A9%97%E6%94%B6/%E5%90%88%E7%B4%84%E9%A9%97%E6%94%B6%E5%B0%8D%E7%85%A7%E8%A1%A8.html">合約驗收對照表</a>。</p>
 <h2>三、關鍵發現</h2>
 <div class="callout risk"><h4>一、驗收基準與既有實作錯位</h4>
 <p>合約驗收表的重心是「自動收件、電費紀錄單、EasyFlow 申請單、發票存檔、租金與資產管理」；energy-ops-rust 投資最多的是系統內多關卡簽核、多組織與完整 RBAC——這些都不在驗收表上。23 個驗收項中，沒有一項完整具備。</p></div>
-<div class="callout warn"><h4>二、外部介接全部未定</h4>
-<p>公用信箱、公槽、EasyFlow、PDF 密碼保管——每一項都要雲豹 IT 開通或決定，而且都還沒有測試環境。它們是時程上最大的不確定。</p></div>
-<div class="callout warn"><h4>三、規格資料不完整，部分有錯</h4>
+<div class="callout warn"><h4>二、外部環境已有初步測通，完整介接仍待完成</h4><p>2026-11-16 補登：客戶端平台已部署並可上傳 PDF 取得辨識內容；Microsoft 365 網頁登入及附件下載已初步跑通；Windows、WSL、暫時 Docker 容器可讀取測試公槽。資料夾至平台 API 匯入、正式公槽寫入／掛載、長期排程與恢復，以及 EasyFlow 介接尚未完成驗證；PDF 密碼保管與業務規則仍待確認。不能把初步連線成功視為整項驗收完成。</p></div><div class="callout warn"><h4>三、規格資料不完整，部分有錯</h4>
 <p>電費紀錄單的範本沒有提供；租金計算範例有 #VALUE! 與錯位公式；需求總表是機器轉錄的 v0.1；合約附件版本待核；辨識樣本只驗證過 4 種。這些都要先補齊，驗收才判得出合不合格。</p></div>
 <h2>四、主要風險</h2>
 <div class="tbl"><table class="reg"><thead><tr><th style="width:96px">風險</th><th>說明</th><th>影響</th><th>建議對策</th><th style="width:150px">相關問題</th></tr></thead><tbody>

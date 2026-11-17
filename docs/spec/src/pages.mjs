@@ -36,7 +36,7 @@ export const ARCH = {
   A2: {
     slug: '部署與容器', short: '部署與容器',
     intro: () => `<p class="lead">系統實際怎麼跑。客戶端是 Windows Server 2022 上的 WSL 發行版，裡面跑 platform（energy-ops-rust）、postgres、minio、ocr 四個容器；右側是我方開發環境。</p>
-<p>離線安裝包 EnergyOps_Offline_20261104 已完成（使用者確認），並已驗證 4 份 PDF 的 54 項預期值。還沒接的是內網資源：公用信箱、公槽、EasyFlow。</p>`,
+<p>離線安裝包 EnergyOps_Offline_20261104 已完成（使用者確認），原紀錄為 4 份 PDF 的 54 項預期值已驗證。2026-11-16 補登：客戶端已實際安裝，四容器健康檢查通過，並可上傳 PDF 取得辨識內容；以上為先前測試回報，非本次重跑。</p><p>Microsoft 365 網頁登入與獨立工具下載附件已初步跑通；Windows、WSL、暫時 Docker 容器讀取測試公槽已測通。尚待完成資料夾匯入平台、公槽寫入與正式掛載、長期排程及故障恢復；EasyFlow 仍待介接驗證。打包檔案在 Marrash 的 Fantesty_demo 工作目錄，詳見 D07。</p>`,
     points: [
       '離線安裝包已完成；功能更新後重新打包即可（D07）。',
       '主機 4 vCPU／8 GB 只做過單筆試跑，要用實際單量驗證效能（Q-30）。',
@@ -113,9 +113,7 @@ function daysLeft() {
 function findings(ctx) {
   return `<div class="callout risk"><h4>一、驗收基準與既有實作錯位</h4>
 <p>合約驗收表的重心是「自動收件、電費紀錄單、EasyFlow 申請單、發票存檔、租金與資產管理」；energy-ops-rust 投資最多的是系統內多關卡簽核、多組織與完整 RBAC——這些都不在驗收表上。23 個驗收項中，沒有一項完整具備。</p></div>
-<div class="callout warn"><h4>二、外部介接全部未定</h4>
-<p>公用信箱、公槽、EasyFlow、PDF 密碼保管——每一項都要雲豹 IT 開通或決定，而且都還沒有測試環境。它們是時程上最大的不確定。</p></div>
-<div class="callout warn"><h4>三、規格資料不完整，部分有錯</h4>
+<div class="callout warn"><h4>二、外部環境已有初步測通，完整介接仍待完成</h4><p>2026-11-16 補登：客戶端平台已部署並可上傳 PDF 取得辨識內容；Microsoft 365 網頁登入及附件下載已初步跑通；Windows、WSL、暫時 Docker 容器可讀取測試公槽。資料夾至平台 API 匯入、正式公槽寫入／掛載、長期排程與恢復，以及 EasyFlow 介接尚未完成驗證；PDF 密碼保管與業務規則仍待確認。不能把初步連線成功視為整項驗收完成。</p></div><div class="callout warn"><h4>三、規格資料不完整，部分有錯</h4>
 <p>電費紀錄單的範本沒有提供；租金計算範例有 #VALUE! 與錯位公式；需求總表是機器轉錄的 v0.1；合約附件版本待核；辨識樣本只驗證過 4 種。這些都要先補齊，驗收才判得出合不合格。</p></div>`;
 }
 

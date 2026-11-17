@@ -196,7 +196,7 @@ function questionsPage(ctx) {
     out += `<h2 id="${ctx.anchor(`batch-${b}`)}">${esc(R.BATCHES[b].title)}</h2><p class="muted">建議回答者：${esc(R.BATCHES[b].who)}</p>`;
     for (const q of R.questions.filter((x) => x.batch === b)) {
       out += `<article class="item q" id="${ctx.anchor(q.id)}">
-<header><span class="item-id q-id">${q.id}</span><h3>${esc(q.topic)}</h3><span class="badges"><span class="cl cl-open">未回覆</span></span></header>
+<header><span class="item-id q-id">${q.id}</span><h3>${esc(q.topic)}</h3><span class="badges">${q.answer ? '<span class="cl cl-assumed">有回覆、未全部確認</span>' : '<span class="cl cl-open">未回覆</span>'}</span></header>
 <p class="q-text">${linkRefs(ctx, q.q)}</p>
 <dl>
 <dt>為什麼要問</dt><dd><div class="why"><div class="why-row"><span class="st st-done">已有</span><ul>${(q.have || []).map((x) => `<li>${linkRefs(ctx, x)}</li>`).join('')}</ul></div><div class="why-row"><span class="st st-todo">沒有</span><ul>${(q.lack || []).map((x) => `<li>${linkRefs(ctx, x)}</li>`).join('')}</ul></div><p>${linkRefs(ctx, q.why)}</p></div></dd>
@@ -204,7 +204,7 @@ function questionsPage(ctx) {
 <dt>建議回答者</dt><dd>${esc(q.who)}</dd>
 <dt>關聯</dt><dd>${refs(ctx, q.refs)}</dd>
 <dt>出處</dt><dd>${esc(q.from)}</dd>
-<dt>回覆</dt><dd class="answer">（待填）</dd>
+<dt>回覆</dt><dd class="answer">${q.answer ? linkRefs(ctx, q.answer).replace(/\n/g, '<br>') : '（待填）'}</dd>
 </dl></article>`;
     }
   }
