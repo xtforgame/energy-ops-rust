@@ -19,6 +19,24 @@ import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './ro
 // 綁定的三個具名動作（`FRONTEND.md §2.84`）——這一頁是動作的家。
 import BindingActions, { type BindingKind } from './BindingActions';
 
+/** 卡 20261118-0427-a 時區修正：`toISOString()`／`Date` 的 `.slice()` 都是 UTC，顯示給人看要轉本地時間。
+ *  後端存的 UTC 不動（`occurredAt` 原樣送 PATCH／顯示其他地方），這裡只管「轉成人看的字串」這一層。 */
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** 本地日期 `YYYY-MM-DD`（預設今天；給「結束」分配的迄日預設值用）。 */
+function localDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** 本地日期時間 `YYYY-MM-DD HH:mm:ss`（給異動紀錄的時間戳顯示用）。 */
+function localDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return `${localDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
 /** 卡 20261118-0427-a S2：電號區（一對多，有效期重疊回 409 `meter_overlap`）。 */
 const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({ orgId, stationId }) => {
   const notify = useNotify();
@@ -202,7 +220,7 @@ const AllocationsSection: React.FC<{ orgId?: number | null; stationId: number }>
     if (!endTarget) return;
     setSaving(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDate();
       await energyHttp.patch(`${base}/allocations/${endTarget.id}`, { validTo: today, changeReason: endReason });
       notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
       setEndTarget(null);
@@ -273,7 +291,7 @@ const AllocationsSection: React.FC<{ orgId?: number | null; stationId: number }>
         <Stack gap={0.5} data-testid="allocation-history">
           {history.length ? history.map((h) => (
             <Typography key={h.id} variant="body2" data-testid="allocation-history-row">
-              {String(h.occurredAt).slice(0, 19).replace('T', ' ')}　{h.summary}
+              {localDateTime(h.occurredAt)}　{h.summary}
               <Typography component="span" variant="caption" color="text.secondary" data-testid="allocation-history-actor">
                 （{translate('energy.allocations.by', { who: h.actorLabel ?? '—' })}）
               </Typography>
