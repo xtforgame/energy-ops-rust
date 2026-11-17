@@ -108,23 +108,34 @@
 | 方法 | 新路徑 | 閘 |
 |---|---|---|
 | GET | `E/stations`（輕量搜尋） | FLOW_VIEW |
-| GET | `E/station-list` | FLOW_VIEW |
+| POST | `E/stations`（卡 20261118-0427-a：新增案場，同交易建主電號＋主要受款對象 100% 分配） | MASTER_MANAGE |
+| GET | `E/station-list`（可篩 `siteType`、`enabled`；回傳帶 `meterCount`、`projectCodeMissing`） | FLOW_VIEW |
+| PATCH | `E/stations/{stationId}`（卡 A：編輯，整包送上來，重算專案編號） | MASTER_MANAGE |
 | GET | `E/unbound-stations` | FLOW_VIEW |
 | GET | `E/stations/{stationId}/overview` | FLOW_VIEW |
 | GET | `E/stations/{stationId}/geocode` | FLOW_VIEW |
 | POST | `E/stations/{stationId}/geocode` | FLOW_ACT |
+| GET | `E/stations/{stationId}/meters`（卡 A：電號一對多清單） | FLOW_VIEW |
+| POST | `E/stations/{stationId}/meters`（新增電號；有效期重疊回 409 `meter_overlap`） | MASTER_MANAGE |
+| PATCH | `E/meters/{meterId}` | MASTER_MANAGE |
+| GET | `E/stations/{stationId}/allocations`（卡 A：地主分配清單） | FLOW_VIEW |
+| POST | `E/stations/{stationId}/allocations`（新增分配；寫 `allocation.created`） | MASTER_MANAGE |
+| PATCH | `E/allocations/{allocationId}`（一般編輯寫 `allocation.updated`；帶 `validTo`＋`changeReason` 寫 `allocation.ended`） | MASTER_MANAGE |
+| GET | `E/stations/{stationId}/allocation-history`（讀稽核表，新到舊） | FLOW_VIEW |
 | GET | `E/stations/{stationId}/bindings` | FLOW_VIEW |
 | GET | `E/stations/{stationId}/bindings/preview` | 依 kind |
 | POST | `E/stations/{stationId}/bindings` | kind=workflow：`energy:workflow:manage`；kind=rating：`energy:rating:manage` |
 | POST | `E/stations/{stationId}/bindings/switch` | 同上 |
 | POST | `E/stations/{stationId}/bindings/end` | 同上 |
 | GET | `E/binding-options?kind=` | 依 kind |
-| GET | `E/landowners` | FLOW_VIEW |
+| GET | `E/landowners`（卡 A：可篩 `partyType`，回傳帶 `partyType`、`code`、`address`） | FLOW_VIEW |
+| POST | `E/landowners`（卡 A：新增受款對象） | MASTER_MANAGE |
+| PATCH | `E/landowners/{landownerId}`（卡 A：編輯，整包送上來） | MASTER_MANAGE |
 | GET | `E/landowners/{landownerId}` | FLOW_VIEW |
 | GET | `E/landowners/{landownerId}/overview` | FLOW_VIEW |
 
 閘的常數（照 App 5 `AcEnergyOpsController.ts:88-104`）：
-GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage；FLOW_ACT＝flow:act；FLOW_VIEW＝flow:view ∪ flow:view-all；FLOW_ADMIN＝flow:admin；ABORT_APPROVE＝flow:abort-approve（皆 `energy:` 前綴）。
+GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage；FLOW_ACT＝flow:act；FLOW_VIEW＝flow:view ∪ flow:view-all；FLOW_ADMIN＝flow:admin；ABORT_APPROVE＝flow:abort-approve；MASTER_MANAGE＝`energy:master:manage`（卡 20261118-0427-a 新增：案場／電號／受款對象／地主分配的新增與編輯）（皆 `energy:` 前綴）。
 
 ## 回應形狀（本期已實作的部分）
 

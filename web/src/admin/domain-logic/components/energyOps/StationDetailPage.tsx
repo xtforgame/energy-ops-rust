@@ -1,10 +1,12 @@
 import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableHead, TableBody, TableRow, TableCell,
-  Stack, Chip, IconButton, Button, Alert,
+  Stack, Chip, IconButton, Button, Alert, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
+  MenuItem, Select, InputLabel, FormControl,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import AddIcon from '@mui/icons-material/Add';
 import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -16,6 +18,335 @@ import {
 import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './routes';
 // 綁定的三個具名動作（`FRONTEND.md §2.84`）——這一頁是動作的家。
 import BindingActions, { type BindingKind } from './BindingActions';
+
+/** 卡 20261118-0427-a S2：電號區（一對多，有效期重疊回 409 `meter_overlap`）。 */
+const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({ orgId, stationId }) => {
+  const notify = useNotify();
+  const translate = useTranslate();
+  const base = energyBase(orgId);
+  const [meters, setMeters] = React.useState<any[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const [form, setForm] = React.useState({
+    customerNumber: '', usage: 'wholesale', validFrom: '', note: '', taipowerContractNo: '', feedInRate: '',
+  });
+  const [saving, setSaving] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    if (!orgId) return;
+    try {
+      const { data } = await energyHttp.get(`${base}/stations/${stationId}/meters`);
+      setMeters(Array.isArray(data) ? data : []);
+    } catch { /* 詳情頁其他區塊照常顯示 */ }
+  }, [orgId, base, stationId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await energyHttp.post(`${base}/stations/${stationId}/meters`, form);
+      notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
+      setOpen(false);
+      setForm({ customerNumber: '', usage: 'wholesale', validFrom: '', note: '', taipowerContractNo: '', feedInRate: '' });
+      load();
+    } catch (e: any) {
+      if (apiErrorCode(e) === 'meter_overlap') {
+        notify(translate('energy.meters.overlap'), { type: 'warning' });
+      } else {
+        notify(apiErrorCode(e) || e?.message || 'save failed', { type: 'error' });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+          <Typography variant="subtitle1">{translate('energy.meters.title')}</Typography>
+          <Button size="small" startIcon={<AddIcon />} onClick={() => setOpen(true)} data-testid="meter-add">
+            {translate('energy.meters.add')}
+          </Button>
+        </Stack>
+        <Table size="small" data-testid="meter-list">
+          <TableHead>
+            <TableRow>
+              <TableCell>{translate('energy.bills.customerNumber')}</TableCell>
+              <TableCell>{translate('energy.meters.usage')}</TableCell>
+              <TableCell>{translate('energy.meters.taipowerContractNo')}</TableCell>
+              <TableCell align="right">{translate('energy.meters.feedInRate')}</TableCell>
+              <TableCell>{translate('energy.stations.validFrom')}</TableCell>
+              <TableCell>{translate('energy.stations.validTo')}</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {meters.length ? meters.map((m) => (
+              <TableRow key={m.id} data-testid="meter-row">
+                <TableCell sx={{ fontVariantNumeric: 'tabular-nums' }}>{m.customerNumber}</TableCell>
+                <TableCell>{translate(`energy.meters.usageType.${m.usage}`)}</TableCell>
+                <TableCell>{m.taipowerContractNo ?? '—'}</TableCell>
+                <TableCell align="right">{m.feedInRate ?? '—'}</TableCell>
+                <TableCell>{m.validFrom ?? '—'}</TableCell>
+                <TableCell>{m.validTo ?? translate('energy.stations.openEnded')}</TableCell>
+              </TableRow>
+            )) : <EmptyRow colSpan={6} />}
+          </TableBody>
+        </Table>
+      </CardContent>
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="xs" data-testid="meter-form-dialog">
+        <DialogTitle>{translate('energy.meters.add')}</DialogTitle>
+        <DialogContent>
+          <Stack gap={2} mt={1}>
+            <TextField
+              label={translate('energy.bills.customerNumber')} value={form.customerNumber}
+              onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} data-testid="meter-form-customer-number" required
+            />
+            <FormControl fullWidth data-testid="meter-form-usage">
+              <InputLabel>{translate('energy.meters.usage')}</InputLabel>
+              <Select
+                label={translate('energy.meters.usage')} value={form.usage}
+                onChange={(e) => setForm({ ...form, usage: e.target.value })}
+              >
+                <MenuItem value="wholesale">{translate('energy.meters.usageType.wholesale')}</MenuItem>
+                <MenuItem value="consumption">{translate('energy.meters.usageType.consumption')}</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label={translate('energy.meters.taipowerContractNo')} value={form.taipowerContractNo}
+              onChange={(e) => setForm({ ...form, taipowerContractNo: e.target.value })}
+              data-testid="meter-form-contract-no"
+            />
+            <TextField
+              label={translate('energy.meters.feedInRate')} value={form.feedInRate}
+              onChange={(e) => setForm({ ...form, feedInRate: e.target.value })}
+              data-testid="meter-form-feedinrate"
+            />
+            <TextField
+              label={translate('energy.stations.validFrom')} type="date" value={form.validFrom}
+              onChange={(e) => setForm({ ...form, validFrom: e.target.value })} InputLabelProps={{ shrink: true }}
+              data-testid="meter-form-validfrom"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
+          <Button variant="contained" onClick={save} disabled={saving || !form.customerNumber} data-testid="meter-form-save">
+            {translate('ra.action.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+};
+
+/** 卡 20261118-0427-a S4：地主分配區（比例／固定金額／依土地面積）＋異動紀錄。 */
+const AllocationsSection: React.FC<{ orgId?: number | null; stationId: number }> = ({ orgId, stationId }) => {
+  const notify = useNotify();
+  const translate = useTranslate();
+  const base = energyBase(orgId);
+  const [allocations, setAllocations] = React.useState<any[]>([]);
+  const [history, setHistory] = React.useState<any[]>([]);
+  const [landowners, setLandowners] = React.useState<any[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const [form, setForm] = React.useState({ landownerId: '', method: 'ratio', ratio: '', fixedAmount: '', landArea: '', validFrom: '' });
+  const [editId, setEditId] = React.useState<number | null>(null);
+  const [endTarget, setEndTarget] = React.useState<any>(null);
+  const [endReason, setEndReason] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    if (!orgId) return;
+    try {
+      const [a, h, l] = await Promise.all([
+        energyHttp.get(`${base}/stations/${stationId}/allocations`),
+        energyHttp.get(`${base}/stations/${stationId}/allocation-history`),
+        energyHttp.get(`${base}/landowners`),
+      ]);
+      setAllocations(Array.isArray(a.data) ? a.data : []);
+      setHistory(Array.isArray(h.data) ? h.data : []);
+      setLandowners(Array.isArray(l.data) ? l.data : []);
+    } catch { /* 詳情頁其他區塊照常顯示 */ }
+  }, [orgId, base, stationId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      // landownerId 是 MUI Select 的字串值，後端要的是整數，這裡轉型（卡 A smoke 揪出：
+      // 漏轉時後端 `as_i64()` 對 JSON 字串回 None，一律 400 landowner_id_required）。
+      const body = { ...form, landownerId: Number(form.landownerId) };
+      if (editId) await energyHttp.patch(`${base}/allocations/${editId}`, body);
+      else await energyHttp.post(`${base}/stations/${stationId}/allocations`, body);
+      notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
+      setOpen(false);
+      setEditId(null);
+      setForm({ landownerId: '', method: 'ratio', ratio: '', fixedAmount: '', landArea: '', validFrom: '' });
+      load();
+    } catch (e: any) {
+      notify(apiErrorCode(e) || e?.message || 'save failed', { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEdit = (a: any) => {
+    setEditId(a.id);
+    setForm({
+      landownerId: String(a.landownerId), method: a.method, ratio: a.ratio ?? '',
+      fixedAmount: a.fixedAmount ?? '', landArea: a.landArea ?? '', validFrom: a.validFrom ?? '',
+    });
+    setOpen(true);
+  };
+
+  const endAllocation = async () => {
+    if (!endTarget) return;
+    setSaving(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await energyHttp.patch(`${base}/allocations/${endTarget.id}`, { validTo: today, changeReason: endReason });
+      notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
+      setEndTarget(null);
+      setEndReason('');
+      load();
+    } catch (e: any) {
+      notify(apiErrorCode(e) || e?.message || 'end failed', { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+          <Typography variant="subtitle1">{translate('energy.allocations.title')}</Typography>
+          <Button
+            size="small" startIcon={<AddIcon />} data-testid="allocation-add"
+            onClick={() => {
+              setEditId(null);
+              setForm({ landownerId: '', method: 'ratio', ratio: '', fixedAmount: '', landArea: '', validFrom: '' });
+              setOpen(true);
+            }}
+          >
+            {translate('energy.allocations.add')}
+          </Button>
+        </Stack>
+        <Table size="small" data-testid="allocation-list">
+          <TableHead>
+            <TableRow>
+              <TableCell>{translate('energy.landowners.name')}</TableCell>
+              <TableCell>{translate('energy.allocations.method')}</TableCell>
+              <TableCell align="right">{translate('energy.allocations.value')}</TableCell>
+              <TableCell>{translate('energy.stations.validFrom')}</TableCell>
+              <TableCell>{translate('energy.stations.validTo')}</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {allocations.length ? allocations.map((a) => (
+              <TableRow key={a.id} data-testid="allocation-row">
+                <TableCell>{landowners.find((l) => l.id === a.landownerId)?.name ?? a.landownerId}</TableCell>
+                <TableCell>{translate(`energy.allocations.methodType.${a.method}`)}</TableCell>
+                <TableCell align="right">
+                  {a.method === 'ratio' ? `${a.ratio}%` : (a.method === 'fixed' ? a.fixedAmount : a.landArea)}
+                </TableCell>
+                <TableCell>{a.validFrom ?? '—'}</TableCell>
+                <TableCell>{a.validTo ?? translate('energy.stations.openEnded')}</TableCell>
+                <TableCell>
+                  {a.active && (
+                    <>
+                      <Button size="small" onClick={() => openEdit(a)} data-testid="allocation-edit">
+                        {translate('ra.action.edit')}
+                      </Button>
+                      <Button size="small" onClick={() => setEndTarget(a)} data-testid="allocation-end">
+                        {translate('energy.allocations.end')}
+                      </Button>
+                    </>
+                  )}
+                </TableCell>
+              </TableRow>
+            )) : <EmptyRow colSpan={6} />}
+          </TableBody>
+        </Table>
+
+        <Typography variant="subtitle2" mt={2} mb={0.5}>{translate('energy.allocations.history')}</Typography>
+        <Stack gap={0.5} data-testid="allocation-history">
+          {history.length ? history.map((h) => (
+            <Typography key={h.id} variant="body2" data-testid="allocation-history-row">
+              {String(h.occurredAt).slice(0, 19).replace('T', ' ')}　{h.summary}
+              <Typography component="span" variant="caption" color="text.secondary" data-testid="allocation-history-actor">
+                （{translate('energy.allocations.by', { who: h.actorLabel ?? '—' })}）
+              </Typography>
+            </Typography>
+          )) : <Typography variant="body2" color="text.secondary">{translate('energy.common.empty')}</Typography>}
+        </Stack>
+      </CardContent>
+
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="xs" data-testid="allocation-form-dialog">
+        <DialogTitle>{translate('energy.allocations.add')}</DialogTitle>
+        <DialogContent>
+          <Stack gap={2} mt={1}>
+            <FormControl fullWidth required data-testid="allocation-form-landowner">
+              <InputLabel>{translate('energy.landowners.name')}</InputLabel>
+              <Select
+                label={translate('energy.landowners.name')} value={form.landownerId}
+                onChange={(e) => setForm({ ...form, landownerId: e.target.value })}
+              >
+                {landowners.map((l) => <MenuItem key={l.id} value={String(l.id)}>{l.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth data-testid="allocation-form-method">
+              <InputLabel>{translate('energy.allocations.method')}</InputLabel>
+              <Select
+                label={translate('energy.allocations.method')} value={form.method}
+                onChange={(e) => setForm({ ...form, method: e.target.value })}
+              >
+                <MenuItem value="ratio">{translate('energy.allocations.methodType.ratio')}</MenuItem>
+                <MenuItem value="fixed">{translate('energy.allocations.methodType.fixed')}</MenuItem>
+                <MenuItem value="land_area">{translate('energy.allocations.methodType.land_area')}</MenuItem>
+              </Select>
+            </FormControl>
+            {form.method === 'ratio' && (
+              <TextField label={translate('energy.allocations.ratio')} value={form.ratio} onChange={(e) => setForm({ ...form, ratio: e.target.value })} data-testid="allocation-form-ratio" />
+            )}
+            {form.method === 'fixed' && (
+              <TextField label={translate('energy.allocations.fixedAmount')} value={form.fixedAmount} onChange={(e) => setForm({ ...form, fixedAmount: e.target.value })} data-testid="allocation-form-fixedamount" />
+            )}
+            {form.method === 'land_area' && (
+              <TextField label={translate('energy.allocations.landArea')} value={form.landArea} onChange={(e) => setForm({ ...form, landArea: e.target.value })} data-testid="allocation-form-landarea" />
+            )}
+            <TextField
+              label={translate('energy.stations.validFrom')} type="date" value={form.validFrom}
+              onChange={(e) => setForm({ ...form, validFrom: e.target.value })} InputLabelProps={{ shrink: true }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
+          <Button variant="contained" onClick={save} disabled={saving || !form.landownerId} data-testid="allocation-form-save">
+            {translate('ra.action.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!endTarget} onClose={() => setEndTarget(null)} fullWidth maxWidth="xs" data-testid="allocation-end-dialog">
+        <DialogTitle>{translate('energy.allocations.end')}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth sx={{ mt: 1 }} label={translate('energy.allocations.changeReason')} value={endReason}
+            onChange={(e) => setEndReason(e.target.value)} data-testid="allocation-end-reason" required
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEndTarget(null)}>{translate('ra.action.cancel')}</Button>
+          <Button variant="contained" onClick={endAllocation} disabled={saving || !endReason} data-testid="allocation-end-confirm">
+            {translate('ra.action.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+};
 
 interface AxisSeg {
   id: number;
@@ -316,6 +647,10 @@ const StationDetailPage: React.FC = () => {
           </Stack>
         </CardContent>
       </Card>
+
+      {/* 卡 20261118-0427-a S2／S4：電號區、地主分配區（各自抓自己的資料，不擋其他區塊）。 */}
+      {id && <MetersSection orgId={orgId} stationId={Number(id)} />}
+      {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
 
       {/* 兩條效期軸 */}
       {renderAxis('energy.stations.workflowAxis', data?.workflowAxis ?? [], 'workflow-axis', 'workflow')}

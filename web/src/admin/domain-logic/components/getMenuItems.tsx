@@ -93,9 +93,10 @@ const GROUPS: Array<{ key: string; labelKey: string; icon: React.ReactElement; e
       // 這一項的選單閘是 `view-all`（`MENU_PERMISSION_MAP`）：
       // 它問的是「**全組織**現在怎麼了」，沒權限整條隱藏不是空清單。
       ['energyExecutionConsole', <PendingActionsIcon />],
-      // 案場詳情（P11）**刻意不進選單**：它從地主／地圖／流程頁點進去
-      // （`FRONTEND.md §1.1`）。地主詳情同理。
+      // 案場詳情（P11）本身不進選單；卡 20261118-0427-a 起案場**清單**進選單
+      // （主檔維護：新增案場、算專案編號）。地主詳情同理，不進選單。
       ['energyLandownerConsole', <SolarPowerIcon />],
+      ['energyStationConsole', <SolarPowerIcon />],
       ['energyCalendarConsole', <EventIcon />],
       ['energyDashboardConsole', <SpaceDashboardIcon />],
     ],

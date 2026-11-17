@@ -90,6 +90,24 @@
 
 （呼叫端的 `.../` = `src/admin/domain-logic/components/energyOps/`）
 
+## 卡 20261118-0427-a 新增（沒有 App 5 對應，資料模型重整與主檔維護）
+
+| 方法 | 新路徑 | 回應轉換 | 呼叫端 |
+|---|---|---|---|
+| GET | `E/station-list`（可篩 `siteType`、`enabled`） | `{items}` → 陣列 | `StationsPage.tsx:67` |
+| POST | `E/stations` | — | `StationsPage.tsx:121` |
+| PATCH | `E/stations/{stationId}` | — | `StationsPage.tsx:119` |
+| GET | `E/stations/{stationId}/meters` | `{items}` → 陣列 | `StationDetailPage.tsx:37` |
+| POST | `E/stations/{stationId}/meters`（重疊回 409 `meter_overlap`） | `{items}` → 陣列 | `StationDetailPage.tsx:46` |
+| PATCH | `E/meters/{meterId}` | — | `StationDetailPage.tsx`（`update_handler`，`MetersSection.save`） |
+| GET | `E/stations/{stationId}/allocations` | `{items}` → 陣列 | `StationDetailPage.tsx:161` |
+| POST | `E/stations/{stationId}/allocations` | `{items}` → 陣列 | `StationDetailPage.tsx:179` |
+| PATCH | `E/allocations/{allocationId}`（一般編輯／結束共用，帶 `validTo`＋`changeReason` 就是結束） | — | `StationDetailPage.tsx:178`、`:206` |
+| GET | `E/stations/{stationId}/allocation-history` | `{items}` → 陣列 | `StationDetailPage.tsx:162` |
+| GET | `E/landowners?partyType=`（可篩類型） | `{items}` → 陣列 | `LandownersPage.tsx:67`、`StationsPage.tsx:82`、`StationDetailPage.tsx:163` |
+| POST | `E/landowners` | — | `LandownersPage.tsx:100` |
+| PATCH | `E/landowners/{landownerId}` | — | `LandownersPage.tsx:99` |
+
 ## 新後端另有、頁面目前沒有呼叫的端點
 
 都已列在 `ENERGY_ROUTES`（形狀原樣，清單類照樣 `{items}` → 陣列），之後開頁面時直接用 `energyHttp`：
