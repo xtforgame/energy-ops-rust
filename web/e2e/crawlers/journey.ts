@@ -21,7 +21,8 @@ C6 的**決定性驗收**：從零跑一次完整旅程。
 */
 import type { Browser, Page } from 'puppeteer';
 import {
-  APP, Scoreboard, hr, log, sleep, launch, shooter, loginAsAdmin, selectOrg, seedBatch, waitIdle, hardenPage,
+  APP, Scoreboard, hr, log, sleep, launch, shooter, loginAsAdmin, loginAs, demoEmail, selectOrg, seedBatch,
+  waitIdle, hardenPage,
 } from '../lib/energyOpsHarness.ts';
 
 const board = new Scoreboard();
@@ -48,7 +49,7 @@ const shot = shooter('energy-journey');
  * 校對、送審、逐關審批 —— 只有「辨識結果從哪來」不是我們的服務。
  */
 const FILES = [
-  'bill-normal.png',     // 電費單，金額 138,195 ≥ 門檻 → 會多一關高層加簽
+  'bill-normal.png',     // 電費單，金額 138,195（單一審核沒有金額分支，見 Q-04）
   'bill-unmatched.png',  // 電號對不上 → P4 例外件
   'deposit-ok.png',      // 保證金，對得上 → 不產新單
   'unreadable.png',      // 判不出來 → 待人工指定
@@ -256,91 +257,79 @@ async function run() {
     });
     // 這是整支腳本要證明的那件事：**從 UI 上傳的單，真的長出了一條流程**。
     check('收件台送出的單長出了流程圖', flow.hasGraph, flow);
-    check('七節點流程（＋start/end ＝ 8）', flow.nodeCount === '8', flow);
-    check('停在承辦確認關', flow.current === 'clerk-review', flow);
+    check('單一審核（＋start/end ＝ 3）', flow.nodeCount === '3', flow);
+    check('停在平台資料審核關', flow.current === 'platform-review', flow);
     await shot(page, '5-flow-started');
 
-    // ── ⑥ 審批鏈：認領 → 推進 → 到下一關被防自核擋住 ──────────
+    // ── ⑥ 單一審核：發起人不是候選人，由 finance 用獨立 context 認領並通過 ──
     /**
-     * ### 這一段講的事在 【7】 之後翻面了
+     * ### Q-04（2026-11-16）：bill-approval 換成單一審核
      *
-     * 原本：`clerk-review` 防自核 → 發起人被列為 `excludedOwner` → 看不到動作。
-     * 現在：`allowSelfApproval` 翻面（`LIFECYCLE.md 【7】`），
-     * **承辦送出的單自己就能在承辦確認關處理** —— 那正是「退回理由要送到
-     * 唯一看過那張紙的人手上」的前提。
+     * 候選人只剩部門 `bill-reviewers`（manager／finance／accounting）；
+     * admin（發起人、業務部）不在裡面，但 `candidates.rs` 的 R4「永遠開啟」：
+     * 不可自核時一律把發起人寫成一列 `excludedOwner`（即使本來就不是候選人），
+     * 所以 admin 看到的代碼仍是 `excludedOwner`，句子講的是「你是發起人」
+     * 而不是泛用的「這關不是你的」——沒有認領鍵也沒有動作鍵。
      *
-     * ### 認領是「開始處理」的第一步
-     *
-     * 引擎要求人工關卡由 assignee 完成（`WorkflowEngine.assertWho`：
-     * 未認領 → `not_task_owner` 403）。認領的入口在【9】被搬進「我的工作」的抽屜，
-     * 而單據詳情頁一度就沒有了 —— 於是這一頁畫得出動作、按下去 403，
-     * 使用者看到的是「按了沒反應」。現在兩個入口用同一套語意：
-     * **還沒認領就只給「認領並開始處理」，不畫按不動的按鈕。**
-     *
-     * 防自核那一面沒有消失，它搬到**下一關**（主管核准）——
-     * 這一段一路走過去，把兩件事都釘住。
+     * **換身分要開新的 browser context**（卡 1 的坑：同一個 context 換人會
+     * 留上一個人的 sessionStorage，看起來像「換了人結果畫面沒變」）。
      */
-    hr('⑥ 審批鏈 —— 發起人是候選人（【7】翻面），而且這一頁認領得動');
-    const gate = await page.evaluate(() => ({
+    hr('⑥ 單一審核 —— admin 不是候選人，finance 用獨立 context 認領並通過');
+    const adminGate = await page.evaluate(() => ({
       current: (document.querySelector('[data-testid="flow-current"]') as HTMLElement)?.dataset.current ?? '',
       buttons: Array.from(document.querySelectorAll('[data-testid="action-button"]'))
         .map((b) => (b as HTMLElement).innerText.trim()),
       blocked: (document.querySelector('[data-testid="action-blocked"]') as HTMLElement | null)?.dataset.code ?? '',
+      blockedText: (document.querySelector('[data-testid="action-blocked"]') as HTMLElement | null)?.innerText ?? '',
       hasClaim: !!document.querySelector('[data-testid="review-claim"]'),
     }));
-    log(`  這一關：${JSON.stringify(gate)}`);
-    check('停在承辦確認關（`clerk-review`）', gate.current === 'clerk-review', gate);
-    /**
-     * **還沒認領時只給「認領並開始處理」，不畫按了會 403 的動作。**
-     *
-     * 引擎要求人工關卡由 assignee 完成（`WorkflowEngine.assertWho`）。
-     * 認領的入口在【9】被搬進「我的工作」的抽屜，這一頁一度就沒有了 ——
-     * 於是畫得出動作、按下去 403，而使用者看到的是「按了沒反應」。
-     */
-    check('未認領時給的是「認領並開始處理」，不是按不動的動作',
-      gate.hasClaim && gate.buttons.length === 0, gate);
+    log(`  admin 開這一關：${JSON.stringify(adminGate)}`);
+    check('停在平台資料審核關', adminGate.current === 'platform-review', adminGate);
+    check('admin 不是候選人：沒有動作鍵、也沒有認領鍵',
+      adminGate.buttons.length === 0 && !adminGate.hasClaim, adminGate);
+    check('說得出中文原因（excludedOwner，句子不是英文代碼）',
+      adminGate.blocked === 'excludedOwner' && adminGate.blockedText.length > 4
+        && !/excludedOwner/.test(adminGate.blockedText), adminGate);
+    await shot(page, '6-admin-not-candidate');
 
-    // 認領 → 動作才出現 → 推得動。
-    await page.evaluate(() => {
-      (document.querySelector('[data-testid="review-claim"]') as HTMLElement | null)?.click();
+    // 拿 billId，讓 finance 用獨立 context 進同一張單。
+    const billId = await page.evaluate(() => {
+      const m = window.location.hash.match(/energyBillConsole\/(\d+)\/show/);
+      return m ? Number(m[1]) : 0;
     });
-    await waitIdle(page);
-    const afterClaim = await page.evaluate(() => ({
-      buttons: Array.from(document.querySelectorAll('[data-testid="action-button"]'))
-        .map((b) => (b as HTMLElement).innerText.trim()),
-      hasClaim: !!document.querySelector('[data-testid="review-claim"]'),
-    }));
-    log(`  認領後：${JSON.stringify(afterClaim)}`);
-    check('認領之後動作出現（認領鍵收起來）',
-      afterClaim.buttons.length > 0 && !afterClaim.hasClaim, afterClaim);
+    check('抓得到這張單的 billId', billId > 0, billId);
 
-    const advanced = await clickAction(page, '送出');
-    await page.reload({ waitUntil: 'networkidle2' });
-    await sleep(3000);
-    const moved = await page.evaluate(
-      () => (document.querySelector('[data-testid="flow-current"]') as HTMLElement)?.dataset.current ?? '',
-    );
-    log(`  按了送出：${advanced}；現在停在：${moved}`);
-    // 【7】自核翻面之後，發起人在**承辦確認**這一關是推得動的
-    // （那一關同時承擔「改」與「核」；設成不可自核的話，被退回的單原送件者改不了）。
-    check('認領後推得動 —— 承辦確認關允許自核（【7】翻面）',
-      advanced && moved === 'manager-approve', { advanced, moved });
-    await shot(page, '6-claim-and-advance');
+    const financeContext = await browser.createBrowserContext();
+    const financePage = hardenPage(await financeContext.newPage());
+    try {
+      await loginAs(financePage, demoEmail('finance'));
+      await selectOrg(financePage);
+      await financePage.goto(`${APP}#/energyBillConsole/${billId}/show`, { waitUntil: 'networkidle2' });
+      await waitIdle(financePage);
+      const financeGate = await financePage.evaluate(() => ({
+        current: (document.querySelector('[data-testid="flow-current"]') as HTMLElement)?.dataset.current ?? '',
+        hasClaim: !!document.querySelector('[data-testid="review-claim"]'),
+      }));
+      log(`  finance 開這一關：${JSON.stringify(financeGate)}`);
+      check('finance 是候選人（部門 bill-reviewers）：看得到認領鍵', financeGate.hasClaim, financeGate);
 
-    // 下一關是**主管核准**，發起人在那裡被防自核擋住 —— 那是對的。
-    const nextGate = await page.evaluate(() => ({
-      buttons: Array.from(document.querySelectorAll('[data-testid="action-button"]')).length,
-      hasClaim: !!document.querySelector('[data-testid="review-claim"]'),
-      blocked: (document.querySelector('[data-testid="action-blocked"]') as HTMLElement | null)?.dataset.code ?? '',
-      text: (document.querySelector('[data-testid="action-blocked"]') as HTMLElement | null)?.innerText ?? '',
-    }));
-    log(`  主管核准關（發起人視角）：${JSON.stringify(nextGate)}`);
-    check('到了主管核准關，發起人什麼都不能按（防自核）',
-      nextGate.buttons === 0 && !nextGate.hasClaim, nextGate);
-    check('而且說得出為什麼（excludedOwner，且句子是中文）',
-      nextGate.blocked === 'excludedOwner'
-        && nextGate.text.length > 6 && !/excludedOwner/.test(nextGate.text), nextGate);
-    await shot(page, '7-blocked-by-self-approval');
+      await financePage.evaluate(() => {
+        (document.querySelector('[data-testid="review-claim"]') as HTMLElement | null)?.click();
+      });
+      await waitIdle(financePage);
+      const approved = await clickAction(financePage, '審核通過');
+      await financePage.reload({ waitUntil: 'networkidle2' });
+      await sleep(3000);
+      const after = await financePage.evaluate(() => ({
+        current: (document.querySelector('[data-testid="flow-current"]') as HTMLElement)?.dataset.current ?? '',
+      }));
+      log(`  finance 按了〔審核通過〕：${approved}；現在停在：${JSON.stringify(after)}`);
+      check('finance 按〔審核通過〕之後流程結束（沒有進行中的關卡）',
+        approved && after.current === '', { approved, after });
+      await shot(financePage, '7-finance-approved');
+    } finally {
+      await financeContext.close();
+    }
 
     // ── ⑥ 送單紀錄反查 ───────────────────────────────────────
     hr('⑥ 血緣最上游：從單反查「哪一批進來的」');

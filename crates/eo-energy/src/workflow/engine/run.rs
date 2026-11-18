@@ -98,13 +98,18 @@ pub async fn start_execution(tx: &mut Tx<'_>, ctx: &Ctx, input: StartExecution) 
     Ok(fresh)
 }
 
+/// 單據種類 → 它的表名。目前只有這兩種單走流程；其餘回 None（`check_step_requirements` 也共用這份對照）。
+pub(crate) fn subject_table_name(subject_type: &str) -> Option<&'static str> {
+    match subject_type {
+        "energyBill" => Some("tbl_energy_bill"),
+        "energyInstallment" => Some("tbl_energy_installment"),
+        _ => None,
+    }
+}
+
 /// 走到 end 的那一刻才讓單據成立（審批過的才是唯一檔案）。與流程完成同生共死。
 async fn mark_subject_approved(tx: &mut Tx<'_>, ctx: &Ctx, exec: &ExecutionRow) -> ApiResult<()> {
-    let table = match exec.subject_type.as_str() {
-        "energyBill" => "tbl_energy_bill",
-        "energyInstallment" => "tbl_energy_installment",
-        _ => return Ok(()),
-    };
+    let Some(table) = subject_table_name(&exec.subject_type) else { return Ok(()) };
     let Some(id) = crate::common::numeric_id(&exec.subject_id) else { return Ok(()) };
     sqlx::query(&format!(
         "UPDATE {table} SET approval_state = 'approved', approved_at = $3 WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL"

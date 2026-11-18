@@ -45,11 +45,13 @@ pub struct NodeRow {
     pub join_node_key: Option<String>,
     pub service_key: Option<String>,
     pub layout: Value,
+    /// `{ attachments: [{category, min}], fields: [{path, labelKey}] }`；空＝這一關沒有要求。
+    pub requirements: Value,
     pub definition_id: i64,
 }
 
 pub const NODE_COLS: &str = "id, node_key, name, allows_subject_edit, node_type, assignment_rule, allow_self_approval, revertable,
-    allow_jump_target, parallel, join_policy, join_node_key, service_key, layout, definition_id";
+    allow_jump_target, parallel, join_policy, join_node_key, service_key, layout, requirements, definition_id";
 
 #[derive(Debug, Clone, FromRow)]
 pub struct TransitionRow {

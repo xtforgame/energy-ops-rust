@@ -3,15 +3,95 @@
 use super::super::model::{self, ActionRow, ExecutionRow, NodeRow, SideEffectRow, TaskRow, SIDE_EFFECT_COLS};
 use super::candidates::resolve_rule;
 use super::delegation::delegators_for;
-use super::run::{apply_next, apply_next_many, resolve_next_nodes};
+use super::run::{apply_next, apply_next_many, resolve_next_nodes, subject_table_name};
 use super::{assert_transition, cancel_active_tasks, require_reason, subject_label, CancelCause};
 use crate::audit::{self, AuditInput};
 use crate::common::{err, err_d, Ctx, Tx};
 use chrono::{DateTime, Utc};
 use eo_domain::side_effects::side_effect_label;
+use eo_domain::workflow_defs::StepRequirements;
 use eo_platform::error::ApiResult;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
+
+/// camelCase → snake_case（`totalAmount` → `total_amount`）：`requirements.fields[].path` 存的是
+/// 前端／DTO 用的 camelCase，單據表的 `to_jsonb` 欄位名是 snake_case。
+fn to_snake_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for c in s.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// 這一關要求的狀態：`requirements` 本體，以及每個附件類別／欄位現在滿足了嗎。
+pub struct RequirementsStatus {
+    pub requirements: StepRequirements,
+    /// 附件類別 → 滿足了嗎。
+    pub attachments_met: Vec<(String, bool)>,
+    /// 欄位 path → 滿足了嗎。
+    pub fields_met: Vec<(String, bool)>,
+}
+
+impl RequirementsStatus {
+    pub fn is_met(&self) -> bool {
+        self.attachments_met.iter().all(|(_, met)| *met) && self.fields_met.iter().all(|(_, met)| *met)
+    }
+
+    pub fn missing_attachments(&self) -> Vec<String> {
+        self.attachments_met.iter().filter(|(_, met)| !met).map(|(c, _)| c.clone()).collect()
+    }
+
+    pub fn missing_fields(&self) -> Vec<String> {
+        self.fields_met.iter().filter(|(_, met)| !met).map(|(f, _)| f.clone()).collect()
+    }
+}
+
+/// 算這一關的要求現在滿足了嗎（給 422 擋下用，也給 `node_actions` 的 DTO 用，同一份邏輯只寫一次）。
+pub async fn requirements_status(tx: &mut Tx<'_>, exec: &ExecutionRow, node: &NodeRow) -> ApiResult<RequirementsStatus> {
+    let requirements: StepRequirements = serde_json::from_value(node.requirements.clone()).unwrap_or_default();
+    let mut attachments_met = Vec::new();
+    for req in &requirements.attachments {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tbl_energy_attachment
+              WHERE execution_id = $1 AND category = $2 AND status = 'active' AND deleted_at IS NULL",
+        )
+        .bind(exec.id)
+        .bind(&req.category)
+        .fetch_one(&mut **tx)
+        .await?;
+        attachments_met.push((req.category.clone(), count >= req.min));
+    }
+    let mut fields_met = Vec::new();
+    if !requirements.fields.is_empty() {
+        let row: Value = match subject_table_name(&exec.subject_type).zip(crate::common::numeric_id(&exec.subject_id)) {
+            Some((table, id)) => sqlx::query_scalar(&format!(
+                "SELECT to_jsonb(t) FROM {table} t WHERE t.id = $1 AND t.organization_id = $2 AND t.deleted_at IS NULL"
+            ))
+            .bind(id)
+            .bind(exec.organization_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .unwrap_or_else(|| json!({})),
+            None => json!({}),
+        };
+        for f in &requirements.fields {
+            let col = to_snake_case(&f.path);
+            let has_value = row.get(&col).is_some_and(|v| match v {
+                Value::Null => false,
+                Value::String(s) => !s.trim().is_empty(),
+                _ => true,
+            });
+            fields_met.push((f.path.clone(), has_value));
+        }
+    }
+    Ok(RequirementsStatus { requirements, attachments_met, fields_met })
+}
 
 /// `ready → reserved`。只有候選池裡的 potentialOwner（或他的有效代理人）能認領。
 pub async fn claim(tx: &mut Tx<'_>, ctx: &Ctx, task_id: i64) -> ApiResult<()> {
@@ -147,6 +227,15 @@ async fn do_advance(
     // `who` 允許別人按，但完成人工關卡仍要求是 assignee —— 否則「誰做的」沒有答案。
     if task.node_type == "humanTask" && task.assignee_user_id != Some(me) {
         return Err(err_d(403, "not_task_owner", json!({ "taskId": task.id })));
+    }
+    // 送出前的最後一道：這一關的「必傳附件類別」「必填欄位」沒滿足就不准推進。
+    let status = requirements_status(tx, exec, node).await?;
+    if !status.is_met() {
+        return Err(err_d(
+            422,
+            "step_requirements_unmet",
+            json!({ "missingAttachments": status.missing_attachments(), "missingFields": status.missing_fields() }),
+        ));
     }
     let payload = input.payload.clone().map(Value::Object).unwrap_or_else(|| task.payload.clone());
     sqlx::query(

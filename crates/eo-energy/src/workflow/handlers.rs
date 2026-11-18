@@ -185,7 +185,7 @@ pub async fn node_actions(core: Core, user: CurrentUser, meta: RequestMeta, path
     let Some(open) = open else {
         return Ok(HttpResponse::Ok().json(json!({
             "availableActions": [], "actionBlocked": { "code": "notCandidate", "nodeName": node_key },
-            "taskId": null, "claimable": false, "claimedByMe": false,
+            "taskId": null, "claimable": false, "claimedByMe": false, "requirements": [],
         })));
     };
     let me = user.id;
@@ -193,9 +193,28 @@ pub async fn node_actions(core: Core, user: CurrentUser, meta: RequestMeta, path
     // claimable 是「我認領得了嗎」：被防自核排除的發起人不該拿到一顆按下去 403 的鍵。
     let code = blocked.as_ref().and_then(|b| b.get("code")).and_then(Value::as_str).map(String::from);
     let can_act = code.is_none() || code.as_deref() == Some("revertLocked");
+    // 「本關要求」：每一項帶 met。沒有要求（絕大多數節點）就是空陣列。
+    let requirements = match model::node_by_key_opt(&mut tx, exec.definition_id, &node_key).await? {
+        Some(node) => {
+            let status = tasks::requirements_status(&mut tx, &exec, &node).await?;
+            let mut items: Vec<Value> = status
+                .requirements
+                .attachments
+                .iter()
+                .zip(status.attachments_met.iter())
+                .map(|(req, (_, met))| json!({ "type": "attachment", "category": req.category, "min": req.min, "met": met }))
+                .collect();
+            items.extend(status.requirements.fields.iter().zip(status.fields_met.iter()).map(|(f, (_, met))| {
+                json!({ "type": "field", "path": f.path, "labelKey": f.label_key, "met": met })
+            }));
+            items
+        }
+        None => vec![],
+    };
     Ok(HttpResponse::Ok().json(json!({
         "availableActions": actions, "actionBlocked": blocked, "taskId": open.id,
         "claimable": can_act && open.state == "ready", "claimedByMe": open.assignee_user_id == Some(me),
+        "requirements": requirements,
     })))
 }
 

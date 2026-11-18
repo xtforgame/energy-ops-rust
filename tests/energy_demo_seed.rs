@@ -15,20 +15,23 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!(c.organizations, 1);
     assert_eq!((c.users, c.grants), (7, 7));
     // 卡 A（20261118-0427）起：原 2 位個人地主 ＋ 5 位新類型受款對象（2 子公司／1 台電區處／1 公司／1 機關）＝ 7；
-    // 原 6 座案場 ＋ 1 座「示範案場（雙電號）」＝ 7。
-    assert_eq!((c.landowners, c.stations, c.contracts, c.contract_stations), (7, 7, 6, 6));
+    // 原 6 座案場 ＋ 1 座「示範案場（雙電號）」＝ 7，卡 20261118-0811-d 起再 ＋ 1 座「示範案場（本關要求）」
+    // （假電費單掛的案場，電號才能顯示成設計要的假電號，不被 workflow/subjects.rs 的既有邏輯蓋成真案場的電號）＝ 8。
+    assert_eq!((c.landowners, c.stations, c.contracts, c.contract_stations), (7, 8, 6, 6));
     // 6 座舊案場各一個主電號＋100% 分配，加上新案場的 2 個電號＋2 筆分配（60／40）。
     assert_eq!((c.meters, c.allocations), (8, 8));
     assert_eq!((c.installments, c.calendar_events), (3, 3));
-    assert_eq!((c.departments, c.department_members), (5, 10));
+    // 五個內建部門 ＋ 卡 c-org-chart 的示範上層部門「總管理部」（demo_seed.rs 的 admin-hq）＝ 6。
+    assert_eq!((c.departments, c.department_members), (6, 10));
     // 四份內建定義 v1 ＋ 核可流程 v2；策略 v1（內建）＋ v2。
     assert_eq!((c.workflow_definitions, c.rating_strategies), (5, 2));
     // 案場層 7 段 ＋ 契約層 4 × 2 段。
     assert_eq!((c.workflow_bindings, c.rating_bindings), (15, 3));
-    assert_eq!(c.executions, 1);
+    // 保證金請款那筆 ＋ 卡 20261118-0811-d 起：示範「本關要求」的假電費單（停在平台資料審核）。
+    assert_eq!(c.executions, 2);
 
     let q = |sql: &str| sql.replace("$ORG", &org.to_string());
-    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $ORG")).await, 7);
+    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $ORG")).await, 8);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_contract WHERE organization_id = $ORG")).await, 6);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_installment WHERE organization_id = $ORG")).await, 3);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG")).await, 15);
@@ -87,7 +90,7 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     // 承辦看得到案場清單。
     let operator = operator.unwrap();
     let v = expect_status!(app.get(&operator, &app.e(org, "/stations")).await, 200);
-    assert_eq!(v["items"].as_array().map(Vec::len), Some(7), "body: {v}");
+    assert_eq!(v["items"].as_array().map(Vec::len), Some(8), "body: {v}");
 }
 
 /// 來源：az scripts/energy-ops-demo-seed（範本電費單那一段，非 NO_BILLS 模式）
@@ -128,5 +131,6 @@ async fn demo_sample_bills_set_up_the_four_states_and_are_idempotent() {
     let second = eo_energy::demo_seed::run_sample_bills(&app.core, &seed, dir).await.unwrap();
     assert!(!second.created);
     assert_eq!(second.batch_id, first.batch_id);
-    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_bill WHERE organization_id = $ORG")).await, 4);
+    // 四份範本單 ＋ run() 那邊卡 20261118-0811-d 加的示範假單（1 筆）＝ 5。
+    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_bill WHERE organization_id = $ORG")).await, 5);
 }

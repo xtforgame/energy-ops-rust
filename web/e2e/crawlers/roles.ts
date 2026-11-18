@@ -230,16 +230,9 @@ async function nodeOf(page: Page, billId: number): Promise<{ node: string; statu
 }
 
 async function run() {
-  // **刻意用低於加簽門檻的單**（fixture 認 `-small`，金額 60,000 < 100,000）。
-  //
-  // 用 138,195 那張的話分支會走到「高層加簽」，而那一關要 `energy:cxo` ——
-  // 四個 demo 帳號都沒有，鏈路就會**停在那裡**（實測過：停在 exec-approve）。
-  // 換句話說這一行同時證明了「分支條件是資料」：改金額就改路線。
-  // 不要為了走完鏈路去調門檻 —— 那是把驗收就著實作改。
-  // **兩種金額 → 兩條路線**（同一條流程定義，程式一行沒改）。
-  // `-small` → 60,000 < 門檻 → 直達計算應付
-  // 其他     → 138,195 ≥ 門檻 → **多一關「高層加簽」**（要 cxo@）
-  // 這是 Q7「條件是資料」最好的證據。
+  // Q-04（2026-11-16）：`bill-approval` 換成單一審核，沒有任何金額分支
+  // （舊版 138,195 ≥ 門檻會多一關「高層加簽」，現在不存在，不自己發明替代流程）。
+  // `-small` 這個檔名前綴留著只是沿用 fixture 命名，金額本身跟路線無關了。
   //
   // **檔名就是這張紙的身分**（`ingestFixtures.periodForName`）：mock 的計費期間
   // 由檔名的穩定雜湊決定，所以**同檔名＝同一張電費單**、換檔名＝另一張。
@@ -247,7 +240,6 @@ async function run() {
   // 三個上傳點如果共用同一個檔名，第二次送審就會被 409 擋下來 ——
   // 而那不是產品壞了，是驗收資料把三張紙做成了同一張。
   const smallFile = path.join('roles', 'bill-small.png');
-  const bigFile = path.join('roles', 'bill-big.png');
   // ① 用的那張要與 ⑨ 分開（兩張都會**送審**）；`-small` 前綴留著，
   // 因為 fixture 靠它決定金額（60,000 < 加簽門檻）。
   const billFile = path.join('roles', 'bill-small-first.png');
@@ -321,93 +313,73 @@ async function run() {
     await shot(page, '1-operator-submitted');
 
     /**
-     * **這一條在 2026-08-29 反轉了**（原本斷言「發起人看不到動作按鈕」）。
+     * **Q-04（2026-11-16）：bill-approval 換成單一審核**。
      *
-     * `clerk-review.allowSelfApproval` 從 false 翻成 true：那一關同時承擔
-     * 「改」與「核」兩種語意，而它主要是「改」——
-     * 設成 false 的話，被退回的單原送件者改不了。
+     * 候選人只剩部門 `bill-reviewers`（manager／finance／accounting），
+     * operator（發起人）本來就不在那個部門裡 —— 送審之後他的工作台上
+     * **沒有**這一筆（不是候選人；R4 又把發起人標成 excludedOwner，
+     * 兩個理由同時成立，畫面上只看得到「沒有這一筆」這個結果）。
      *
-     * 所以送審之後，發起人在工作台上**應該**看得到「送出」。
-     * 舊的斷言不是刪掉而是反轉並註明 —— 直接刪等於把網子剪一個洞。
-     *
-     * 「發起人在**核可**關卡上看不到動作按鈕」那一面沒有消失，
-     * 它搬到 `crawler-energy-ops-modes` 的 ③（停在主管核准的同一張單）。
+     * 舊版「`clerk-review.allowSelfApproval` 翻成 true，發起人看得到送出」
+     * 那段不適用了：單一審核沒有改單關卡，送審直接進 `platform-review`。
      */
     check('進得了我的工作', await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root'));
     await waitIdle(page);
-    const opActions = await workbenchActions(page);
-    const opBlocked = await page.evaluate(
-      () => (document.querySelector('[data-testid="action-blocked"]') as HTMLElement)?.dataset.code ?? '',
-    );
-    check('發起人在工作台上看得到「送出」（承辦確認允許自核）',
-      opActions.some((t: string) => t.includes('送出')), { opActions, opBlocked });
+    const opHasRow = await page.evaluate((bid: number) => Array.from(
+      document.querySelectorAll('[data-testid="workbench-row"]'),
+    ).some((r) => (r as HTMLElement).dataset.bill === String(bid)), mainBillId);
+    check('operator 工作台上沒有這一筆（不是候選人，platform-review 只收 bill-reviewers）',
+      !opHasRow, { mainBillId, opHasRow });
 
-    // ── ② 主管：核准 ─────────────────────────────────────────
-    hr('② 主管（manager@）—— R1 指派到他，核准');
+    // ── ② 主管：看得到、不按 ────────────────────────────────────
+    hr('② 主管（manager@）—— bill-reviewers 候選人之一，看得到但不按');
     await loginAs(page, demoEmail('manager'));
     await selectOrg(page);
     check('主管進得了我的工作', await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root'));
     await waitIdle(page);
     const mgrSections = await sectionsOf(page);
     log(`  主管看到的分區：${JSON.stringify(mgrSections)}`);
-    // R1（發起人的部門主管）真的解析到他了 —— 空的區不顯示，所以有區＝有事做。
-    check('R1 生效：主管的工作台上有事做', mgrSections.length > 0, mgrSections);
+    check('部門候選人生效：主管的工作台上有事做', mgrSections.length > 0, mgrSections);
+    const mgrHasRow = await page.evaluate((bid: number) => Array.from(
+      document.querySelectorAll('[data-testid="workbench-row"]'),
+    ).some((r) => (r as HTMLElement).dataset.bill === String(bid)), mainBillId);
+    check('主管的工作台上看得到這一筆（bill-reviewers 候選人之一）', mgrHasRow, { mainBillId });
     await shot(page, '2-manager-workbench');
 
-    let step = await actOnWorkbench(page, '送出', mainBillId);
-    if (!step) step = await actOnWorkbench(page, '核准', mainBillId);
-    check('主管推進得動（R1 指派的關卡）', step);
-    await waitIdle(page);
-
-    // 承辦確認 → 主管核准，主管在兩關都是候選人，再推一次。
-    await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-    await waitIdle(page);
-    const step2 = await actOnWorkbench(page, '核准', mainBillId);
-    log(`  主管第二步（核准）：${step2}`);
-    // **這一步以前只有 log 沒有 check** —— 於是它失敗時不會紅，
-    // 而是讓後面 12 條斷言連鎖紅在**跟根因無關的位置**。
-    // 關鍵步驟一律要有斷言，不要只印出來。
-    check('主管核准得動（manager-approve）', step2 === true, { step2 });
-
-    // ── ③ 財務：放行 ─────────────────────────────────────────
-    hr('③ 財務（finance@）—— 放行');
+    // ── ③ 財務：〔審核通過〕───────────────────────────────────
+    hr('③ 財務（finance@）—— 審核通過（單一審核：任一位通過即完成）');
     await loginAs(page, demoEmail('finance'));
     await selectOrg(page);
     await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
     await waitIdle(page);
     const finSections = await sectionsOf(page);
     log(`  財務看到的分區：${JSON.stringify(finSections)}`);
-    const released = await actOnWorkbench(page, '放行', mainBillId);
-    check('財務放行得動', released, finSections);
+    const approved = await actOnWorkbench(page, '審核通過', mainBillId);
+    check('財務〔審核通過〕得動', approved, finSections);
     await shot(page, '3-finance-workbench');
 
-    // ── ④ 會計：付款 ─────────────────────────────────────────
-    hr('④ 會計（accounting@）—— 落點 ＋ 付款區 ＋ 付款');
+    // ── ④ 會計：落點仍是「我的工作」，但這一筆已經不在佇列裡 ──────
+    /**
+     * 單一審核：任一位 bill-reviewers 通過即完成，不是四眼依序簽核，
+     * 所以 finance 按完之後，accounting（同一部門的另一位）工作台上
+     * **不會**還留著這一筆（它已經 completed，不是輪到他）。
+     * 刪「會計第一區是等我付款」「標記已付款」：單一審核沒有付款關。
+     */
+    hr('④ 會計（accounting@）—— 落點 ＋ 這一筆已不在工作台');
     await loginAs(page, demoEmail('accounting'));
     await selectOrg(page);
 
-    // 驗收 4：會計落在**工作台**。
     const acctLanding = await eapi(page, 'GET', '/me/landing').then((r) => (r.status === 200 ? r.data : { error: r.status }));
-    // §7.3 的「登入落點是『等我處理』頁籤」講的就是這些角色（會計／財務／部門主管）。
     check('會計的落點是「我的工作」', acctLanding?.route === 'energyMyWorkConsole', acctLanding);
 
     await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
     await waitIdle(page);
-    const acctFirst = await page.evaluate(() => {
-      const sec = document.querySelector('[data-testid="workbench-section"]') as HTMLElement | null;
-      return { section: sec?.dataset.section ?? '', text: sec?.innerText.slice(0, 160) ?? '' };
-    });
-    // 驗收 4：會計的第一區是「等我付款」。
-    check('會計的第一區是「等我付款」', acctFirst.section === 'toPay', acctFirst);
+    const acctHasRow = await page.evaluate((bid: number) => Array.from(
+      document.querySelectorAll('[data-testid="workbench-row"]'),
+    ).some((r) => (r as HTMLElement).dataset.bill === String(bid)), mainBillId);
+    check('會計的工作台上已經沒有這一筆（財務通過，其他人不必再審）',
+      !acctHasRow, { mainBillId, acctHasRow });
     await shot(page, '4-accounting-workbench');
-
-    const paid = await actOnWorkbench(page, '標記已付款', mainBillId);
-    log(`  會計標記已付款：${paid}`);
-    if (paid) {
-      await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-      await waitIdle(page);
-      await actOnWorkbench(page, '送出', mainBillId);
-    }
 
     // ── ⑤ 鏈路走到哪 ────────────────────────────────────────
     hr('⑤ 鏈路結果');
@@ -429,84 +401,24 @@ async function run() {
       return { status: ex.status, current: graph?.current ?? [], node: ex.currentNodeKey };
     });
     log(`  最終狀態：${JSON.stringify(final)}`);
-    // 驗收 1：**整條鏈路走完** —— 承辦送出 → 主管核准 → 財務放行 → 會計付款 → 完成。
+    // 驗收 1：**整條鏈路走完** —— 承辦送審 → 財務審核通過（單一審核）→ 完成。
     // 「推過了第一關」不夠：那只證明多帳號有用，不證明鏈路是通的。
     check('完整鏈路走到 end（status=completed）',
       final?.status === 'completed' && final?.node === 'end', final);
 
-    // ── ⑥⑦ 同一條流程、兩種金額 → 兩條不同路線 ────────────────
-    //
-    // 小額（60,000 < 門檻）：clerk-review → manager-approve → calc → finance-release → payment → end
-    // 高額（138,195 ≥ 門檻）：中間**多一關 `exec-approve`（高層加簽）**，只有 cxo@ 動得了。
-    // 程式一行沒改 —— 差別只在**單子上的金額**。這是「條件是資料」最好的證據。
-    hr('⑥ 條件是資料：138,195（≥ 門檻）多一關「高層加簽」');
-    await loginAs(page, demoEmail('operator'));
-    await selectOrg(page);
-    await uploadNewBatch(page, bigFile);
-    await page.evaluate(() => {
-      const b = document.querySelector('[data-testid="intake-submit-one"]');
-      (b as HTMLElement | null)?.click();
-    });
-    await waitIdle(page);
-
-    // 找出剛送出的那張高額單（用金額認，不用「最後一筆」——順序不保證）。
-    const bigBillId: number = await page.evaluate(async () => {
-      const org = (window as any).__demoOrgId;
-      const r = await fetch(`/api/v1/orgs/${org}/energy/bills?limit=50`, { credentials: 'include' });
-      const bills: any[] = r.ok ? (await r.json()).items ?? [] : [];
-      const b = bills.find((x: any) => Math.round(Number(x.totalAmount)) === 138195);
-      return b ? Number(b.id) : 0;
-    });
-    check('找得到 138,195 那張單', bigBillId > 0, { bigBillId });
-
-    // 主管推兩步：承辦確認（submit）→ 主管核准（approve）。
-    await loginAs(page, demoEmail('manager'));
-    await selectOrg(page);
-    await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-    await actOnNode(page, 'clerk-review', 'submit', bigBillId);
-    await actOnNode(page, 'manager-approve', 'approve', bigBillId);
-
-    const atExec = await nodeOf(page, bigBillId);
-    log(`  高額單目前停在：${JSON.stringify(atExec)}`);
-    // 小額那張從來沒到過 `exec-approve`（它在 ⑤ 已經走到 end）；這張到了。
-    check('138,195 走到「高層加簽」（小額那張不會）', atExec.node === 'exec-approve', atExec);
-
-    hr('⑦ CXO（cxo@）—— 落點 ＋ 加簽 ＋ 走完');
+    // ── ⑥ CXO（cxo@）—— 落點（Q-04：單一審核沒有金額門檻加簽） ──────
+    /**
+     * 舊版：138,195 ≥ 門檻會多一關 `exec-approve`（高層加簽），只有 cxo@ 動得了。
+     * `bill-approval` 換成單一審核後沒有任何金額分支（Q-04），CXO 不在
+     * `bill-reviewers` 部門裡，這一關也沒有他的事 —— 只留「落點是 Dashboard」
+     * 這條（卡的「做什麼」要求：CXO 落點那一條留著，只是登入）。
+     */
+    hr('⑥ CXO（cxo@）—— 落點 Dashboard（不再有高層加簽可驗）');
     await loginAs(page, demoEmail('cxo'));
     await selectOrg(page);
     const cxoLanding = await eapi(page, 'GET', '/me/landing').then((r) => (r.status === 200 ? r.data : { error: r.status }));
     // CXO 是**唯一**以 Dashboard 為家的角色（`FRONTEND.md §1.3`）。
-    // 判準必須是**只有他有**的權限：他也持 `energy:finance:act`（要能放行），
-    // 先判 `energy:payout:view` 會把他送去工作台 —— 踩過。
     check('CXO 的落點是 Dashboard', cxoLanding?.route === 'energyDashboardConsole', cxoLanding);
-
-    await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-    await waitIdle(page);
-    const cxoSections = await sectionsOf(page);
-    log(`  CXO 看到的分區：${JSON.stringify(cxoSections)}`);
-    check('CXO 的工作台上有等他加簽的事', cxoSections.length > 0, cxoSections);
-    await shot(page, '6-cxo-workbench');
-
-    check('CXO 加簽得動（其他四個帳號都動不了這一關）',
-      await actOnNode(page, 'exec-approve', 'approve', bigBillId), cxoSections);
-
-    // 加簽完把高額那張也走完 —— 只驗到「多出一關」不夠，要證明那關**過得去**。
-    await loginAs(page, demoEmail('finance'));
-    await selectOrg(page);
-    await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-    check('加簽後財務放行得動（高額路線）', await actOnNode(page, 'finance-release', 'release', bigBillId));
-
-    await loginAs(page, demoEmail('accounting'));
-    await selectOrg(page);
-    await goto(page, 'energyMyWorkConsole', '[data-testid="workbench-section"], .MuiAlert-root');
-    await actOnNode(page, 'payment', 'markPaid', bigBillId);
-    await actOnNode(page, 'payment', 'submit', bigBillId);
-
-    const bigFinal = await nodeOf(page, bigBillId);
-    log(`  高額單最終狀態：${JSON.stringify(bigFinal)}`);
-    // 兩張單都走到 end，但**中間關卡數不同** —— 這才是完整的兩條路線證據。
-    check('高額路線也走到 end（比小額多一關「高層加簽」）',
-      bigFinal.status === 'completed' && bigFinal.node === 'end', bigFinal);
 
     // ── ⑧ 三個實體頁 ────────────────────────────────────────
     hr('⑧ C7b 三個實體頁');
@@ -514,10 +426,17 @@ async function run() {
     await selectOrg(page);
 
     // P5 地主整合頁（獨立路由）
+    // 卡 A（20261118-0427-a）併回後，清單第一列變成「台電屏東區處」這種
+    // 受款對象（0 座案場）；不挑第一列，改依名字挑「陳明德」（demo seed
+    // 綁定流程＋策略兩種軸的那一位，見下面 P11 的註解）。
     await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
     await waitIdle(page);
     await page.evaluate(() => {
-      (document.querySelector('[data-testid="landowner-row"]') as HTMLElement)?.click();
+      // 只有列裡**第一格**（名字那一格）掛了 onClick 導頁，點整列不會動
+      // （`LandownersPage.tsx`：onClick 在那顆 `TableCell` 上，不是 `TableRow`）。
+      const row = Array.from(document.querySelectorAll('[data-testid="landowner-row"]'))
+        .find((r) => (r as HTMLElement).innerText.includes('陳明德')) as HTMLElement | undefined;
+      (row?.querySelector('td') as HTMLElement | null)?.click();
     });
     await waitIdle(page);
     const p5 = await page.evaluate(() => ({
@@ -551,30 +470,27 @@ async function run() {
     // seed 裡流程綁在 `00-60-1600-79-5`、策略也綁在同一個案場；
     // 另一個案場只有保證金流程的綁定、沒有策略。
     // 這裡**不寫死電號**（seed 改了就會靜默失效），改成**掃地主列表**找出符合的那一個。
-    let toStation = false;
-    // 先回**清單**再數 —— 這時人還站在地主**詳情頁**上，
-    // 在詳情頁數 `landowner-row` 會得到 0，然後迴圈整個不跑（踩過，症狀是 `ownerRows: 0`）。
+    // 卡 A 之後清單有 7 筆（受款對象＋地主混在一起），不再掃全部列 ——
+    // 直接回「陳明德」那一頁（上面 P5 已經挑過這一位，他的案場同時綁了
+    // 流程與策略兩種軸）。
     await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
     await waitIdle(page);
-    const ownerRows = await page.$$eval('[data-testid="landowner-row"]', (e) => e.length);
-    for (let i = 0; i < ownerRows && !toStation; i += 1) {
-      await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
-      await waitIdle(page);
-      await page.evaluate((n: number) => {
-        (document.querySelectorAll('[data-testid="landowner-row"]')[n] as HTMLElement)?.click();
-      }, i);
-      await waitIdle(page);
-      toStation = await page.evaluate(() => {
-        const st = Array.from(document.querySelectorAll('[data-testid="landowner-station"]'))
-          .find((r) => r.querySelector('[data-testid="landowner-station-workflow"]')
-            && r.querySelector('[data-testid="landowner-station-strategy"]'));
-        const chip = st?.querySelector('[data-testid="landowner-station-workflow"]') as HTMLElement | null;
-        if (!chip) return false;
-        chip.click();
-        return true;
-      });
-    }
-    check('地主 → 案場詳情（點版本 chip，chip 可點）', toStation, { ownerRows });
+    await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('[data-testid="landowner-row"]'))
+        .find((r) => (r as HTMLElement).innerText.includes('陳明德')) as HTMLElement | undefined;
+      (row?.querySelector('td') as HTMLElement | null)?.click();
+    });
+    await waitIdle(page);
+    const toStation = await page.evaluate(() => {
+      const st = Array.from(document.querySelectorAll('[data-testid="landowner-station"]'))
+        .find((r) => r.querySelector('[data-testid="landowner-station-workflow"]')
+          && r.querySelector('[data-testid="landowner-station-strategy"]'));
+      const chip = st?.querySelector('[data-testid="landowner-station-workflow"]') as HTMLElement | null;
+      if (!chip) return false;
+      chip.click();
+      return true;
+    });
+    check('地主 → 案場詳情（點版本 chip，chip 可點）', toStation, { owner: '陳明德' });
     await waitIdle(page);
     const p11 = await page.evaluate(() => {
       const segs = Array.from(document.querySelectorAll('[data-testid="axis-segment"]'));
@@ -834,16 +750,14 @@ async function run() {
      */
     check('綁定印得出電號', p9.bindings.some((b) => /\d{2}(-\d+){3,}/.test(b)), p9.bindings);
     check('沒有 raw key', !/energy:|ryxis:/.test(p9.text));
-    // **分支邊要顯示條件文字**（`FRONTEND.md §10 P9`）——
-    // 「金額 ≥ 100000」畫在邊上，正是「條件是資料」的回報：
-    // 條件寫死在程式裡的話，這條線上永遠沒有字可以印。
-    const edgeLabels = await page.$$eval(
-      '.react-flow__edge-text, .react-flow__edgelabel-renderer',
-      (els) => els.map((e) => (e as HTMLElement).textContent?.trim() ?? '').filter(Boolean),
-    ).catch(() => [] as string[]);
-    log(`  邊上的條件文字：${JSON.stringify(edgeLabels)}`);
-    check('分支邊顯示條件文字（金額 ≥ 門檻）',
-      edgeLabels.some((t) => /≥|>=/.test(t)), edgeLabels);
+    /**
+     * Q-04（2026-11-16）：舊的「分支邊顯示條件文字（金額 ≥ 門檻）」驗的是
+     * `default_bill_approval()` 那條 `manager-approve → exec-approve` 邊
+     * （`FRONTEND.md §10 P9`）。那條流程已經不再內建安裝（換成
+     * `platform_review_bill()`，沒有任何金額分支），P9 預設看到的圖上
+     * 不會再有那條邊，不自己發明替代流程 —— 刪掉這條，「條件是資料」
+     * 這個能力本身由前端／引擎測試守，不是這支 e2e 的責任。
+     */
     await shot(page, '9-p9-workflows');
 
     // **沒有任何 execution 也看得到流程圖** —— 這是 P9 存在的理由。
@@ -1024,9 +938,13 @@ async function run() {
     await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
     await waitIdle(page);
     const unbound = await page.evaluate(async () => {
-      const rows = Array.from(document.querySelectorAll('[data-testid="landowner-row"]'));
-      for (let i = 0; i < rows.length; i += 1) {
-        (document.querySelectorAll('[data-testid="landowner-row"]')[i] as HTMLElement)?.click();
+      // 卡 A 之後清單混了受款對象（台電區處／子公司／公司／機關，沒有案場）；
+      // 只在真的有地主身分的兩位裡找（陳明德／林秀英），不掃全部 7 列。
+      const findRows = () => Array.from(document.querySelectorAll('[data-testid="landowner-row"]'))
+        .filter((r) => /陳明德|林秀英/.test((r as HTMLElement).innerText));
+      const n = findRows().length;
+      for (let i = 0; i < n; i += 1) {
+        (findRows()[i]?.querySelector('td') as HTMLElement | null)?.click();
         await new Promise((res) => { setTimeout(res, 2500); });
         const chip = document.querySelector('[data-testid="landowner-station-unbound"]') as HTMLElement | null;
         if (chip) {
@@ -1054,8 +972,8 @@ async function run() {
       (unbound as any)?.axisUnbound >= 2 && (unbound as any)?.gotoWorkflows, unbound);
     await shot(page, '11-unbound-station');
 
-    // ── ⑫ 增補 B：校對台兩個互動 ─────────────────────────────
-    hr('⑫ 增補 B：點欄位→高亮 ／ 改金額→分支重算');
+    // ── ⑫ 增補 B：校對台互動（點欄位→高亮）────────────────────
+    hr('⑫ 增補 B：點欄位→高亮');
 
     /**
      * **不可以隨便挑清單的第一列**。
@@ -1122,123 +1040,12 @@ async function run() {
       highlight.boxes === 0 || (highlight.before === '0' && highlight.after === '1'), highlight);
     await shot(page, '12-field-highlight');
 
-    // B-2：改金額 → 分支即時重算
-    const rebranch = await page.evaluate(async () => {
-      const input = document.querySelector('[data-testid="final-totalAmount"]') as HTMLInputElement | null;
-      if (!input) return { note: 'no amount input' };
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
-      // **不要讀 `data-added`**：那是「相對於這張單**目前存檔的金額**」多出來的關卡。
-      // 如果單子本來就是高額，打 138195 什麼都不會「多」出來 —— 斷言會假性失敗，
-      // 而畫面其實是對的。要比的是**兩個金額各自的路線**。
-      const read = () => {
-        const el = document.querySelector('[data-testid="branch-preview"]') as HTMLElement | null;
-        const path = Array.from(document.querySelectorAll('[data-testid="branch-node"]'))
-          .map((n) => (n as HTMLElement).dataset.node);
-        return { shown: !!el, added: el?.dataset.added ?? '', path };
-      };
-      // 低於門檻
-      setter.call(input, '60000');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise((res) => { setTimeout(res, 1800); });
-      const low = read();
-      // 高於門檻 → 應該多出「高層加簽」
-      setter.call(input, '138195');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise((res) => { setTimeout(res, 1800); });
-      const high = read();
-      return { low, high };
-    });
-    log(`  分支重算：${JSON.stringify(rebranch)}`);
-    // 這是「條件是資料」在**校對台**上的兌現：改數字就看得到路線變了，
-    // 不用送出去才知道。
-    const lowPath: string[] = (rebranch as any)?.low?.path ?? [];
-    const highPath: string[] = (rebranch as any)?.high?.path ?? [];
-    check('低於門檻的路線**沒有**「高層加簽」',
-      lowPath.length > 0 && !lowPath.includes('exec-approve'), lowPath);
-    // 這就是「條件是資料」在**校對台**上的兌現：還沒按送審就看得到路線變了。
-    check('改成 ≥ 門檻 → 路線**多一關「高層加簽」**（送審前就看得到）',
-      highPath.includes('exec-approve') && highPath.length === lowPath.length + 1,
-      { lowPath, highPath });
-
-    // ── ⑫-b **少一關**（規避控管的方向，`FRONTEND.md §2.86`）────────
-    //
-    // 這才是危險的方向：把 138,195 改成 99,999，高層加簽那關就消失了。
-    // 只驗「多一關」等於沒驗到真正要防的那件事。
-    hr('⑫-b 少一關：改小跨門檻');
-    const shrink = await page.evaluate(async () => {
-      const wait = (ms: number) => new Promise((res) => { setTimeout(res, ms); });
-      const input = document.querySelector('[data-testid="final-totalAmount"]') as HTMLInputElement | null;
-      if (!input) return { note: 'no amount input' };
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
-      // 先拉到門檻以上（讓「現在存檔的金額」有那一關），存下去。
-      setter.call(input, '138195');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await wait(1800);
-      (document.querySelector('[data-testid="review-save"]') as HTMLElement | null)?.click();
-      await wait(3500);
-
-      // 再改成低於門檻 —— 這時畫面上就該出現**金色「少一關」**。
-      const input2 = document.querySelector('[data-testid="final-totalAmount"]') as HTMLInputElement | null;
-      setter.call(input2!, '99999');
-      input2!.dispatchEvent(new Event('input', { bubbles: true }));
-      await wait(2000);
-      const removedEl = document.querySelector('[data-testid="branch-removed"]') as HTMLElement | null;
-      const fieldChip = document.querySelector('[data-testid="field-route-changed"]') as HTMLElement | null;
-      const chipText = (document.querySelector('[data-testid="branch-removed-node"]') as HTMLElement)?.innerText ?? '';
-      const before = { removed: removedEl?.dataset.removed ?? '', chipText, fieldDir: fieldChip?.dataset.direction ?? '' };
-
-      // 存下去 → 後端該記一筆 critical。
-      (document.querySelector('[data-testid="review-save"]') as HTMLElement | null)?.click();
-      await wait(3500);
-      return before;
-    });
-    log(`  少一關：${JSON.stringify(shrink)}`);
-    // 畫面上**看得見**（不能什麼都沒發生）。
-    check('改小跨門檻 → 畫面出現「少一關：高層加簽」',
-      /exec-approve/.test((shrink as any)?.removed ?? ''), shrink);
-    check('少一關的 chip 用人話講（含關卡名）',
-      /高層加簽/.test((shrink as any)?.chipText ?? ''), (shrink as any)?.chipText);
-    // 欄位那一列也要標 —— 只在下面講，正在改數字的人看不到。
-    check('欄位列標出「改變了審批路線」且方向是 removed',
-      (shrink as any)?.fieldDir === 'removed', (shrink as any)?.fieldDir);
-
-    // 稽核那一筆：critical ＋ 講後果 ＋ 串得回 bill.corrected
-    await loginAs(page, demoEmail('cxo'));
-    await selectOrg(page);
-    await goto(page, 'energyAuditConsole', 'table');
-    await waitIdle(page);
-    const gateAudit = await page.evaluate(async () => {
-      const org = (window as any).__demoOrgId;
-      const r = await fetch(`/api/v1/orgs/${org}/energy/audit-events?limit=200`, { credentials: 'include' });
-      const rows: any[] = r.ok ? (await r.json()).items ?? [] : [];
-      const gate = rows.find((x: any) => x.type === 'bill.route_gate_removed');
-      if (!gate) return { note: 'no route_gate_removed', types: [...new Set(rows.map((x: any) => x.type))] };
-      return {
-        severity: gate.severity,
-        summary: gate.summary,
-        removed: gate.payload?.gatesDelta?.removed ?? [],
-        causedByType: gate.causedBy?.type ?? null,
-      };
-    });
-    log(`  稽核：${JSON.stringify(gateAudit)}`);
-    // critical —— 這是規避大額控管的方向。
-    check('稽核記了 `bill.route_gate_removed` 且是 **critical**',
-      (gateAudit as any)?.severity === 'critical', gateAudit);
-    // summary 要**講後果**，不是「欄位變更」。
-    check('summary 講後果（「因此少了一關『高層加簽』」）',
-      /少了一關/.test((gateAudit as any)?.summary ?? '')
-      && /高層加簽/.test((gateAudit as any)?.summary ?? ''), (gateAudit as any)?.summary);
-    // 因果鏈串得回那筆修正。
-    check('`causedBy` 串回 `bill.corrected`',
-      (gateAudit as any)?.causedByType === 'bill.corrected', gateAudit);
-    // 畫面上也要看得到「← 由 … 觸發」
-    const causedByShown = await page.evaluate(
-      () => !!document.querySelector('[data-testid="audit-caused-by"]'),
-    );
-    check('稽核頁看得到「← 由 … 觸發」', causedByShown);
-    await shot(page, '12b-route-gate-removed');
-
-    await shot(page, '12-branch-recompute');
+    /**
+     * Q-04（2026-11-16）：刪「改金額 → 分支即時重算」（B-2）與
+     * 「⑫-b 少一關：改小跨門檻」。單一審核沒有任何金額分支，沒有
+     * 「多一關」「少一關」可以驗，`bill.route_gate_removed` 這整條稽核
+     * 鏈路在 `bill-approval` 上已經沒有對應的產品行為，不自己發明替代流程。
+     */
 
     // ── ⑬ 跨頁矩陣抽三格（`IA.md §5`）────────────────────────
     hr('⑬ 跨頁矩陣抽三格');
@@ -1270,14 +1077,18 @@ async function run() {
     // 紅了也不代表連結壞掉，只代表這一輪沒東西可點。
     await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
     await waitIdle(page);
-    const ownerCount = await page.$$eval('[data-testid="landowner-row"]', (e) => e.length);
+    // 卡 A 之後清單混了受款對象（沒有案場）；只在真的有地主身分的兩位裡找。
+    const ownerCount = await page.$$eval('[data-testid="landowner-row"]',
+      (e) => e.filter((r) => /陳明德|林秀英/.test((r as HTMLElement).innerText)).length);
     let cell2: any = { note: 'no landowners' };
     // 單只落在其中一個地主的其中一個案場上 —— 只看第一個地主會假性失敗。
     for (let oi = 0; oi < ownerCount; oi += 1) {
       await goto(page, 'energyLandownerConsole', '[data-testid="landowner-row"]');
       await waitIdle(page);
       await page.evaluate((n: number) => {
-        (document.querySelectorAll('[data-testid="landowner-row"]')[n] as HTMLElement)?.click();
+        const row = Array.from(document.querySelectorAll('[data-testid="landowner-row"]'))
+          .filter((r) => /陳明德|林秀英/.test((r as HTMLElement).innerText))[n] as HTMLElement | undefined;
+        (row?.querySelector('td') as HTMLElement | null)?.click();
       }, oi);
       await waitIdle(page);
       // eslint-disable-next-line no-await-in-loop
@@ -1334,66 +1145,71 @@ async function run() {
     await waitIdle(page);
     const journey = await page.evaluate(async () => {
       const wait = (ms: number) => new Promise((res) => { setTimeout(res, ms); });
-      const steps: any[] = [];
       const menuVisits: string[] = [];
-      // 全程監看：只要 hash 回到任何「清單頁」就算回過選單。
       const startHash = location.hash;
 
-      // ① 稽核事件 → 單
-      // **要指名挑 target 是 `energyBill` 的那一列**。
-      // 不能拿「第一顆 audit-open」——稽核列的 target 是**多型**的，
-      // 而流程類的事件（execution / task）現在**正確地**跳到 P12 流程單，
-      // 不再繞去電費單頁。挑錯列會得到一個看起來像壞掉的紅燈。
-      const a = document.querySelector(
+      // **卡 A 之後案場變多（6→7），不假設第一顆稽核連結指向的那個案場
+      // 就有應付紀錄** —— 逐一試過 `[data-target-type="energyBill"]` 的
+      // 稽核列，直到某一條走到底真的有應付資料。
+      const auditLinks = Array.from(document.querySelectorAll(
         '[data-target-type="energyBill"] [data-testid="audit-open"]',
-      ) as HTMLElement | null;
-      if (!a) return { fail: 'no bill-targeted audit link', startHash };
-      a.click(); await wait(3000);
-      steps.push({ step: 'bill', hash: location.hash });
-      if (!/energyBillConsole\/\d+\/show/.test(location.hash)) return { fail: 'audit→bill', steps };
+      ));
+      if (!auditLinks.length) return { fail: 'no bill-targeted audit link', startHash };
+      // 卡 A 之後稽核事件變多，不要每一條都花 8～15 秒試過去——只試前 3 條，
+      // 每一條縮短等待（1200/1000/800ms），demo seed 的主線單通常排在前面。
+      const MAX_TRY = Math.min(3, auditLinks.length);
 
-      // ② 單 → 案場
-      const st = document.querySelector('[data-testid="review-open-station"]') as HTMLElement | null;
-      if (!st) return { fail: 'no station breadcrumb', steps };
-      st.click(); await wait(3000);
-      steps.push({ step: 'station', hash: location.hash });
-      if (!/energyStationConsole\/\d+\/show/.test(location.hash)) return { fail: 'bill→station', steps };
+      for (let li = 0; li < MAX_TRY; li += 1) {
+        const steps: any[] = [];
+        if (location.hash !== startHash) { location.hash = startHash.replace('#', ''); await wait(1200); }
+        const links = document.querySelectorAll('[data-target-type="energyBill"] [data-testid="audit-open"]');
+        const a = links[li] as HTMLElement | undefined;
+        if (!a) continue;
+        a.click(); await wait(1500);
+        steps.push({ step: 'bill', hash: location.hash });
+        if (!/energyBillConsole\/\d+\/show/.test(location.hash)) continue;
 
-      // ③ 案場上看得到**策略**（那一段生效中的）
-      const strategySeg = document.querySelector('[data-testid="strategy-axis"] [data-testid="axis-segment"][data-active="1"]') as HTMLElement | null;
-      steps.push({ step: 'strategy', seen: !!strategySeg, text: strategySeg?.innerText.replace(/\n/g, ' ') ?? '' });
-      if (!strategySeg) return { fail: 'no active strategy segment', steps };
+        // ② 單 → 案場
+        const st = document.querySelector('[data-testid="review-open-station"]') as HTMLElement | null;
+        if (!st) continue;
+        st.click(); await wait(1500);
+        steps.push({ step: 'station', hash: location.hash });
+        if (!/energyStationConsole\/\d+\/show/.test(location.hash)) continue;
 
-      // ④ 案場 → 最近的單 → **應付頁籤**
-      //
-      // 要挑**已經算過應付**的那張單：這個案場上還有一張**故意留在飛的**
-      // （停在承辦確認，還沒走到 `calc`）—— 它**本來就沒有應付紀錄**。
-      // 挑到那張的話「應付看得到算式」會紅，但那不是缺陷，
-      // 只是那張單還沒算到那一步。
-      const stationHash = location.hash;
-      const billCount = document.querySelectorAll('[data-testid="station-bill"]').length;
-      if (!billCount) return { fail: 'no recent bill on station', steps };
-      for (let bi = 0; bi < billCount; bi += 1) {
-        if (location.hash !== stationHash) {
-          location.hash = stationHash.replace('#', '');
-          await wait(2500);
+        // ③ 案場上看得到**策略**（那一段生效中的）
+        const strategySeg = document.querySelector('[data-testid="strategy-axis"] [data-testid="axis-segment"][data-active="1"]') as HTMLElement | null;
+        steps.push({ step: 'strategy', seen: !!strategySeg, text: strategySeg?.innerText.replace(/\n/g, ' ') ?? '' });
+        if (!strategySeg) continue;
+
+        // ④ 案場 → 最近的單 → **應付頁籤**（最多試前 3 筆）
+        const stationHash = location.hash;
+        const billCount = Math.min(3, document.querySelectorAll('[data-testid="station-bill"]').length);
+        if (!billCount) continue;
+        let found = false;
+        for (let bi = 0; bi < billCount; bi += 1) {
+          if (location.hash !== stationHash) {
+            location.hash = stationHash.replace('#', '');
+            await wait(1000);
+          }
+          const rowsEls = document.querySelectorAll('[data-testid="station-bill"]');
+          (rowsEls[bi] as HTMLElement)?.click();
+          await wait(1200);
+          const tabs = Array.from(document.querySelectorAll('button[role="tab"]'));
+          const payoutTab = tabs.find((t) => /應付|Payout/i.test((t as HTMLElement).innerText));
+          if (!payoutTab) continue;
+          (payoutTab as HTMLElement).click(); await wait(800);
+          const rows = document.querySelectorAll('[data-testid="payout-row"]').length;
+          if (rows > 0) {
+            const formula = (document.querySelector('[data-testid="payout-formula"]') as HTMLElement)?.innerText ?? '';
+            steps.push({ step: 'bill2', hash: location.hash });
+            steps.push({ step: 'payout', rows, formula: formula.slice(0, 160) });
+            found = true;
+            return { ok: true, steps, menuVisits, startHash };
+          }
         }
-        const rowsEls = document.querySelectorAll('[data-testid="station-bill"]');
-        (rowsEls[bi] as HTMLElement)?.click();
-        await wait(3000);
-        const tabs = Array.from(document.querySelectorAll('button[role="tab"]'));
-        const payoutTab = tabs.find((t) => /應付|Payout/i.test((t as HTMLElement).innerText));
-        if (!payoutTab) return { fail: 'no payout tab', steps, tabs: tabs.map((t) => (t as HTMLElement).innerText) };
-        (payoutTab as HTMLElement).click(); await wait(1500);
-        const rows = document.querySelectorAll('[data-testid="payout-row"]').length;
-        if (rows > 0) {
-          const formula = (document.querySelector('[data-testid="payout-formula"]') as HTMLElement)?.innerText ?? '';
-          steps.push({ step: 'bill2', hash: location.hash });
-          steps.push({ step: 'payout', rows, formula: formula.slice(0, 160) });
-          return { ok: true, steps, menuVisits, startHash };
-        }
+        if (!found) continue;
       }
-      return { fail: 'no bill with payout on this station', steps };
+      return { fail: 'no bill-targeted audit link leads to a station with payout', tried: MAX_TRY };
     });
     log(`  動線：${JSON.stringify(journey)}`);
     check('稽核 → 單 → 案場 → 策略 → 應付，全程不回選單',

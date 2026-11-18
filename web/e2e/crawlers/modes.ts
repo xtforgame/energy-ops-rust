@@ -19,24 +19,23 @@
  *
  * ```
  * intake（operator@，還沒送審）
- *   → 送審 → revise（operator@ 自己在 clerk-review 就改得動）
- *   → 送出 → readonly／excludedOwner（operator@ 打開停在**主管核准**的自己的單）
- *   → 主管退回 → revise（回到原送件者手上，他才是看過那張紙的人）
- *   → act（manager@ 在 manager-approve）＋ 補件
+ *   → 送審 → readonly／excludedOwner（operator@ 打開停在**平台資料審核**的自己的單，
+ *     不是候選人，R4 永遠開啟一樣把發起人標成 excludedOwner）
+ *   → act（finance@ 認領 platform-review）＋ 補件
+ *   → viewOnly（viewer@）
+ *   → finance@〔審核通過〕
  *   → 走完 → readonly／finished
  * ```
  *
- * ### `revise` 落在誰身上（2026-08-29 改過）
+ * ### Q-04（2026-11-16）：bill-approval 換成單一審核
  *
- * `clerk-review` 的 `allowSelfApproval` 從 false 翻成 **true**。
- *
- * 這一關同時承擔「改」與「核」兩種語意，而它主要是**改**。
- * 設成 false 的後果是：被退回的單，**原送件者改不了** ——
- * 退回理由傳不到唯一知道原委的人手上。
- *
- * 四眼原則的價值在**核可**環節，所以 `manager-approve` /
- * `finance-release` / `payment` 三關一律保持 false ——
- * 這一支的 ③ 就是在證明那三關沒被一起放寬。
+ * `platform-review` 只有一關，候選人是部門 `bill-reviewers`
+ * （manager／finance／accounting），沒有退回、不准自核。operator 不在
+ * 那個部門（本來就不是候選人），但 R4「永遠開啟」不看候選身分，
+ * 不可自核時一律把發起人標成 `excludedOwner` —— 所以 operator 看到的
+ * 代碼跟舊版一樣，只是停的關卡換了，而且沒有 `clerk-review` 那一跳。
+ * 退回補正、金額門檻加簽（舊版 `manager-approve`／`finance-release`／
+ * `payment`）在單一審核上沒有對應流程，不自己發明替代流程。
  *
  * 移植自 az `scripts/crawler-energy-ops-modes`。跑法：`web/e2e/run-crawlers.sh modes`。
  *
@@ -306,26 +305,18 @@ async function run() {
     check('跳 popup 期間內容零位移（修好之前是 56px）', shift.spread === 0, shift);
     await shot(page, '1c-no-layout-shift');
 
-    // ── ② revise（承辦打開自己送出、停在 clerk-review 的單）──────
-    hr('② revise：承辦送審後打開自己的單（clerk-review 允許自核）');
+    // ── ② 送審 → 單一審核（Q-04：單一審核沒有退回，operator 不是候選人）──
+    /**
+     * 舊版：送審後承辦自己打開會停在 `clerk-review`（允許自核），拿到 `revise`。
+     * 現在 `bill-approval` 只剩一關 `platform-review`（候選人只有部門
+     * `bill-reviewers`），承辦不是候選人；R4「永遠開啟」又把發起人標成
+     * `excludedOwner` —— 這一支不會停在 revise，直接進 readonly（見下面 ③）。
+     */
+    hr('② 送審：operator 送出，進的是單一審核關（platform-review）');
     await page.evaluate(() => {
       (document.querySelector('[data-testid="review-submit"]') as HTMLElement | null)?.click();
     });
     await waitIdle(page);
-    await goto(page, `energyBillConsole/${billId}/show`, '[data-testid="review-field"], table');
-    await waitIdle(page);
-    const ownerAfter = await snapshot(page);
-    /**
-     * `clerk-review` 是**改**的關卡，不是**核**的關卡 ——
-     * 原送件者在這裡拿得到 `revise`。
-     */
-    check('承辦打開自己送出的單：有動作可按（不是死路一條）',
-      ownerAfter.actionButtons.length > 0, ownerAfter);
-    check('欄位可編輯（allowsSubjectEdit ＋ 自核放行）',
-      ownerAfter.fieldDisabled === false, ownerAfter);
-    check('revise：左欄一樣看得到原檔', ownerAfter.hasSource, ownerAfter);
-    check('revise：補件也開著', ownerAfter.hasAddAttachment, ownerAfter);
-    await shot(page, '2-revise-owner');
 
     // ── ②-b 三種重複之一：already_in_review ────────────────────
     /**
@@ -381,67 +372,29 @@ async function run() {
     })();
     check('第二份沒有進入流程（不然後面會推到它身上）', twinExec === 0, { twinExec });
 
-    // ── ③ readonly／excludedOwner（**核可**關卡照樣防自核）─────────
+    // ── ③ readonly／excludedOwner（operator 不是候選人，R4 仍標發起人）──
     /**
-     * 放寬的只有 `clerk-review` 一關。
-     * 同一個承辦把自己的單推到**主管核准**之後再打開它 ——
-     * 這一次必須是唯讀、零動作、而且講得出為什麼。
-     *
-     * 一個什麼都不能按又不解釋的頁面，使用者只會以為它壞了。
+     * 單一審核沒有退回（Q-04 lack 待確認），operator 也不在
+     * `bill-reviewers` 部門裡，但 R4「永遠開啟」：不可自核時一律把發起人
+     * 標成 `excludedOwner`，所以這裡看到的代碼跟舊版一樣，只是停的關卡
+     * 換成 `platform-review`（送審直接進這一關，不必再經 clerk-review 這一跳）。
      */
-    hr('③ readonly：同一張單停在「主管核准」，承辦自己打開');
-    check('承辦把 clerk-review 推過去', await actOnWorkbench(page, '送出', billId));
+    hr('③ readonly：operator 自己打開，停在「平台資料審核」');
     await goto(page, `energyBillConsole/${billId}/show`, '[data-testid="review-field"], table');
     await waitIdle(page);
     const ownerAtGate = await snapshot(page);
-    check('停在核可關：沒有動作按鈕',
+    check('停在審核關：沒有動作按鈕',
       ownerAtGate.actionButtons.length === 0, ownerAtGate);
     check('而且印出了 modeReason 那一句', ownerAtGate.reasonText.trim().length > 6, ownerAtGate);
-    check('說法是「防自核」不是含糊的一句',
+    check('說法是「防自核」（R4 永遠開啟，即使本來就不是候選人）',
       ownerAtGate.reasonCode === 'excludedOwner', ownerAtGate);
     check('欄位變唯讀', ownerAtGate.fieldDisabled === true, ownerAtGate);
     check('readonly：左欄一樣看得到原檔', ownerAtGate.hasSource, ownerAtGate);
     await shot(page, '3-readonly-owner-at-gate');
 
-    // ── ③-b 退回之後，改單的權回到原送件者手上 ────────────────────
-    /**
-     * 這一段就是把 `allowSelfApproval` 翻面的**理由**釘在地上：
-     * 主管退回 → 退回理由要傳到**唯一看過那張紙的人**手上，
-     * 而他就是原送件者。他改不了的話，那句退回理由等於沒有收件人。
-     */
-    hr('③-b 主管退回 → 原送件者改得動');
-    await loginAs(page, demoEmail('manager'));
-    await selectOrg(page);
-    check('主管退回得動', await actOnWorkbench(page, '退回', billId, '金額跟紙上對不起來，請重新核對'));
-    await loginAs(page, demoEmail('operator'));
-    await selectOrg(page);
-    await goto(page, `energyBillConsole/${billId}/show`, '[data-testid="review-field"], table');
-    await waitIdle(page);
-    const revise = await snapshot(page);
-    check('被退回後：欄位可編輯（節點旗標 allowsSubjectEdit）',
-      revise.fieldDisabled === false, revise);
-    /**
-     * **退回之後那一關是「沒人認領」的狀態**，所以這一頁先給的是
-     * 〔認領並開始處理〕，認領完才出現「送出」（＝重新送審）。
-     *
-     * 這與佇列抽屜是同一套語意（`LIFECYCLE.md §8.5`：認領是「開始處理」的第一步）。
-     * 在此之前這一頁沒有認領入口，於是它直接畫「送出」—— 按下去 403。
-     * 兩顆都接受，但**至少要有一顆**：一個什麼都不能按的頁面，
-     * 對被退回的原送件者來說就是死路。
-     */
-    check('被退回後：有出口可按（認領 → 送出，＝重新送審）',
-      revise.actionButtons.some((t) => t.includes('送出'))
-        || revise.actionButtons.some((t) => t.includes('認領')),
-      revise.actionButtons);
-    check('被退回後：左欄看得到原檔', revise.hasSource, revise);
-    check('被退回後：補件也開著（canAddAttachment 不比 canEditSubject 窄）',
-      revise.hasAddAttachment, revise);
-    await shot(page, '3b-revise-after-sendback');
-
-    // ── ④ act（主管核准那一關：唯讀 ＋ 有動作 ＋ 可補件）──────────
-    hr('④ act：輪到的人，欄位唯讀但補得了件');
-    check('原送件者重新送審', await actOnWorkbench(page, '送出', billId));
-    await loginAs(page, demoEmail('manager'));
+    // ── ④ act（finance 認領後：唯讀 ＋ 有動作 ＋ 可補件）──────────
+    hr('④ act：finance 認領後，欄位唯讀但補得了件');
+    await loginAs(page, demoEmail('finance'));
     await selectOrg(page);
     await goto(page, `energyBillConsole/${billId}/show`, '[data-testid="review-field"], table');
     await waitIdle(page);
@@ -521,19 +474,17 @@ async function run() {
     check('它是 info（補件不推進流程、不解除鎖）',
       String((auditHit as any).severity ?? '') === 'info', auditHit);
 
-    // ── ⑦ 走完的單 → readonly（驗收 7）─────────────────────────
-    hr('⑦ 走完的單 → readonly');
-    await loginAs(page, demoEmail('manager'));
-    await selectOrg(page);
-    await actOnWorkbench(page, '核准', billId);
+    // ── ⑦ finance〔審核通過〕→ 走完的單變 readonly（驗收 7）────────
+    /**
+     * 單一審核沒有「主管核准 → 財務放行 → 標記已付款」那條鏈
+     * （Q-04：退回補正、金額門檻加簽都沒有，少一關也沒有）。
+     * 任一位審核組成員按〔審核通過〕即完成，照認領的寫法（卡 1 的坑：
+     * 工作台的動作一定要先認領才有鍵，`actOnWorkbench` 已經處理）。
+     */
+    hr('⑦ finance〔審核通過〕→ 走完的單變 readonly');
     await loginAs(page, demoEmail('finance'));
     await selectOrg(page);
-    await actOnWorkbench(page, '放行', billId);
-    await loginAs(page, demoEmail('accounting'));
-    await selectOrg(page);
-    // 付款關：**先鎖副作用再推進** —— 順序反過來會出現「已放行但沒有付款紀錄」的鬼單。
-    await actOnWorkbench(page, '標記已付款', billId);
-    await actOnWorkbench(page, '送出', billId);
+    check('finance 按得到〔審核通過〕', await actOnWorkbench(page, '審核通過', billId));
 
     const finalStatus = await (async () => {
       const r = await eapi(page, 'GET', `/bills/${billId}`);

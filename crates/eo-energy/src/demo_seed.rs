@@ -961,6 +961,85 @@ async fn seed_flows(
         .await?;
         created.rating_bindings += 1;
     }
+
+    // 示範「本關要求」：一張假電費單停在平台資料審核，缺台電電費通知單、應付總金額空著——
+    // 使用者一開畫面就看到「本關要求」清單裡兩個 ✗（S1）。電號本身是假的（不對應任何真實台電戶），
+    // 掛一個專屬的示範假案場（不是借用屏東枋寮一號那種真案場）——
+    // workflow/subjects.rs:211 顯示電號時一律優先用「案場自己的電號」，借用真案場會讓畫面顯示
+    // 真案場的真電號、蓋掉假電號（R1 審查抓到的缺陷，20261118-0811-d REVIEW-1）。
+    // 掛一個假案場同時滿足 energy_demo_seed.rs「全組織的單都配得到案場」這條既有不變式，
+    // 也讓畫面上看到的還是設計要的那組假電號。
+    const FAKE_BILL_CUSTOMER_NUMBER: &str = "00-00-0000-00-0";
+    let demo_landowner: i64 = sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE organization_id = $1 ORDER BY id LIMIT 1")
+        .bind(org)
+        .fetch_one(&mut **tx)
+        .await?;
+    let fake_station = ensure_station(
+        tx,
+        ctx,
+        demo_landowner,
+        FAKE_BILL_CUSTOMER_NUMBER,
+        "示範案場（本關要求）",
+        "operating",
+        None,
+        "",
+        created,
+    )
+    .await?;
+    let existing_fake_bill: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM tbl_energy_bill WHERE organization_id = $1 AND customer_number_raw = $2 AND deleted_at IS NULL",
+    )
+    .bind(org)
+    .bind(FAKE_BILL_CUSTOMER_NUMBER)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let fake_bill_id = match existing_fake_bill {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar(
+                "INSERT INTO tbl_energy_bill
+                   (organization_id, station_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, data)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'reviewed', '{}'::jsonb) RETURNING id",
+            )
+            .bind(org)
+            .bind(fake_station)
+            .bind(FAKE_BILL_CUSTOMER_NUMBER)
+            .bind(date("2026-10-01"))
+            .bind(date("2026-10-31"))
+            .bind(date("2026-11-25"))
+            .fetch_one(&mut **tx)
+            .await?
+        }
+    };
+    let has_running: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM tbl_energy_workflow_execution
+           WHERE organization_id = $1 AND workflow_key = $2 AND subject_type = 'energyBill' AND subject_id = $3
+             AND status = 'running' AND deleted_at IS NULL)",
+    )
+    .bind(org)
+    .bind(&bill.key)
+    .bind(fake_bill_id.to_string())
+    .fetch_one(&mut **tx)
+    .await?;
+    if !has_running {
+        start_execution(
+            tx,
+            ctx,
+            StartExecution {
+                station_key: pingtung.into(),
+                workflow_key: bill.key.clone(),
+                subject_type: "energyBill".into(),
+                subject_id: fake_bill_id.to_string(),
+                business_date: date("2026-11-10"),
+                attributes: json!({ "bill": { "customerNumberRaw": FAKE_BILL_CUSTOMER_NUMBER } }),
+                definition: None,
+                station_id: None,
+            },
+        )
+        .await?;
+        created.executions += 1;
+    }
+
     Ok(())
 }
 

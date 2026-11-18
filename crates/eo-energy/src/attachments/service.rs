@@ -50,6 +50,10 @@ pub struct AttachmentRow {
     pub hash_algo: String,
     pub uploaded_at: DateTime<Utc>,
     pub status: String,
+    /// 封閉代碼，見 `eo_domain::attachment_limits::AttachmentCategory`；還沒判定／不需要判定時是 None。
+    pub category: Option<String>,
+    /// `{ classify: { state, judgedAt } }`：補件辨識中/自動判定/請選類別的狀態機放這裡，不另開欄位。
+    pub data: Value,
     pub organization_id: i64,
     pub execution_id: Option<i64>,
     pub ingest_batch_id: Option<i64>,
@@ -59,7 +63,63 @@ pub struct AttachmentRow {
 }
 
 pub const ATTACHMENT_COLS: &str = "id, storage_key, original_filename, mime_type, size, hash, hash_algo, uploaded_at, status,
-    organization_id, execution_id, ingest_batch_id, contract_id, uploaded_by_user_id, supersedes_attachment_id";
+    category, data, organization_id, execution_id, ingest_batch_id, contract_id, uploaded_by_user_id, supersedes_attachment_id";
+
+/// 補件背景辨識逾時（180 秒）：伺服器重啟留下的 `recognizing` 超過這個時間，讀的時候當 `needsCategory`（不另起排程）。
+pub const CLASSIFY_TIMEOUT_SECS: i64 = 180;
+
+/// 這份檔上傳那一刻的類別與 classify 狀態。
+/// · `source`（收件原檔）：一律 `taipowerNotice`，這裡也不判定——
+///   原檔本來就是台電電費通知單，不需要辨識。
+/// · `added`（補件）：PDF 且辨識服務有設定 → `recognizing`（實際送辨識在 `handlers.rs` 的
+///   `upload_to_execution`，拿到附件 id 之後才背景 spawn，這裡只標狀態）；否則 `needsCategory`。
+/// · 其他角色（收件批次內部流程既有的 `submitted`／`billScan` 等）：不是這個功能管的範圍，維持空白。
+fn initial_classification(role: &str, mime_type: &str, ctx: &Ctx) -> (Option<String>, Value) {
+    match role {
+        "source" => (Some("taipowerNotice".into()), json!({})),
+        "added" => {
+            let recognizing = mime_type == "application/pdf" && crate::tpr_client::TprClient::from_config(&ctx.core.config).is_some();
+            if recognizing {
+                (None, json!({ "classify": { "state": "recognizing", "startedAt": ctx.now() } }))
+            } else {
+                (None, json!({ "classify": { "state": "needsCategory" } }))
+            }
+        }
+        _ => (None, json!({})),
+    }
+}
+
+/// 從附件的 `data` 算「現在」的 classify 狀態（含逾時轉換；不寫回 DB，讀的時候算一次就好）。
+pub fn classify_state(data: &Value, now: DateTime<Utc>) -> Option<String> {
+    let classify = data.get("classify")?;
+    let state = classify.get("state").and_then(Value::as_str)?;
+    if state == "recognizing" {
+        let started = classify.get("startedAt").and_then(Value::as_str).and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+        if let Some(started) = started {
+            if (now - started.with_timezone(&Utc)).num_seconds() > CLASSIFY_TIMEOUT_SECS {
+                return Some("needsCategory".into());
+            }
+        }
+    }
+    Some(state.to_string())
+}
+
+/// 背景分類（或人工 PATCH）寫回結果：`category` 給了就覆蓋，`state` 一律覆蓋。
+/// 自己開交易、best-effort 對外；呼叫端（背景任務）失敗只記 log，不讓整個請求倒。
+pub async fn apply_classify_result(ctx: &Ctx, attachment_id: i64, category: Option<&str>, state: &str) -> ApiResult<()> {
+    let mut tx = ctx.core.pool.begin().await?;
+    sqlx::query(
+        "UPDATE tbl_energy_attachment SET category = COALESCE($2, category), data = data || $3
+          WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(attachment_id)
+    .bind(category)
+    .bind(json!({ "classify": { "state": state, "judgedAt": ctx.now() } }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, FromRow)]
 pub struct LinkRow {
@@ -179,11 +239,12 @@ async fn insert_rows(tx: &mut Tx<'_>, ctx: &Ctx, input: &UploadInput, storage_ke
         Owner::Contract(c) => (None, None, Some(c)),
     };
     let role = input.role.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "submitted".into());
+    let (category, data) = initial_classification(&role, &input.mime_type, ctx);
     let attachment: AttachmentRow = sqlx::query_as(&format!(
         "INSERT INTO tbl_energy_attachment
            (organization_id, execution_id, ingest_batch_id, contract_id, storage_key, original_filename, mime_type, size, hash, hash_algo,
-            uploaded_by_user_id, uploaded_at, status, supersedes_attachment_id, data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sha256', $10, $11, 'active', $12, $13) RETURNING {ATTACHMENT_COLS}"
+            uploaded_by_user_id, uploaded_at, status, category, supersedes_attachment_id, data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sha256', $10, $11, 'active', $12, $13, $14) RETURNING {ATTACHMENT_COLS}"
     ))
     .bind(ctx.org_id())
     .bind(execution_id)
@@ -196,8 +257,9 @@ async fn insert_rows(tx: &mut Tx<'_>, ctx: &Ctx, input: &UploadInput, storage_ke
     .bind(hash)
     .bind(ctx.user_id())
     .bind(ctx.now())
+    .bind(&category)
     .bind(input.supersedes_attachment_id)
-    .bind(json!({}))
+    .bind(&data)
     .fetch_one(&mut **tx)
     .await?;
 
@@ -385,6 +447,8 @@ pub struct AttachmentView {
     pub size: i64,
     pub hash: String,
     pub status: String,
+    pub category: Option<String>,
+    pub classify_state: Option<String>,
     pub uploaded_by_user_id: Option<i64>,
     pub uploaded_at: DateTime<Utc>,
     pub supersedes_attachment_id: Option<i64>,
@@ -392,7 +456,9 @@ pub struct AttachmentView {
 }
 
 /// 某 execution 的附件（新到舊，含它們掛在哪些關卡）。
-pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64) -> ApiResult<Vec<AttachmentView>> {
+/// `now`：算 classify 逾時要用app 的 Clock（`ctx.now()`），不可以用 `chrono::Utc::now()`——
+/// 測試用 `ManualClock` 固定在某一天，兩套時間一混，剛寫入的 `recognizing` 會被誤判成早就逾時。
+pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64, now: DateTime<Utc>) -> ApiResult<Vec<AttachmentView>> {
     let rows: Vec<AttachmentRow> = sqlx::query_as(&format!(
         "SELECT {ATTACHMENT_COLS} FROM tbl_energy_attachment WHERE execution_id = $1 AND deleted_at IS NULL
           ORDER BY uploaded_at DESC, id DESC"
@@ -424,6 +490,8 @@ pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64) -> ApiResult
             size: r.size,
             hash: r.hash,
             status: r.status,
+            classify_state: classify_state(&r.data, now),
+            category: r.category,
             uploaded_by_user_id: r.uploaded_by_user_id,
             uploaded_at: r.uploaded_at,
             supersedes_attachment_id: r.supersedes_attachment_id,
@@ -450,6 +518,9 @@ pub async fn list_for_contract(tx: &mut Tx<'_>, contract_id: i64) -> ApiResult<V
             size: r.size,
             hash: r.hash,
             status: r.status,
+            // 合約檔不走補件自動判定，沒有 classify 狀態。
+            classify_state: None,
+            category: r.category,
             uploaded_by_user_id: r.uploaded_by_user_id,
             uploaded_at: r.uploaded_at,
             supersedes_attachment_id: r.supersedes_attachment_id,
@@ -495,8 +566,30 @@ pub async fn remove_link(tx: &mut Tx<'_>, ctx: &Ctx, link: &LinkRow, attachment:
     Ok(())
 }
 
-/// 給回應用的附件摘要。
-pub fn summary(row: &AttachmentRow) -> Value {
+/// 人工選類別（判不出或改類別都走這裡）：封閉代碼驗證、寫入、稽核，state 記 `manual`。
+pub async fn set_category_manual(tx: &mut Tx<'_>, ctx: &Ctx, attachment: &AttachmentRow, category: &str) -> ApiResult<()> {
+    let Some(parsed) = eo_domain::attachment_limits::AttachmentCategory::parse(category) else {
+        return Err(err_d(400, "invalid_attachment_category", json!({ "category": category })));
+    };
+    sqlx::query("UPDATE tbl_energy_attachment SET category = $2, data = data || $3 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(attachment.id)
+        .bind(parsed.as_str())
+        .bind(json!({ "classify": { "state": "manual", "judgedAt": ctx.now() } }))
+        .execute(&mut **tx)
+        .await?;
+    audit::record(
+        tx,
+        ctx,
+        AuditInput::new("attachment.category_set", attachment.id, format!("設定附件類別「{}」：{}", attachment.original_filename, parsed.as_str()))
+            .label(attachment.original_filename.clone())
+            .payload(json!({ "attachmentId": attachment.id, "category": parsed.as_str() })),
+    )
+    .await?;
+    Ok(())
+}
+
+/// 給回應用的附件摘要。`now` 同 `list_for_execution`：要用 app 的 Clock。
+pub fn summary(row: &AttachmentRow, now: DateTime<Utc>) -> Value {
     json!({
         "id": row.id,
         "originalFilename": row.original_filename,
@@ -504,6 +597,8 @@ pub fn summary(row: &AttachmentRow) -> Value {
         "size": row.size,
         "hash": row.hash,
         "status": row.status,
+        "category": row.category,
+        "classifyState": classify_state(&row.data, now),
         "executionId": row.execution_id,
         "ingestBatchId": row.ingest_batch_id,
         "contractId": row.contract_id,
