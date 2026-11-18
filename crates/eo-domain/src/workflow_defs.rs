@@ -673,6 +673,7 @@ pub fn default_bill_approval_binding() -> SeedBinding {
 
 /// Q-04（2026-11-16 Marrash 確認）：單一審核步驟，電費單平台資料審核人員任一位通過即完成。
 /// 平台審核通過不代表 EasyFlow 已核准或已付款。
+/// G1（2026-11-18 使用者拍板）：通過即算應付；單沒案場或案場沒綁策略時通過整筆失敗（使用者 2026-11-18 拍板保留）。
 pub fn platform_review_bill() -> WorkflowDefinition {
     let mut d = WorkflowDefinition::new(
         "bill-approval",
@@ -695,10 +696,15 @@ pub fn platform_review_bill() -> WorkflowDefinition {
             .requires_field("totalAmount", "energy.bills.field.totalAmount")
             .requires_field("dueDate", "energy.bills.field.dueDate")
             .actions(vec![ActionDef::new("pass", "flow.action.pass", ActionKind::Advance, 0)]),
-        NodeDef::new("end", "平台審核通過", NodeType::End).layout(440, 120),
+        // 流程呼叫計算，不內含計算。
+        NodeDef::new("calc", "計算應付", NodeType::Calculation).service("rating.computePayout").layout(440, 120),
+        NodeDef::new("end", "平台審核通過", NodeType::End).layout(660, 120),
     ];
-    d.transitions =
-        vec![TransitionDef::new("start", "platform-review", 0), TransitionDef::new("platform-review", "end", 0)];
+    d.transitions = vec![
+        TransitionDef::new("start", "platform-review", 0),
+        TransitionDef::new("platform-review", "calc", 0),
+        TransitionDef::new("calc", "end", 0),
+    ];
     d
 }
 

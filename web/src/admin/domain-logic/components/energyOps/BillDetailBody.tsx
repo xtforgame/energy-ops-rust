@@ -172,6 +172,9 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
   const [tab, setTab] = React.useState(0);
   const [attachments, setAttachments] = React.useState<any[]>([]);
   const [audit, setAudit] = React.useState<any[]>([]);
+  /** 卡 G3：finance 沒有 `energy:audit:view`，/audit-events 回 403——要分得出「沒權限」
+   *  跟「真的沒資料」（HF11，B 文案），不能兩種都顯示「沒有資料。」。 */
+  const [auditDenied, setAuditDenied] = React.useState(false);
   const [lineage, setLineage] = React.useState<any[]>([]);
   const [actions, setActions] = React.useState<TaskAction[]>([]);
   /** 不能做事時後端會說**為什麼**（C7 增補 A）。前端不自己算。 */
@@ -286,12 +289,19 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
   // 分頁籤與動作列的資料 —— 都掛在 execution 上，沒有 execution 就沒有這些。
   React.useEffect(() => {
     if (!orgId || !execution) {
-      setAttachments([]); setAudit([]); setLineage([]); setActions([]); setBlocked(null); setRequirements([]); return;
+      setAttachments([]); setAudit([]); setAuditDenied(false); setLineage([]); setActions([]); setBlocked(null); setRequirements([]); return;
     }
     const eid = execution.id;
     refreshAttachmentsAndActions(eid);
+    setAuditDenied(false);
     energyHttp.get(`${base}/audit-events`, { params: { targetType: 'energyWorkflowExecution', targetId: String(eid) } })
-      .then(({ data }) => setAudit(Array.isArray(data) ? data : [])).catch(() => setAudit([]));
+      .then(({ data }) => setAudit(Array.isArray(data) ? data : []))
+      // 卡 G3：403 是「沒權限看」，跟真的查到 0 筆不是同一件事——分開記，
+      //    其他錯誤（網路、500……）照舊當成空陣列，不誤判成「沒權限」。
+      .catch((e) => {
+        setAudit([]);
+        setAuditDenied(e?.response?.status === 403);
+      });
     energyHttp.get(`${base}/executions/${eid}/lineage`)
       .then(({ data }) => setLineage(Array.isArray(data) ? data : (data?.nodes ?? []))).catch(() => setLineage([]));
     // 目前這一關的 task —— 動作要打在 task 上。
@@ -1500,7 +1510,8 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
             {/* 計數要用**列出來的那一份**（`extraAttachments`）——
                 頁籤寫 2 而點開只有 1 筆，使用者會以為有一份載不出來。 */}
             <Tab label={`${translate('energy.review.tabAttachments')}（${extraAttachments.length}）`} />
-            <Tab label={`${translate('energy.review.tabAudit')}（${audit.length}）`} />
+            {/* 卡 G3：沒權限時頁籤寫「稽核（—）」，不是「稽核（0）」——後者看起來像「查過了，沒有」。 */}
+            <Tab label={`${translate('energy.review.tabAudit')}（${auditDenied ? '—' : audit.length}）`} />
             <Tab label={`${translate('energy.review.tabLineage')}（${lineage.length}）`} />
             {/* US-6：財務要看得到「它是怎麼算的」。 */}
             <Tab label={`${translate('energy.review.tabPayouts')}（${payouts.length}）`} />
@@ -1655,7 +1666,17 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                       ) : null}
                     </TableCell>
                   </TableRow>
-                )) : <EmptyRow colSpan={3} />}
+                )) : auditDenied ? (
+                  // 卡 G3（HF11 B 文案）：沒權限不能顯示成「沒有資料。」——
+                  //    那會讓使用者以為真的查過、就是空的。真的沒資料時照舊是 EmptyRow。
+                  <TableRow>
+                    <TableCell colSpan={3}>
+                      <Typography variant="body2" color="text.secondary">
+                        {translate('energy.review.auditForbidden')}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : <EmptyRow colSpan={3} />}
               </TableBody>
             </Table>
           )}
