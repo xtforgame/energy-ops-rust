@@ -996,10 +996,20 @@ async fn seed_flows(
     let fake_bill_id = match existing_fake_bill {
         Some(id) => id,
         None => {
+            // 卡 G3：辨識值（ocr_extracted）要給成跟最終值一樣，否則
+            // `ingest/bills.rs:133` 的 `changed_fields` 拿「辨識值是空的」去比
+            // 「最終值有值」，會把這張假單誤標成「已人工修正」（它根本沒人改過）。
+            // `customerNumber` 是別名鍵（`extracted_key_alias`），其餘兩個同名。
+            let fake_bill_ocr_extracted = json!({
+                "customerNumber": FAKE_BILL_CUSTOMER_NUMBER,
+                "billingPeriodStart": "2026-10-01",
+                "billingPeriodEnd": "2026-10-31",
+                "dueDate": "2026-11-25",
+            });
             sqlx::query_scalar(
                 "INSERT INTO tbl_energy_bill
-                   (organization_id, station_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, data)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'reviewed', '{}'::jsonb) RETURNING id",
+                   (organization_id, station_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, ocr_extracted, data)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'reviewed', $7, '{}'::jsonb) RETURNING id",
             )
             .bind(org)
             .bind(fake_station)
@@ -1007,6 +1017,7 @@ async fn seed_flows(
             .bind(date("2026-10-01"))
             .bind(date("2026-10-31"))
             .bind(date("2026-11-25"))
+            .bind(fake_bill_ocr_extracted)
             .fetch_one(&mut **tx)
             .await?
         }

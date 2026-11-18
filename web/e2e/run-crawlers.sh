@@ -23,7 +23,7 @@ ALL=(audit-i18n flowgraph mywork queue binding executions doctype modes recognit
 if [ $# -gt 0 ]; then CRAWLERS=("$@"); else CRAWLERS=("${ALL[@]}"); fi
 
 DB=${E2E_DB:-eo_e2e}
-case "$DB" in eo_e2e*|energy_ops_cardf_*|energy_ops_cardf2_*) ;; *) echo "E2E_DB 必須以 eo_e2e 或 energy_ops_cardf_ 開頭（避免誤刪別的資料庫）：$DB" >&2; exit 2 ;; esac
+case "$DB" in eo_e2e*|energy_ops_cardf_*|energy_ops_cardf2_*|energy_ops_cardg1_*|energy_ops_cardg2_*|energy_ops_cardg3_*) ;; *) echo "E2E_DB 必須以 eo_e2e 或 energy_ops_cardf_ 開頭（避免誤刪別的資料庫）：$DB" >&2; exit 2 ;; esac
 TARGET=${CARGO_TARGET_DIR:-$ROOT/target}
 BIN=$TARGET/debug/energy-ops
 SHOTS=$ROOT/web/e2e/shots

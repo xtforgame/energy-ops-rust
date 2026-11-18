@@ -28,7 +28,7 @@ Usage:
 import type { Browser, Page } from 'puppeteer';
 import {
   APP, Scoreboard, hr, log, sleep, launch, shooter, loginAsAdmin, loginAs, demoEmail, selectOrg, seedBatch,
-  hardenPage,
+  hardenPage, eapi,
 } from '../lib/energyOpsHarness.ts';
 
 const board = new Scoreboard();
@@ -337,8 +337,11 @@ async function run() {
      * **前置條件：這一支要在乾淨 DB 上跑**（run-crawlers.sh 每支都重建資料庫）。
      * 不改成 `>=` 是因為那會讓「seed 少給一張」被殘留資料補滿而漏掉 ——
      * 這條斷言的意圖就是擋那件事。
+     *
+     * 卡 G3：七張＝原本六張 ＋ 卡 D commit 3eb6f8e 加的「本關要求」示範假單
+     * （電號 00-00-0000-00-0，`demo_seed.rs:977-1013`）。
      */
-    check('6 張單全在（demo seed 的絕對數字）', billRows === 6, { billRows });
+    check('7 張單全在（demo seed 的絕對數字）', billRows === 7, { billRows });
 
     const billText = await page.evaluate(() => document.body.innerText || '');
     check('顯示案場中文名（不是 id）', billText.includes('屏東枋寮一號'), null);
@@ -714,6 +717,18 @@ async function run() {
     check('K 段改值：finance 開得進主線單', enteredAsFinance);
     await sleep(2500);
 
+    // 卡 G3：直接打 /audit-events 量狀態碼（不只是看畫面字），finance 沒有
+    //    `energy:audit:view`（`energy_rbac.rs:121-126`）→ 預期 403。
+    const financeBillHash = await page.evaluate(() => window.location.hash);
+    const financeBillId = financeBillHash.match(/energyBillConsole\/(\d+)/)?.[1] ?? '';
+    const financeBillDetail = financeBillId ? await eapi(page, 'GET', `/bills/${financeBillId}`) : { status: 0, data: null };
+    const financeExecId = (financeBillDetail.data as any)?.executions?.[0]?.id ?? '';
+    const financeAuditApi = financeExecId
+      ? await eapi(page, 'GET', `/audit-events?targetType=energyWorkflowExecution&targetId=${financeExecId}`)
+      : { status: 0, data: null };
+    log('  卡 G3 AUDIT-403 finance:', JSON.stringify({ status: financeAuditApi.status, data: financeAuditApi.data }).slice(0, 200));
+    check('finance 打 /audit-events 回 403（直接量狀態碼）', financeAuditApi.status === 403, financeAuditApi);
+
     const amountInput = await page.$('[data-testid="final-totalAmount"]');
     check('找得到最終值輸入框', !!amountInput);
     if (amountInput) {
@@ -745,6 +760,26 @@ async function run() {
     check('最終值是新值', Number(correctedRow.final) === 127900, correctedRow);
     await shot(page, 'K2-review-corrected');
 
+    // 卡 G3：finance 沒有 `energy:audit:view`（`energy_rbac.rs:121-126`），/audit-events
+    //    會回 403——還是這個 finance 身分、還在同一張主線單，點「稽核歷程」頁籤應該看到
+    //    HF11 拍板的 B 文案，不是跟「真的沒資料」一樣的「沒有資料。」。
+    const financeAuditTab = await page.evaluate(() => {
+      const tab = Array.from(document.querySelectorAll('[role=tab]'))
+        .find((t) => (t as HTMLElement).innerText.includes('稽核歷程'));
+      if (!tab) return false;
+      (tab as HTMLElement).click();
+      return true;
+    });
+    check('finance 切得到稽核頁籤', financeAuditTab);
+    await sleep(1200);
+    const financeAuditText = await page.evaluate(
+      () => (document.querySelector('[data-testid="review-audit"]') as HTMLElement)?.innerText || '',
+    );
+    check('finance 沒有稽核權限：看到「沒權限」的字，不是「沒有資料。」',
+      financeAuditText.includes('你沒有檢視稽核紀錄的權限') && !financeAuditText.includes('沒有資料。'),
+      financeAuditText.slice(0, 200));
+    await shot(page, 'K2b-review-audit-forbidden');
+
     // K3 看稽核不需要用剛才改值的身分：finance 編輯主線單沒問題，但看
     // `/audit-events` 要 `gates::AUDIT_VIEW`（`audit/routes.rs:240`），這支
     // demo 角色不一定有；admin 兩者都有（上一版跑主線單時就驗過看得到稽核）。
@@ -764,6 +799,22 @@ async function run() {
     });
     check('K3 看稽核：admin 開得回主線單', reopenedAsAdmin);
     await sleep(2000);
+
+    // 卡 G3：admin 有 `energy:audit:view`（`energy_rbac.rs:66-70`）→ 同一支 API 預期 200、有資料。
+    const adminBillHash = await page.evaluate(() => window.location.hash);
+    const adminBillId = adminBillHash.match(/energyBillConsole\/(\d+)/)?.[1] ?? '';
+    const adminBillDetail = adminBillId ? await eapi(page, 'GET', `/bills/${adminBillId}`) : { status: 0, data: null };
+    const adminExecId = (adminBillDetail.data as any)?.executions?.[0]?.id ?? '';
+    const adminAuditApi = adminExecId
+      ? await eapi(page, 'GET', `/audit-events?targetType=energyWorkflowExecution&targetId=${adminExecId}`)
+      : { status: 0, data: null };
+    // `eapi()` 是頁面內原生 fetch，不會經過 `web/src/api/energy.ts:66` 那條
+    // `unwrapItems` adapter——後端這支本來就回 `{ items: [...] }`，前端的
+    // `energyHttp` 透過 adapter 轉成裸陣列，這裡要自己仿一次，不是反過來懷疑產品。
+    const adminAuditItems = (adminAuditApi.data as any)?.items;
+    log('  卡 G3 AUDIT-403 admin:', JSON.stringify({ status: adminAuditApi.status, count: Array.isArray(adminAuditItems) ? adminAuditItems.length : null }).slice(0, 200));
+    check('admin 打 /audit-events 回 200、有資料（直接量狀態碼）',
+      adminAuditApi.status === 200 && Array.isArray(adminAuditItems) && adminAuditItems.length > 0, adminAuditApi);
 
     // 稽核頁籤：改值要留下紀錄，而且是**中文**。
     const auditTab = await page.evaluate(() => {
@@ -799,13 +850,23 @@ async function run() {
       };
     });
     /**
-     * 五張（不是四張）：本月應付／進行中的流程／卡關／已放行未付／**待指認案場**。
-     * 最後那一張是後來加的 —— 而這條斷言從那時起就一直紅著沒人看到。
+     * 六張（不是四張）：本月應付／進行中的流程／卡關／已放行未付／**待指認案場**／
+     * **找不到生效合約**。最後那兩張是後來加的 —— 而這條斷言從那時起就一直紅著沒人看到。
+     *
+     * 卡 G3：卡 B commit 6b3c5aa 加了「找不到生效合約」那一格（workbench/mod.rs:91-97，
+     * count review_status='pendingContract'）→ 原本五張變六張。
      */
-    check('五張 KPI 卡都在', dash.cards.length === 5, dash.cards);
+    check('六張 KPI 卡都在', dash.cards.length === 6, dash.cards);
+    // 卡 G3：順便核 6 個標題都在（不是只看張數）。
+    check('六張 KPI 卡的標題都在（含「找不到生效合約」）',
+      ['本月應付', '進行中的流程', '卡關', '已放行未付', '待指認案場', '找不到生效合約']
+        .every((title) => dash.cards.some((c) => c.includes(title))), dash.cards);
     // demo seed 有 7 座案場（卡 A 20261118-0427-a 加了 s7 示範雙電號案場；
-    // demo_seed.rs s1-s7：1 座異常、3 座建設中，其中 2 座（s5/s6）還沒有座標）。
-    check('案場表有 7 列', dash.stationRows === 7, { rows: dash.stationRows });
+    // demo_seed.rs s1-s7：1 座異常、3 座建設中，其中 2 座（s5/s6）還沒有座標），
+    // 加卡 G3：卡 D 第 1 輪審查修正 c1f3f57 加的專屬假案場「示範案場（本關要求）」
+    // （demo_seed.rs:977-988，ensure_station(..., None, "")，那張 commit 訊息自己
+    //  寫了「案場從 7 變 8」）→ 8 座。
+    check('案場表有 8 列', dash.stationRows === 8, { rows: dash.stationRows });
     check('狀態是中文', dash.text.includes('運轉中') && dash.text.includes('異常'));
     // 卡關門檻由後端回，文案要寫出天數（不是一個沒頭沒尾的數字）。
     check('卡關卡片寫出門檻天數', /超過 \d+ 天/.test(dash.text), dash.cards);
@@ -951,10 +1012,11 @@ async function run() {
     });
     check('地圖元件在', map.present);
     check('WebGL canvas 建起來了（不是 0×0）', map.hasCanvas && map.canvasW > 100 && map.canvasH > 100, map);
-    // 絕對數字：demo seed 有 7 座案場（卡 A 加了 s7），其中 **5 座有座標、2 座沒有**。
+    // 絕對數字：demo seed 有 8 座案場（卡 A 加了 s7；卡 G3 的卡 D c1f3f57 又加了
+    //    一座假案場 coords=None），其中 **5 座有座標、3 座沒有**。
     //    WebGL 裡面讀不回來，只能靠場景回拋的計數 —— 這是唯一能證明「點真的畫出去」的訊號。
     check('地圖上畫了 5 個點', map.plotted === '5', map);
-    check('2 座沒座標的**沒有**被標在 (0,0)', map.skipped === '2', map);
+    check('3 座沒座標的**沒有**被標在 (0,0)', map.skipped === '3', map);
     check('圖例三個狀態都在', /運轉中/.test(map.text) && /建設中/.test(map.text) && /異常/.test(map.text), map.text);
     await shot(page, 'O1-station-map');
 
@@ -1090,9 +1152,11 @@ async function run() {
       };
     });
     // 卡 A 加了 s7（本來就有座標，算人工標定）：原本 5 manual＋2 無座標，
-    // 這裡採用一座（屏東枋寮三號，mock 地址推估）之後變 6 個點、剩 1 座沒座標。
+    // 這裡採用一座（屏東枋寮三號，mock 地址推估）之後變 6 個點、剩 1 座沒座標；
+    // 卡 G3 的假案場（卡 D c1f3f57，coords=None、地址是空字串）沒有推估按鈕
+    // （下面「推估按鈕剩 1 顆」PASS 對得上），推不掉、也採用不到 → 沒座標的剩 2 座。
     check('採用後地圖上變成 6 個點（重整仍成立＝真的寫進 DB）', after3.plotted === '6', after3);
-    check('沒座標的剩 1 座', after3.skipped === '1', after3);
+    check('沒座標的剩 2 座', after3.skipped === '2', after3);
     check('推估按鈕剩 1 顆', after3.btns === 1, after3);
     // 來源要看得出來：5 座 manual ＋ 1 座 mock。
     check('座標來源標得出「人工標定」與「地址推估」',
