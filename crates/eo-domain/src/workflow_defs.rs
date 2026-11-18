@@ -761,18 +761,18 @@ pub fn utility_bill() -> WorkflowDefinition {
             .actions(vec![submit(0), request_abort(9)]),
         NodeDef::new("manager-approve", "主管核准", NodeType::HumanTask)
             .rule(cxo_fallback_manager_rule())
-            .layout(200, 120)
+            .layout(400, 120)
             .actions(vec![approve(), send_back_previous()]),
         NodeDef::new("finance-release", "財務放行", NodeType::HumanTask)
             .rule(AssignmentRule::department(DEPT_FINANCE, "all"))
-            .layout(400, 120)
+            .layout(600, 120)
             .actions(vec![release(), send_back_previous()]),
         NodeDef::new("payment", "付款", NodeType::HumanTask)
             .rule(AssignmentRule::department(DEPT_ACCOUNTING, "all"))
             .revertable(false)
-            .layout(600, 120)
+            .layout(800, 120)
             .actions(mark_paid_then_submit()),
-        NodeDef::new("end", "完成", NodeType::End).layout(800, 120),
+        NodeDef::new("end", "完成", NodeType::End).layout(1000, 120),
     ];
     d.transitions = vec![
         TransitionDef::new("start", "clerk-review", 0),
