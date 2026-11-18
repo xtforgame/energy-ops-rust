@@ -8,7 +8,9 @@ use eo_energy::master_data::{self, landowner_overview, station_overview};
 use eo_energy::workbench;
 use eo_energy::workflow::model::TaskRow;
 use eo_energy::workflow::views;
+use reqwest::Method;
 use serde_json::{json, Value};
+use std::fs;
 
 struct Fx {
     app: TestApp,
@@ -390,6 +392,189 @@ async fn master_data_writes() {
     let types: Vec<&str> = history["items"].as_array().unwrap().iter().map(|h| h["type"].as_str().unwrap()).collect();
     assert!(types.contains(&"allocation.created"), "{types:?}");
     assert!(types.contains(&"allocation.ended"), "{types:?}");
+}
+
+/// 卡 20261118-0810-a2 S1／S2：合約 CRUD（含 `stationIds` 同步、驗證）、合約檔上傳／下載。
+#[actix_web::test]
+async fn contracts_and_attachments() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("carda2-org").await;
+    let base = app.e(org, "");
+
+    let lo = expect_status!(app.post(&owner, &format!("{base}/landowners"), json!({ "name": "合約地主" })).await, 200);
+    let landowner_id = lo["id"].as_i64().unwrap();
+    let st1 = app.station(org, landowner_id, "99-c-0001", "合約案場一").await;
+    let st2 = app.station(org, landowner_id, "99-c-0002", "合約案場二").await;
+
+    // S1：新增合約、連兩個案場。
+    let created = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({
+                "contractNo": "CT-A2-001", "contractType": "土地租賃", "landownerId": landowner_id,
+                "stationIds": [st1, st2], "signedOn": "2026-01-01", "validFrom": "2026-01-01", "validTo": "2030-12-31",
+                "renewalRemindOn": "2030-06-01", "termsVersion": "v1", "paymentFrequency": "quarterly", "paymentTerms": "每季月底付款",
+            }),
+        )
+        .await,
+        200
+    );
+    let contract_id = created["id"].as_i64().unwrap();
+    assert_eq!(created["stations"].as_array().unwrap().len(), 2, "{created}");
+    assert_eq!(created["paymentFrequency"], "quarterly");
+
+    let bad_freq = expect_status!(
+        app.post(&owner, &format!("{base}/contracts"), json!({ "contractNo": "CT-BAD", "landownerId": landowner_id, "validFrom": "2026-01-01", "paymentFrequency": "weekly" })).await,
+        400
+    );
+    assert_eq!(bad_freq["code"], "bad_payment_frequency");
+
+    let bad_range = expect_status!(
+        app.post(&owner, &format!("{base}/contracts"), json!({ "contractNo": "CT-BAD2", "landownerId": landowner_id, "validFrom": "2026-01-01", "validTo": "2025-01-01" })).await,
+        400
+    );
+    assert_eq!(bad_range["code"], "bad_date_range");
+
+    // 編輯：整包送上來，改到期日、把案場清單收斂成只剩 st1（軟刪 st2 那一列，不硬刪）。
+    let updated = expect_status!(
+        app.patch(
+            &owner,
+            &format!("{base}/contracts/{contract_id}"),
+            json!({
+                "contractNo": "CT-A2-001", "landownerId": landowner_id, "stationIds": [st1],
+                "validFrom": "2026-01-01", "validTo": "2031-12-31", "paymentFrequency": "quarterly",
+            }),
+        )
+        .await,
+        200
+    );
+    assert_eq!(updated["validTo"], "2031-12-31");
+    assert_eq!(updated["stations"].as_array().unwrap().len(), 1, "{updated}");
+
+    // S2：上傳合約 PDF，清單出現一筆，下載回來位元組一致。
+    const PDF: &[u8] = b"%PDF-1.4\n% carda2 contract test\n";
+    let mut form = reqwest::multipart::Form::new();
+    let part = reqwest::multipart::Part::bytes(PDF.to_vec()).file_name("contract.pdf").mime_str("application/pdf").unwrap();
+    form = form.part("file", part);
+    let (s, v) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/contracts/{contract_id}/attachments")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{v}");
+    let attachment_id = v["id"].as_i64().unwrap();
+
+    let list = expect_status!(app.get(&owner, &format!("{base}/contracts/{contract_id}/attachments")).await, 200);
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+
+    let dl = app.req(Some(&owner), Method::GET, &format!("{base}/attachments/{attachment_id}/download")).send().await.unwrap();
+    assert_eq!(dl.status().as_u16(), 200);
+    assert_eq!(dl.bytes().await.unwrap().as_ref(), PDF);
+
+    let got = expect_status!(app.get(&owner, &format!("{base}/contracts/{contract_id}")).await, 200);
+    assert_eq!(got["attachmentCount"], 1, "{got}");
+}
+
+/// 卡 20261118-0810-a2 S3：發電案場清單 Excel 匯入。壞檔 dryRun 回 4 種錯碼且 DB 不變；
+/// 好檔 dryRun 不寫、正式匯入新增 8 個案場、10 個電號；再匯一次好檔不重複建立。
+#[actix_web::test]
+async fn station_import() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("carda2-import-org").await;
+    let base = app.e(org, "");
+    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+    let good = fs::read(format!("{fixtures}/stations-import-fake.xlsx")).expect("好檔：先跑 evidence/make-fake-xlsx.py 產生 tests/fixtures");
+    let bad = fs::read(format!("{fixtures}/stations-import-fake-bad.xlsx")).expect("壞檔：先跑 evidence/make-fake-xlsx.py 產生 tests/fixtures");
+
+    // 壞檔的 meter_taken 那一列撞的是示範資料既有電號（demo_seed.rs 的 s1 主電號）；
+    // 測試環境不跑 demo seed，所以在這個組織自己先用 API 建一座同電號的案場來撞
+    // （走 API 才會像 create_station 一樣同時補一列 tbl_energy_station_meter；
+    // `app.station()` 那個測試小工具只插 tbl_energy_station，少了 meter 那一列，
+    // 匯入檢查不到既有 meter，反而會因為 DB 的 customer_number 唯一鍵直接炸裂）。
+    let existing_lo = expect_status!(app.post(&owner, &format!("{base}/landowners"), json!({ "name": "既有地主" })).await, 200);
+    expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/stations"),
+            json!({ "name": "既有案場", "customerNumber": "00-60-1600-79-5", "landownerId": existing_lo["id"] }),
+        )
+        .await,
+        200
+    );
+
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+
+    // 壞檔 dryRun：4 種錯碼，DB 筆數不變。
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(bad.clone()).file_name("bad.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "1");
+    let (s, v) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/stations")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{v}");
+    assert_eq!(v["dryRun"], true);
+    let codes: Vec<&str> = v["errors"].as_array().unwrap().iter().map(|e| e["code"].as_str().unwrap()).collect();
+    assert!(codes.contains(&"required"), "{codes:?}");
+    assert!(codes.contains(&"bad_number"), "{codes:?}");
+    assert!(codes.contains(&"duplicate_meter"), "{codes:?}");
+    assert!(codes.contains(&"meter_taken"), "{codes:?}");
+    let after_bad: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after_bad, "壞檔 dryRun 不該動到任何一列");
+
+    // 好檔 dryRun：不寫。
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(good.clone()).file_name("good.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "1");
+    let (s, v) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/stations")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{v}");
+    assert_eq!(v["errors"].as_array().unwrap().len(), 0, "{v}");
+    assert_eq!(v["created"]["stations"], 8, "{v}");
+    assert_eq!(v["created"]["meters"], 10, "{v}");
+    let after_dry: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after_dry, "好檔 dryRun 也不該真的寫進去");
+
+    // 正式匯入：8 個案場、10 個電號；受款對象清單出現子公司與台電區處。
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(good.clone()).file_name("good.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "0");
+    let (s, v) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/stations")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{v}");
+    assert_eq!(v["created"]["stations"], 8, "{v}");
+    assert_eq!(v["created"]["meters"], 10, "{v}");
+    let after_real: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(after_real, before + 8, "真的新增了 8 個案場");
+
+    let payees = expect_status!(app.get(&owner, &format!("{base}/landowners")).await, 200);
+    let names: Vec<&str> = payees["items"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert!(names.iter().any(|n| n.contains("假控股")), "{names:?}");
+    assert!(names.iter().any(|n| n.contains("假台電")), "{names:?}");
+
+    // 再匯一次好檔：案場算 updated，電號已在同一案場就略過，不重複建立。
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(good).file_name("good.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "0");
+    let (s, v) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/stations")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{v}");
+    assert_eq!(v["created"]["stations"], 0, "{v}");
+    assert_eq!(v["created"]["meters"], 0, "{v}");
+    assert_eq!(v["updated"]["stations"], 8, "{v}");
+    let after_reimport: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(after_reimport, after_real, "重匯同一份好檔不重複建立案場");
 }
 
 /// 來源：masterDataOverview.test.ts「landownerOverview 呼叫得到（這條就是在擋 ReferenceError 型的 500）」

@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useNavigate } from 'react-router-dom';
@@ -59,6 +60,13 @@ const StationsPage: React.FC = () => {
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState<FormState>(emptyForm);
   const [saving, setSaving] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [importFile, setImportFile] = React.useState<File | null>(null);
+  const [importResult, setImportResult] = React.useState<{
+    dryRun: boolean; created: { stations: number; meters: number; payees: number }; updated: { stations: number };
+    skipped: number; errors: Array<{ row: number; column: string; code: string; message: string }>;
+  } | null>(null);
+  const [importing, setImporting] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!orgId) { setRows([]); setDenied(false); return; }
@@ -130,6 +138,47 @@ const StationsPage: React.FC = () => {
     }
   };
 
+  const openImport = () => { setImportFile(null); setImportResult(null); setImportOpen(true); };
+
+  const runImport = async (dryRun: boolean) => {
+    if (!orgId || !importFile) return;
+    setImporting(true);
+    try {
+      const data = new FormData();
+      data.append('file', importFile, importFile.name);
+      data.append('dryRun', dryRun ? '1' : '0');
+      const { data: result } = await energyHttp.post(`${base}/imports/stations`, data);
+      setImportResult(result);
+      if (!dryRun && (!result.errors || result.errors.length === 0)) {
+        // 匯入可能新建子公司／台電區處受款對象：案場清單要顯示「持有子公司」欄，
+        // landowners 這份下拉快取也要跟著重撈，不然案場有 spvPayeeId 但名字對不到（顯示「—」）。
+        load();
+        loadLandowners();
+      }
+    } catch (e: any) {
+      notify(apiErrorCode(e) || e?.message || 'import failed', { type: 'error' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const downloadErrorsCsv = () => {
+    if (!importResult?.errors?.length) return;
+    const esc = (s: string) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      [translate('energy.stations.importErrorRow'), translate('energy.stations.importErrorColumn'), translate('energy.stations.importErrorMessage')].map(esc).join(','),
+      ...importResult.errors.map((e) => [e.row, e.column, e.message].map(esc).join(',')),
+    ];
+    const csv = `﻿${lines.join('\r\n')}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'import-errors.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <EnergyPageFrame orgId={orgId} denied={denied} loading={loading}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
@@ -151,6 +200,9 @@ const StationsPage: React.FC = () => {
           <Tooltip title={translate('ra.action.refresh')}>
             <IconButton onClick={load} disabled={loading}><RefreshIcon /></IconButton>
           </Tooltip>
+          <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={openImport} data-testid="station-import-open">
+            {translate('energy.stations.importExcel')}
+          </Button>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} data-testid="station-new">
             {translate('energy.stations.newStation')}
           </Button>
@@ -278,6 +330,75 @@ const StationsPage: React.FC = () => {
           <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
           <Button variant="contained" onClick={save} disabled={saving || !form.name || !form.landownerId} data-testid="station-form-save">
             {translate('ra.action.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={importOpen} onClose={() => setImportOpen(false)} fullWidth maxWidth="sm" data-testid="station-import-dialog">
+        <DialogTitle>{translate('energy.stations.importTitle')}</DialogTitle>
+        <DialogContent>
+          <Stack gap={2} mt={1}>
+            <Button variant="outlined" component="label" data-testid="station-import-choose">
+              {importFile ? importFile.name : translate('energy.stations.chooseFile')}
+              <input
+                type="file"
+                hidden
+                accept=".xlsx"
+                onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); }}
+              />
+            </Button>
+            {importResult && (
+              <Stack gap={1}>
+                {importResult.errors.length === 0 ? (
+                  <Typography variant="body2" data-testid="station-import-summary">
+                    {translate('energy.stations.importResultCreated', { stations: importResult.created.stations, meters: importResult.created.meters })}
+                    {importResult.updated.stations ? ` · ${translate('energy.stations.importResultUpdated', { stations: importResult.updated.stations })}` : ''}
+                    {importResult.skipped ? ` · ${translate('energy.stations.importResultSkipped', { count: importResult.skipped })}` : ''}
+                  </Typography>
+                ) : (
+                  <>
+                    <Typography variant="subtitle2" color="error" data-testid="station-import-error-title">
+                      {translate('energy.stations.importErrorsTitle')}（{importResult.errors.length}）
+                    </Typography>
+                    <Table size="small" data-testid="station-import-error-table">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>{translate('energy.stations.importErrorRow')}</TableCell>
+                          <TableCell>{translate('energy.stations.importErrorColumn')}</TableCell>
+                          <TableCell>{translate('energy.stations.importErrorMessage')}</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {importResult.errors.map((e, idx) => (
+                          <TableRow key={idx} data-testid="station-import-error-row">
+                            <TableCell>{e.row}</TableCell>
+                            <TableCell>{e.column}</TableCell>
+                            <TableCell>{e.message}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <Button size="small" onClick={downloadErrorsCsv} data-testid="station-import-download-csv">
+                      {translate('energy.stations.downloadErrorsCsv')}
+                    </Button>
+                  </>
+                )}
+              </Stack>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportOpen(false)}>{translate('ra.action.cancel')}</Button>
+          <Button onClick={() => runImport(true)} disabled={!importFile || importing} data-testid="station-import-check">
+            {translate('energy.stations.checkFile')}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => runImport(false)}
+            disabled={!importFile || importing || !importResult || importResult.errors.length > 0}
+            data-testid="station-import-do"
+          >
+            {translate('energy.stations.doImport')}
           </Button>
         </DialogActions>
       </Dialog>

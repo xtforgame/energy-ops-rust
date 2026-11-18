@@ -5,8 +5,10 @@
 //! 電號（一對多）、地主分配各自獨立成 `meters`／`allocations` 子模組。
 
 mod allocations;
+mod contracts;
 mod meters;
 mod overview;
+mod station_import;
 
 use crate::audit::{self, AuditInput};
 use crate::common::{day, day_opt, err, err_d, parse_day, Ctx, RequestMeta, Tx};
@@ -27,6 +29,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub use allocations::{allocation_history, create_allocation, end_allocation, list_allocations, update_allocation};
+pub use contracts::contract_in_org;
 pub use meters::{create_meter, list_meters, update_meter};
 pub use overview::{landowner_overview, station_overview};
 
@@ -61,6 +64,11 @@ impl AppPlugin for MasterDataPlugin {
         cfg.patch(&path("/landowners/{landownerId}"), web::patch().to(update_landowner_handler));
         cfg.get(&path("/landowners/{landownerId}"), web::get().to(landowner_get));
         cfg.get(&path("/landowners/{landownerId}/overview"), web::get().to(landowner_overview_handler));
+        cfg.get(&path("/contracts"), web::get().to(contracts::list_handler));
+        cfg.post(&path("/contracts"), web::post().to(contracts::create_handler));
+        cfg.get(&path("/contracts/{contractId}"), web::get().to(contracts::get_handler));
+        cfg.patch(&path("/contracts/{contractId}"), web::patch().to(contracts::update_handler));
+        cfg.post(&path("/imports/stations"), web::post().to(station_import::import_handler));
     }
 }
 
@@ -363,8 +371,9 @@ pub async fn get_landowner(tx: &mut Tx<'_>, access: &OrgAccess, id: i64) -> ApiR
     .await?;
     let station_ids: Vec<i64> = stations.iter().map(|s| s.id).collect();
     let station_name: HashMap<i64, String> = stations.iter().map(|s| (s.id, s.name.clone())).collect();
-    let contracts: Vec<(i64, String, Option<String>, NaiveDate, Option<NaiveDate>, String, Option<i32>)> = sqlx::query_as(
-        "SELECT id, contract_no, sign_method, valid_from, valid_to, stage, installment_total FROM tbl_energy_contract
+    let contracts: Vec<(i64, String, Option<String>, NaiveDate, Option<NaiveDate>, String, Option<i32>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT id, contract_no, sign_method, valid_from, valid_to, stage, installment_total, contract_type, payment_frequency
+           FROM tbl_energy_contract
           WHERE organization_id = $1 AND landowner_id = $2 AND deleted_at IS NULL ORDER BY valid_from DESC, id DESC",
     )
     .bind(org)
@@ -430,7 +439,8 @@ pub async fn get_landowner(tx: &mut Tx<'_>, access: &OrgAccess, id: i64) -> ApiR
             json!({
                 "id": c.0, "contractNo": c.1, "stationId": sid, "stationName": sid.and_then(|s| station_name.get(&s)),
                 "signMethod": c.2, "validFrom": day(c.3), "validTo": day_opt(c.4), "stage": c.5,
-                "installmentTotal": c.6, "installmentPaid": mine.iter().filter(|i| i.5 == "paid").count(),
+                "installmentTotal": c.6, "contractType": c.7, "paymentFrequency": c.8,
+                "installmentPaid": mine.iter().filter(|i| i.5 == "paid").count(),
                 "installments": mine.iter().map(|i| json!({
                     "id": i.0, "seq": i.2, "dueDate": day(i.3), "amount": i.4.to_string(), "status": i.5,
                 })).collect::<Vec<_>>(),
