@@ -690,29 +690,35 @@ async function run() {
 
     // 真的改一個值 → 存 → 重整後「已人工修正」標記要出現。
     //
-    // **主線那張單（127,848.00）不能拿來改**：Q-04 起它由 admin 發起、單一審核流程
-    //    停在平台資料審核，admin 是發起人被 `resolve_mode.rs` 排除（readonly／ExcludedOwner），
-    //    輸入框是 disabled，Puppeteer 打不進去（`FINDINGS.md` S1）。
-    //    → 改走「校對完沒送出」那張（`demo_seed.rs` `SampleRole::Reviewed`：
-    //       沒有 execution，判成 `Intake`，可改）。跟主線單一樣用唯一值（金額）定位，
-    //       不要用案場名或列順序（F 段已指認掉一件，名字／順序都不可靠）。
+    // **admin 不能改這張單**：Q-04 起它由 admin 發起、單一審核流程停在平台資料審核，
+    //    admin 是發起人被 `resolve_mode.rs` 排除（readonly／ExcludedOwner），輸入框
+    //    disabled，Puppeteer 打不進去（`FINDINGS.md` S1）。
+    //    → 不是換單，是換**審核者**：finance（`demo_seed.rs` 種進 `bill-reviewers`
+    //       部門）不是發起人、又是「平台資料審核」這一關的候選人
+    //       （`workflow_defs.rs:686` 部門規則 ＋ `:689` `.subject_edit(true)`），
+    //       `resolve_mode.rs` 判成 `Revise`、可改。單還是同一張（127,848），
+    //       execution／稽核歷程都留著，K3 才驗得到稽核內容。
+    //       （上一版換成「校對完沒送出」那張沒有 execution 的單，K3「稽核有內容」
+    //        就必然是空的——那是這次改法自己造成的，不是示範資料漂移。）
+    await loginAs(page, demoEmail('finance'));
+    await selectOrg(page);
     await gotoPage(page, 'energyBillConsole', '單據清單');
     await sleep(900);
-    const enteredReviewed = await page.evaluate(() => {
+    const enteredAsFinance = await page.evaluate(() => {
       const row = Array.from(document.querySelectorAll('[data-testid="bill-row"]'))
-        .find((tr) => (tr as HTMLElement).innerText.includes('5,035.00'));
+        .find((tr) => (tr as HTMLElement).innerText.includes('127,848.00'));
       if (!row) return false;
       (row as HTMLElement).click();
       return true;
     });
-    check('K 段改值：找到「校對完沒送出」那張可改的單', enteredReviewed);
+    check('K 段改值：finance 開得進主線單', enteredAsFinance);
     await sleep(2500);
 
     const amountInput = await page.$('[data-testid="final-totalAmount"]');
     check('找得到最終值輸入框', !!amountInput);
     if (amountInput) {
       await amountInput.click({ clickCount: 3 });
-      await amountInput.type('5200.00', { delay: 15 });
+      await amountInput.type('127900.00', { delay: 15 });
     }
     await sleep(400);
     const saved = await page.evaluate(() => {
@@ -734,11 +740,30 @@ async function run() {
       };
     });
     // 這三條合起來就是「三層值」的證明：改了最終值，**辨識值一個字都沒動**。
-    // 金額換成「校對完沒送出」那張的辨識值（canonical-samples.json 的 payableTotal=5035）。
     check('改過的欄位被標記出來', correctedRow.changed === '1', correctedRow);
-    check('辨識值仍是原值（校對不可覆蓋辨識值）', Number(correctedRow.ocr) === 5035, correctedRow);
-    check('最終值是新值', Number(correctedRow.final) === 5200, correctedRow);
+    check('辨識值仍是原值（校對不可覆蓋辨識值）', Number(correctedRow.ocr) === 127848, correctedRow);
+    check('最終值是新值', Number(correctedRow.final) === 127900, correctedRow);
     await shot(page, 'K2-review-corrected');
+
+    // K3 看稽核不需要用剛才改值的身分：finance 編輯主線單沒問題，但看
+    // `/audit-events` 要 `gates::AUDIT_VIEW`（`audit/routes.rs:240`），這支
+    // demo 角色不一定有；admin 兩者都有（上一版跑主線單時就驗過看得到稽核）。
+    // 換回 admin 再開回同一張單——跟誰改值無關，K3 驗的是「這張單有稽核內容」。
+    await loginAsAdmin(page);
+    await selectOrg(page);
+    await gotoPage(page, 'energyBillConsole', '單據清單');
+    await sleep(900);
+    // 金額欄這時已經被 K2 改成 127900.00，不能再用 127,848.00 找這一列——
+    // 改用電號（00-60-1600-79-5，K1 段已經確認過是這張單的，編輯不會動到它）。
+    const reopenedAsAdmin = await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('[data-testid="bill-row"]'))
+        .find((tr) => (tr as HTMLElement).innerText.includes('00-60-1600-79-5'));
+      if (!row) return false;
+      (row as HTMLElement).click();
+      return true;
+    });
+    check('K3 看稽核：admin 開得回主線單', reopenedAsAdmin);
+    await sleep(2000);
 
     // 稽核頁籤：改值要留下紀錄，而且是**中文**。
     const auditTab = await page.evaluate(() => {
@@ -757,7 +782,7 @@ async function run() {
     check('稽核顯示中文不是 raw type',
       !/flow\.|bill\.|payout\./.test(auditText), auditText.slice(0, 200));
     await shot(page, 'K3-review-audit');
-
+    // L 段以後已經是 admin 身分（K3 前換回去了），不用再換一次。
 
     // ---------------------------------------------------------------
     hr('L. C4-1 Dashboard（P7）');
