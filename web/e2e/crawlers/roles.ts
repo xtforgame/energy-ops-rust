@@ -1181,9 +1181,9 @@ async function run() {
         steps.push({ step: 'strategy', seen: !!strategySeg, text: strategySeg?.innerText.replace(/\n/g, ' ') ?? '' });
         if (!strategySeg) continue;
 
-        // ④ 案場 → 最近的單 → **應付頁籤**（最多試前 3 筆）
+        // ④ 案場 → 最近的單 → **應付頁籤**（最多試前 20 筆，跟產品 RECENT_BILL_LIMIT 對齊）
         const stationHash = location.hash;
-        const billCount = Math.min(3, document.querySelectorAll('[data-testid="station-bill"]').length);
+        const billCount = Math.min(20, document.querySelectorAll('[data-testid="station-bill"]').length);
         if (!billCount) continue;
         let found = false;
         for (let bi = 0; bi < billCount; bi += 1) {

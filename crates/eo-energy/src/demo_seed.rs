@@ -863,6 +863,10 @@ async fn seed_flows(
         // 用電電費單：一份定義綁兩座高壓案場（不要各發一版內容相同的定義）。
         (chiayi1, "consumptionBill", utility_key.as_str(), utility, OPEN_FROM, None, "RECOGNITION.md §9-1 用電電費單付款流程"),
         (chiayi2, "consumptionBill", utility_key.as_str(), utility, OPEN_FROM, None, "RECOGNITION.md §9-1 用電電費單付款流程"),
+        // G1（20261118-1149，HANDOFF 7 設計缺陷補）：屏東枋寮二號（s2，Plain 單電號）綁 v2，
+        // OPEN_FROM 起不設迄日 —— v1／v2 都是 platform_review_bill 的複製，兩版都含計算應付節點，
+        // Plain 單的 business_date 不管落在換版日前後都拿得到同一版，不必再管換版日。
+        ("11-72-8007-95-8", "electricityBill", bill.key.as_str(), v2, OPEN_FROM, None, "G1：示範單一審核後產生應付"),
     ];
     for (key, doc_type, workflow_key, def_id, from, to, note) in station_bindings {
         let b = Binding {
@@ -933,7 +937,13 @@ async fn seed_flows(
     };
     let s1 = seeded.stations[pingtung];
     let s3 = seeded.stations[chiayi1];
-    for (station, strategy_id, from, to) in [(s1, share, OPEN_FROM, Some(SWITCH_DAY)), (s1, unit, SWITCH_DAY, None), (s3, share, OPEN_FROM, None)] {
+    // G1（20261118-1149）：屏東枋寮二號（11-72-8007-95-8＝Plain 範本電號）綁一組 share 策略，
+    // 讓示範資料的「無餘電需付款」那張單通過平台資料審核後，計算節點算得出應付（只是補示範資料，
+    // 不是放寬「沒綁策略就通過不了」這道擋）。
+    let s2 = seeded.stations["11-72-8007-95-8"];
+    for (station, strategy_id, from, to) in
+        [(s1, share, OPEN_FROM, Some(SWITCH_DAY)), (s1, unit, SWITCH_DAY, None), (s3, share, OPEN_FROM, None), (s2, share, OPEN_FROM, None)]
+    {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM tbl_energy_rating_strategy_binding
                WHERE organization_id = $1 AND station_id = $2 AND strategy_id = $3 AND valid_from = $4 AND deleted_at IS NULL)",
@@ -1159,6 +1169,8 @@ pub struct SampleBillsReport {
     pub main_execution_id: Option<i64>,
     /// 候選池情境那張的執行（manager 認領並推完、operator 只在候選池）。
     pub candidate_execution_id: Option<i64>,
+    /// G1：無餘電需付款那張的執行（finance 直接通過，計算節點自然寫出應付）。
+    pub plain_execution_id: Option<i64>,
     /// 這一次真的灌了（已存在而略過時為 false）。
     pub created: bool,
 }
@@ -1192,6 +1204,8 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
     let mut out = SampleBillsReport { batch_id: Some(batch.id), created: true, ..Default::default() };
     let mut main_bill = None;
     let mut corrected_bill = None;
+    let mut plain_bill = None;
+    let mut plain_attachment_id = None;
     for (file, role) in SAMPLES {
         let bytes = std::fs::read(dir.join(file)).map_err(|e| ApiError::internal(format!("demo seed: 讀不到範本 {}: {e}", dir.join(file).display())))?;
         let ocr = crate::fake_tpr::canonical_sample(file).ok_or_else(|| ApiError::internal(format!("demo seed: canonical sample {file} missing")))?;
@@ -1224,13 +1238,25 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
                 SampleRole::Corrected => {
                     sqlx::query("UPDATE tbl_energy_bill SET total_amount = 4800.00 WHERE id = $1").bind(bill_id).execute(&mut *tx).await?;
                 }
-                SampleRole::Plain => {}
+                // G1（HANDOFF 16，設計缺陷補）：這張範本（躉購通知單格式）紙上本來就沒印繳費期限，
+                // 辨識服務誠實回「不適用」；dueDate 是本關要求的必填欄，不補就推不過平台資料審核。
+                // 50000.00 是示範值（應付＝50000×sharePercent%，畫面上好心算），只改最終值。
+                SampleRole::Plain => {
+                    sqlx::query("UPDATE tbl_energy_bill SET due_date = '2026-07-25', total_amount = 50000.00 WHERE id = $1")
+                        .bind(bill_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
             }
             if role == SampleRole::Main {
                 main_bill = Some(bill_id);
             }
             if role == SampleRole::Corrected {
                 corrected_bill = Some(bill_id);
+            }
+            if role == SampleRole::Plain {
+                plain_bill = Some(bill_id);
+                plain_attachment_id = Some(att.id);
             }
         }
         crate::ingest::service::recompute_batch_status(&mut tx, batch.id).await?;
@@ -1284,6 +1310,36 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
         .await?;
         tx.commit().await?;
         out.main_execution_id = Some(exec.id);
+    }
+
+    // G1（20261118-1149）：無餘電需付款那張配到屏東枋寮二號（s2，11-72-8007-95-8，已在 seed_flows 綁
+    // revenueShare 策略）。finance 一步到位通過平台資料審核，讓計算節點自然寫出一筆應付（示範資料，
+    // 不是放寬「沒綁策略就通過不了」這道擋）。platform_review_bill 沒有條件分支，attributes 不影響走向。
+    if let Some(bill_id) = plain_bill {
+        let mut tx = core.pool.begin().await?;
+        let exec = start_execution(
+            &mut tx,
+            &admin,
+            StartExecution {
+                station_key: "11-72-8007-95-8".into(),
+                workflow_key: defs::platform_review_bill().key,
+                subject_type: "energyBill".into(),
+                subject_id: bill_id.to_string(),
+                business_date: date("2026-07-15"),
+                attributes: json!({}),
+                definition: None,
+                station_id: None,
+            },
+        )
+        .await?;
+        // 跟 ingest::service::start_flows 一樣：原檔要接到這個 execution 上，「本關要求」的
+        // taipowerNotice 附件才算滿足（start_execution 本身不做這件事）。
+        if let Some(a) = plain_attachment_id {
+            attachments::link_to_execution(&mut tx, &admin, a, exec.id, "source").await?;
+        }
+        step(&mut tx, &finance, exec.id, "platform-review", &["pass"]).await?;
+        tx.commit().await?;
+        out.plain_execution_id = Some(exec.id);
     }
     Ok(out)
 }

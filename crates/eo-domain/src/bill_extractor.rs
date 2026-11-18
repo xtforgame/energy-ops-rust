@@ -172,6 +172,7 @@ pub fn mock_bill_extractor(ocr_json: &Value) -> Vec<ExtractedBill> {
             total_amount: num(first_present(raw, &["totalAmount", "amount", "總金額"])),
             generation_kwh: num(first_present(raw, &["generationKwh", "kwh", "度數"])),
             issued_at: first_present(raw, &["issuedAt", "issueDate", "開單日"]).and_then(normalize_date),
+            due_date: first_present(raw, &["dueDate", "繳費期限"]).and_then(normalize_date),
             confidence: raw.get("confidence").and_then(Value::as_f64),
             ..Default::default()
         })
