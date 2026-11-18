@@ -68,6 +68,8 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   // 儀表板、工作台
   { method: 'GET', path: '/dashboard' },
   { method: 'GET', path: '/calendar-events', adapt: unwrapItems },
+  { method: 'POST', path: '/calendar-events' },
+  { method: 'PATCH', path: '/calendar-events/:eventId' },
   { method: 'GET', path: '/me/landing' },
   { method: 'GET', path: '/workbench' },
   // 流程（清單頁讀 rows；新後端叫 items）
@@ -163,6 +165,15 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'GET', path: '/contracts/:contractId/attachments', adapt: unwrapItems },
   { method: 'POST', path: '/contracts/:contractId/attachments' },
   { method: 'POST', path: '/imports/stations' },
+  // 提醒機制（卡 E）。
+  { method: 'GET', path: '/reminder-rules', adapt: unwrapItems },
+  { method: 'PUT', path: '/reminder-rules', adapt: unwrapItems },
+  { method: 'GET', path: '/holidays', adapt: unwrapItems },
+  { method: 'POST', path: '/holidays', adapt: unwrapItems },
+  { method: 'DELETE', path: '/holidays/:holidayId', adapt: unwrapItems },
+  { method: 'GET', path: '/notifications', adapt: unwrapItems },
+  { method: 'POST', path: '/notifications/:notificationId/read' },
+  { method: 'POST', path: '/reminders/run-check' },
 ];
 
 const ENERGY_URL = /^\/api\/v1\/orgs\/([^/?#]+)\/energy(\/[^?#]*)?/;

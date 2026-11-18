@@ -2,10 +2,12 @@ import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableHead, TableBody, TableRow, TableCell,
   Stack, Tooltip, IconButton, ToggleButton, ToggleButtonGroup, TextField,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, MenuItem, Select, InputLabel, FormControl,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { energyHttp, energyBase } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
+import { useSearchParams } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
 import { EnergyPageFrame, EmptyRow, StatusChip, jvTokens } from './shared';
@@ -13,7 +15,10 @@ import { EnergyPageFrame, EmptyRow, StatusChip, jvTokens } from './shared';
 interface CalendarEvent {
   id: number; eventDate: string; kind: string; title: string; status: string;
   landownerId: number | null; landownerName: string | null;
+  stationId: number | null; stationName: string | null; occurredOn: string | null;
 }
+
+const EVENT_STATUSES = ['pending', 'overdue', 'done', 'cancelled'];
 
 /** `YYYY-MM` → 該月最後一天。不要寫死 31。 */
 const monthEnd = (month: string) => {
@@ -64,12 +69,18 @@ const CalendarPage: React.FC = () => {
   const notify = useNotify();
   const translate = useTranslate();
   const orgId = useSelection()?.organizationId;
+  // 卡 E S4：從通知頁點一筆跳過來時帶 `?month=&view=`，用它決定初始檢視；只在第一次 render 讀一次。
+  const [searchParams] = useSearchParams();
 
   const [loading, setLoading] = React.useState(false);
   const [denied, setDenied] = React.useState(false);
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
-  const [month, setMonth] = React.useState(thisMonth());
-  const [view, setView] = React.useState<'month' | 'list'>('month');
+  const [month, setMonth] = React.useState(() => searchParams.get('month') || thisMonth());
+  const [view, setView] = React.useState<'month' | 'list'>(() => (searchParams.get('view') === 'list' ? 'list' : 'month'));
+  const [editing, setEditing] = React.useState<CalendarEvent | null>(null);
+  const [occurredOn, setOccurredOn] = React.useState('');
+  const [status, setStatus] = React.useState('pending');
+  const [saving, setSaving] = React.useState(false);
 
   const base = energyBase(orgId);
 
@@ -100,6 +111,27 @@ const CalendarPage: React.FC = () => {
   }, [orgId, base, month, view, notify]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  const openEdit = (ev: CalendarEvent) => {
+    setEditing(ev);
+    setOccurredOn(ev.occurredOn ?? '');
+    setStatus(ev.status);
+  };
+
+  const save = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await energyHttp.patch(`${base}/calendar-events/${editing.id}`, { occurredOn: occurredOn || null, status });
+      notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
+      setEditing(null);
+      load();
+    } catch (e: any) {
+      notify(apiErrorCode(e) || e?.message || 'save failed', { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const byDate = React.useMemo(() => {
     const m: Record<string, CalendarEvent[]> = {};
@@ -172,14 +204,17 @@ const CalendarPage: React.FC = () => {
                           {Number(c.date.slice(8))}
                         </Typography>
                         {(byDate[c.date] ?? []).map((ev) => (
-                          <Tooltip key={ev.id} title={`${ev.title}${ev.landownerName ? ` — ${ev.landownerName}` : ''}`}>
+                          <Tooltip key={ev.id} title={`${ev.title}${ev.stationName ? ` — ${ev.stationName}` : (ev.landownerName ? ` — ${ev.landownerName}` : '')}`}>
                             <Box
                               data-testid="calendar-event"
+                              onClick={() => openEdit(ev)}
                               sx={{
                                 mt: 0.5, px: 0.75, py: 0.25, borderRadius: 0.5, fontSize: 11,
-                                color: '#fff',
-                                background: ev.status === 'missed' ? jvTokens.warn
-                                  : ev.status === 'done' ? jvTokens.ok : jvTokens.primary,
+                                color: '#fff', cursor: 'pointer',
+                                // 逾期燒橘（不是紅）；已完成綠；取消灰；其餘（待處理）主色。
+                                background: (ev.status === 'missed' || ev.status === 'overdue') ? jvTokens.warn
+                                  : ev.status === 'done' ? jvTokens.ok
+                                  : ev.status === 'cancelled' ? jvTokens.muted : jvTokens.primary,
                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                               }}
                             >
@@ -199,24 +234,52 @@ const CalendarPage: React.FC = () => {
                 <TableRow>
                   <TableCell>{translate('energy.events.date')}</TableCell>
                   <TableCell>{translate('energy.events.title')}</TableCell>
+                  <TableCell>{translate('energy.contracts.stations')}</TableCell>
                   <TableCell>{translate('energy.landowners.name')}</TableCell>
                   <TableCell>{translate('energy.events.status')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {events.length ? events.map((ev) => (
-                  <TableRow key={ev.id} hover data-testid="calendar-list-row">
+                  <TableRow key={ev.id} hover sx={{ cursor: 'pointer' }} onClick={() => openEdit(ev)} data-testid="calendar-list-row">
                     <TableCell sx={{ fontVariantNumeric: 'tabular-nums' }}>{ev.eventDate}</TableCell>
                     <TableCell>{ev.title}</TableCell>
+                    <TableCell>{ev.stationName || '—'}</TableCell>
                     <TableCell>{ev.landownerName || '—'}</TableCell>
                     <TableCell><StatusChip i18nKey="energy.eventStatus" value={ev.status} /></TableCell>
                   </TableRow>
-                )) : <EmptyRow colSpan={4} loading={loading} />}
+                )) : <EmptyRow colSpan={5} loading={loading} />}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+
+      {/* 卡 E S1：記實際發生日／改狀態。填了實際發生日沒另外選狀態，後端自動轉「已完成」。 */}
+      <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="xs" data-testid="calendar-event-dialog">
+        <DialogTitle>{editing?.title}</DialogTitle>
+        <DialogContent>
+          <Stack gap={2} mt={1}>
+            <TextField
+              label={translate('energy.events.occurredOn')} type="date" value={occurredOn}
+              onChange={(e) => setOccurredOn(e.target.value)} InputLabelProps={{ shrink: true }}
+              data-testid="calendar-event-occurred"
+            />
+            <FormControl fullWidth data-testid="calendar-event-status">
+              <InputLabel>{translate('energy.events.status')}</InputLabel>
+              <Select label={translate('energy.events.status')} value={status} onChange={(e) => setStatus(e.target.value)}>
+                {EVENT_STATUSES.map((s) => <MenuItem key={s} value={s}>{translate(`energy.eventStatus.${s}`)}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditing(null)}>{translate('ra.action.cancel')}</Button>
+          <Button variant="contained" onClick={save} disabled={saving} data-testid="calendar-event-save">
+            {translate('ra.action.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </EnergyPageFrame>
   );
 };

@@ -1,7 +1,7 @@
 //! 儀表板、行事曆、登入落點、角色工作台。
 //! 分區、排序、等待天數、退回理由全部在後端算 —— 只有後端知道呼叫者的角色與部門身分。
 
-use crate::common::{err, has_permission, query_day, Ctx, RequestMeta, Tx};
+use crate::common::{err, err_d, has_permission, parse_day, query_day, Ctx, RequestMeta, Tx};
 use crate::workflow::views::{decorate_tasks, my_open_tasks};
 use crate::{gates, path};
 use actix_web::{web, HttpResponse};
@@ -30,6 +30,8 @@ impl AppPlugin for WorkbenchPlugin {
     fn configure_routes(&self, cfg: &mut RouteRegistrar<'_>, _self_arc: &Arc<dyn AppPlugin>) {
         cfg.get(&path("/dashboard"), web::get().to(dashboard_handler));
         cfg.get(&path("/calendar-events"), web::get().to(calendar_handler));
+        cfg.post(&path("/calendar-events"), web::post().to(create_calendar_event_handler));
+        cfg.patch(&path("/calendar-events/{eventId}"), web::patch().to(update_calendar_event_handler));
         cfg.get(&path("/me/landing"), web::get().to(landing_handler));
         cfg.get(&path("/workbench"), web::get().to(workbench_handler));
     }
@@ -129,11 +131,13 @@ pub async fn dashboard(tx: &mut Tx<'_>, ctx: &Ctx, month: Option<&str>, stuck_da
     }))
 }
 
-/// 行事曆（eventDate 是日期，兩端都用 ≤／≥）。
+/// 行事曆（eventDate 是日期，兩端都用 ≤／≥）。卡 E：多回案場（id／名）、實際發生日。
 pub async fn calendar_events(tx: &mut Tx<'_>, ctx: &Ctx, from: Option<NaiveDate>, to: Option<NaiveDate>) -> ApiResult<Vec<Value>> {
-    let rows: Vec<(i64, NaiveDate, String, String, String, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT e.id, e.event_date, e.kind, e.title, e.status, e.landowner_id, l.name FROM tbl_energy_calendar_event e
+    let rows: Vec<(i64, NaiveDate, String, String, String, Option<i64>, Option<String>, Option<i64>, Option<String>, Option<NaiveDate>)> = sqlx::query_as(
+        "SELECT e.id, e.event_date, e.kind, e.title, e.status, e.landowner_id, l.name, e.station_id, s.name, e.occurred_on
+           FROM tbl_energy_calendar_event e
            LEFT JOIN tbl_energy_landowner l ON l.id = e.landowner_id AND l.organization_id = e.organization_id AND l.deleted_at IS NULL
+           LEFT JOIN tbl_energy_station s ON s.id = e.station_id AND s.organization_id = e.organization_id AND s.deleted_at IS NULL
           WHERE e.organization_id = $1 AND e.deleted_at IS NULL
             AND ($2::date IS NULL OR e.event_date >= $2) AND ($3::date IS NULL OR e.event_date <= $3)
           ORDER BY e.event_date ASC, e.id ASC LIMIT 500",
@@ -145,11 +149,75 @@ pub async fn calendar_events(tx: &mut Tx<'_>, ctx: &Ctx, from: Option<NaiveDate>
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, d, kind, title, status, owner, owner_name)| {
+        .map(|(id, d, kind, title, status, owner, owner_name, station_id, station_name, occurred_on)| {
             json!({ "id": id, "eventDate": crate::common::day(d), "kind": kind, "title": title, "status": status,
-                    "landownerId": owner, "landownerName": owner_name })
+                    "landownerId": owner, "landownerName": owner_name, "stationId": station_id, "stationName": station_name,
+                    "occurredOn": crate::common::day_opt(occurred_on) })
         })
         .collect())
+}
+
+/// 手動新增預定事件（卡 E S1）：事前提醒、逾期都靠這一列的 `eventDate`／`kind`。
+pub async fn create_calendar_event(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<i64> {
+    let title = b.get("title").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| err(400, "title_required"))?;
+    let kind = b.get("kind").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| err(400, "kind_required"))?;
+    let event_date_str = b.get("eventDate").and_then(Value::as_str).ok_or_else(|| err(400, "event_date_required"))?;
+    let event_date = parse_day(event_date_str).ok_or_else(|| err_d(400, "invalid_date", json!({ "field": "eventDate" })))?;
+    let station_id = b.get("stationId").and_then(Value::as_i64);
+    let landowner_id = b.get("landownerId").and_then(Value::as_i64);
+    Ok(sqlx::query_scalar(
+        "INSERT INTO tbl_energy_calendar_event (organization_id, station_id, landowner_id, event_date, kind, title, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING id",
+    )
+    .bind(ctx.org_id())
+    .bind(station_id)
+    .bind(landowner_id)
+    .bind(event_date)
+    .bind(&kind)
+    .bind(title)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// 記實際發生日／改狀態（卡 E S1）：填了 `occurredOn` 就自動轉 `done`（不用使用者另外切狀態）。
+pub async fn update_calendar_event(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> ApiResult<()> {
+    let org_of: Option<i64> = sqlx::query_scalar("SELECT organization_id FROM tbl_energy_calendar_event WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let org_of = org_of.ok_or_else(|| err(404, "event_not_found"))?;
+    if org_of != ctx.org_id() {
+        return Err(err(403, "event_not_in_org"));
+    }
+    let occurred_on = match b.get("occurredOn") {
+        None => None,
+        Some(Value::Null) => None,
+        Some(Value::String(s)) if s.is_empty() => None,
+        Some(Value::String(s)) => Some(parse_day(s).ok_or_else(|| err_d(400, "invalid_date", json!({ "field": "occurredOn" })))?),
+        Some(_) => return Err(err_d(400, "invalid_date", json!({ "field": "occurredOn" }))),
+    };
+    // 填了實際發生日 → 一律自動轉「已完成」，不管畫面上的狀態下拉選了什麼
+    // （對話框預設帶著目前狀態，使用者不會特地把它切回 pending 再存）。
+    // 只有在沒有實際發生日時，才照 body 給的 status 或保留原狀態。
+    let status = if occurred_on.is_some() {
+        "done".to_string()
+    } else {
+        match b.get("status").and_then(Value::as_str) {
+            Some(s) => s.to_string(),
+            None => {
+                let current: String =
+                    sqlx::query_scalar("SELECT status FROM tbl_energy_calendar_event WHERE id = $1").bind(id).fetch_one(&mut **tx).await?;
+                current
+            }
+        }
+    };
+    sqlx::query("UPDATE tbl_energy_calendar_event SET occurred_on = $2, status = $3 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(occurred_on)
+        .bind(&status)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 /// 呼叫者在這個組織實際持有的能源權限（逐一問，分區判斷用）。
@@ -356,6 +424,27 @@ async fn calendar_handler(core: Core, user: CurrentUser, meta: RequestMeta, org:
     let to = query_day("to", q.to.as_deref())?;
     let mut tx = core.pool.begin().await?;
     Ok(HttpResponse::Ok().json(json!({ "items": calendar_events(&mut tx, &ctx, from, to).await? })))
+}
+
+async fn create_calendar_event_handler(core: Core, user: CurrentUser, meta: RequestMeta, org: web::Path<i64>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
+    let access = core.rbac.authorize_org(&user, org.into_inner(), gates::MASTER_MANAGE).await?;
+    let ctx = Ctx::new(&core, access, &meta);
+    let mut tx = core.pool.begin().await?;
+    let id = create_calendar_event(&mut tx, &ctx, &body).await?;
+    let items = calendar_events(&mut tx, &ctx, None, None).await?;
+    tx.commit().await?;
+    let created = items.into_iter().find(|v| v["id"] == id).unwrap_or(json!({ "id": id }));
+    Ok(HttpResponse::Ok().json(created))
+}
+
+async fn update_calendar_event_handler(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
+    let (org, id) = path.into_inner();
+    let access = core.rbac.authorize_org(&user, org, gates::MASTER_MANAGE).await?;
+    let ctx = Ctx::new(&core, access, &meta);
+    let mut tx = core.pool.begin().await?;
+    update_calendar_event(&mut tx, &ctx, id, &body).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
 
 async fn landing_handler(core: Core, user: CurrentUser, meta: RequestMeta, org: web::Path<i64>) -> ApiResult<HttpResponse> {

@@ -45,6 +45,16 @@ export const billRoute = (billId: number | string) => `/energyBillConsole/${bill
 export const stationRoute = (stationId: number | string) => `/energyStationConsole/${stationId}/show`;
 
 /**
+ * 卡 E S4：通知頁「點一筆跳到行事曆那一天」。
+ * `CalendarPage` 讀 `month`／`view` 兩個 query 參數，沒帶就照自己原本的預設（本月／月曆檢視）。
+ */
+export const calendarRoute = (eventDate?: string | null) => {
+  if (!eventDate) return '/energyCalendarConsole';
+  const month = eventDate.slice(0, 7);
+  return `/energyCalendarConsole?month=${encodeURIComponent(month)}&view=list`;
+};
+
+/**
  * 「我的工作」（`LIFECYCLE.md §7.3`）—— 兩個頁籤共用一條路由。
  *
  * `tab` 是**頁籤不是路由**：`todo`（等我處理，登入落點）／`mine`（我參與過的）。

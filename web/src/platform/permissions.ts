@@ -37,6 +37,9 @@ export const RESOURCE_PERMISSION_MAP: Record<string, string[]> = {
   energyAuditConsole: [RBAC, 'energy:audit:view'],
   energyDashboardConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
   energyCalendarConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
+  // 卡 E：提醒設定頁改要 master:manage；通知頁誰看得到行事曆就看得到。
+  energyReminderConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
+  energyNotificationConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
 };
 
 /** 選單專用、比路由嚴的閘。 */

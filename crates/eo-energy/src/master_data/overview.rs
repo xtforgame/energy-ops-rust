@@ -165,14 +165,29 @@ pub async fn station_overview(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64) -> Ap
     .bind(st.id)
     .fetch_all(&mut **tx)
     .await?;
-    let contracts: Vec<(i64, String, String, NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
-        "SELECT c.id, c.contract_no, c.stage, c.valid_from, c.valid_to FROM tbl_energy_contract c
+    let contracts: Vec<(i64, String, String, NaiveDate, Option<NaiveDate>, Option<NaiveDate>, Option<NaiveDate>)> = sqlx::query_as(
+        "SELECT c.id, c.contract_no, c.stage, c.valid_from, c.valid_to, c.signed_on, c.renewal_remind_on FROM tbl_energy_contract c
           WHERE c.organization_id = $1 AND c.deleted_at IS NULL AND c.id IN (
             SELECT contract_id FROM mn_energy_contract_station WHERE station_id = $2 AND deleted_at IS NULL)
           ORDER BY c.id",
     )
     .bind(org)
     .bind(st.id)
+    .fetch_all(&mut **tx)
+    .await?;
+    // 卡 E S5：本案場今天起的未來事件（本案場或掛在本案場合約上的事件）。
+    let contract_ids: Vec<i64> = contracts.iter().map(|c| c.0).collect();
+    let upcoming: Vec<(i64, NaiveDate, String, String, String)> = sqlx::query_as(
+        "SELECT id, event_date, kind, title, status FROM tbl_energy_calendar_event
+          WHERE organization_id = $1 AND deleted_at IS NULL AND event_date >= $2
+            AND (station_id = $3 OR contract_id = ANY($4))
+          ORDER BY event_date ASC, id ASC LIMIT $5",
+    )
+    .bind(org)
+    .bind(today)
+    .bind(st.id)
+    .bind(&contract_ids)
+    .bind(super::UPCOMING_EVENT_LIMIT)
     .fetch_all(&mut **tx)
     .await?;
     let bills: Vec<(i64, Option<NaiveDate>, Option<NaiveDate>, Option<Decimal>, String)> = sqlx::query_as(
@@ -203,7 +218,15 @@ pub async fn station_overview(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64) -> Ap
         .collect::<Vec<_>>());
     out["contracts"] = json!(contracts
         .iter()
-        .map(|c| json!({ "id": c.0, "contractNo": c.1, "stage": c.2, "validFrom": day(c.3), "validTo": day_opt(c.4) }))
+        .map(|c| json!({
+            "id": c.0, "contractNo": c.1, "stage": c.2, "validFrom": day(c.3), "validTo": day_opt(c.4),
+            "signedOn": day_opt(c.5), "renewalRemindOn": day_opt(c.6),
+            "active": in_effect(c.3, c.4, today),
+        }))
+        .collect::<Vec<_>>());
+    out["upcomingEvents"] = json!(upcoming
+        .iter()
+        .map(|e| json!({ "id": e.0, "eventDate": day(e.1), "kind": e.2, "title": e.3, "status": e.4 }))
         .collect::<Vec<_>>());
     out["recentBills"] = json!(bills
         .iter()

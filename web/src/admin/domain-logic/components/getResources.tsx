@@ -38,6 +38,9 @@ import ReviewConsolePage from './energyOps/ReviewConsolePage';
 import AuditPage from './energyOps/AuditPage';
 import DashboardPage from './energyOps/DashboardPage';
 import CalendarPage from './energyOps/CalendarPage';
+// 卡 E：提醒設定（規則參數＋假日表）、通知（組織內共用，不寄信）。
+import ReminderSettingsPage from './energyOps/ReminderSettingsPage';
+import NotificationsPage from './energyOps/NotificationsPage';
 // 權限閘（RESOURCE_PERMISSION_MAP／MENU_PERMISSION_MAP）集中在 @/platform/permissions。
 export { canAccessResource, canSeeInMenu, RESOURCE_PERMISSION_MAP, MENU_PERMISSION_MAP } from '@/platform/permissions';
 
@@ -81,6 +84,8 @@ const getResources = (permissions?: string[] | null) => {
     <Resource key="energyWorkflowConsole" name="energyWorkflowConsole" list={WorkflowOverviewPage} />,
     <Resource key="energyDashboardConsole" name="energyDashboardConsole" list={DashboardPage} />,
     <Resource key="energyCalendarConsole" name="energyCalendarConsole" list={CalendarPage} />,
+    <Resource key="energyReminderConsole" name="energyReminderConsole" list={ReminderSettingsPage} />,
+    <Resource key="energyNotificationConsole" name="energyNotificationConsole" list={NotificationsPage} />,
     <Resource key="energyAuditConsole" name="energyAuditConsole" list={AuditPage} />,
   ];
   return all.filter((r) => canAccessResource((r as any).props.name, permissions));

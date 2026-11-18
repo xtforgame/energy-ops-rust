@@ -81,6 +81,9 @@ pub struct DemoSeedCounts {
     // ── 卡 A 擴欄（20261118-0427）──
     pub meters: usize,
     pub allocations: usize,
+    // ── 卡 E（20261118-1016）：提醒機制示範資料 ──
+    pub reminder_rules: usize,
+    pub holidays: usize,
 }
 
 impl DemoSeedCounts {
@@ -103,6 +106,8 @@ impl DemoSeedCounts {
             + self.executions
             + self.meters
             + self.allocations
+            + self.reminder_rules
+            + self.holidays
     }
 }
 
@@ -594,6 +599,69 @@ async fn seed_master_data(tx: &mut Tx<'_>, ctx: &Ctx, created: &mut DemoSeedCoun
         .execute(&mut **tx)
         .await?;
         created.calendar_events += 1;
+    }
+
+    // 卡 E：示範提醒規則（installmentDue 用假值 lead=3／repeat=1）、2 筆假日、1 筆補班日，
+    // 讓 smoke 看得到「未設定」以外的效果。產品預設仍然全部留空——這裡只在 EO_DEMO_SEED 時寫。
+    {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM tbl_energy_reminder_rule WHERE organization_id = $1 AND kind = 'installmentDue' AND deleted_at IS NULL)",
+        )
+        .bind(org)
+        .fetch_one(&mut **tx)
+        .await?;
+        if !exists {
+            sqlx::query(
+                "INSERT INTO tbl_energy_reminder_rule (organization_id, kind, lead_days, repeat_days, business_days, enabled)
+                 VALUES ($1, 'installmentDue', 3, 1, true, true)",
+            )
+            .bind(org)
+            .execute(&mut **tx)
+            .await?;
+            created.reminder_rules += 1;
+        }
+        for (day_str, name, is_workday) in [("2026-02-28", "和平紀念日調整（示範）", false), ("2026-04-04", "兒童節（示範）", false), ("2026-02-07", "補班日（示範）", true)] {
+            let holiday_exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM tbl_energy_holiday WHERE organization_id = $1 AND day = $2 AND deleted_at IS NULL)",
+            )
+            .bind(org)
+            .bind(date(day_str))
+            .fetch_one(&mut **tx)
+            .await?;
+            if !holiday_exists {
+                sqlx::query("INSERT INTO tbl_energy_holiday (organization_id, day, name, is_workday) VALUES ($1,$2,$3,$4)")
+                    .bind(org)
+                    .bind(date(day_str))
+                    .bind(name)
+                    .bind(is_workday)
+                    .execute(&mut **tx)
+                    .await?;
+                created.holidays += 1;
+            }
+        }
+        // 一筆掛案場 s1 的未來事件，示範「案場詳情」的未來事件區與行事曆都看得到同一筆。
+        let future_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM tbl_energy_calendar_event WHERE organization_id = $1 AND station_id = $2 AND kind = 'contractExpiry' AND deleted_at IS NULL)",
+        )
+        .bind(org)
+        .bind(s1)
+        .fetch_one(&mut **tx)
+        .await?;
+        if !future_exists {
+            sqlx::query(
+                "INSERT INTO tbl_energy_calendar_event (organization_id, landowner_id, contract_id, station_id, event_date, kind, title, status)
+                 VALUES ($1,$2,$3,$4,$5,'contractExpiry',$6,'pending')",
+            )
+            .bind(org)
+            .bind(chen)
+            .bind(c1)
+            .bind(s1)
+            .bind(date("2026-12-31"))
+            .bind("合約「CT-2026-001」到期（示範）")
+            .execute(&mut **tx)
+            .await?;
+            created.calendar_events += 1;
+        }
     }
 
     Ok(SeededIds {
