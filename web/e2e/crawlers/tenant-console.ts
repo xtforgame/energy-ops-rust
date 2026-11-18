@@ -689,11 +689,30 @@ async function run() {
     await shot(page, 'K1-review-console');
 
     // 真的改一個值 → 存 → 重整後「已人工修正」標記要出現。
+    //
+    // **主線那張單（127,848.00）不能拿來改**：Q-04 起它由 admin 發起、單一審核流程
+    //    停在平台資料審核，admin 是發起人被 `resolve_mode.rs` 排除（readonly／ExcludedOwner），
+    //    輸入框是 disabled，Puppeteer 打不進去（`FINDINGS.md` S1）。
+    //    → 改走「校對完沒送出」那張（`demo_seed.rs` `SampleRole::Reviewed`：
+    //       沒有 execution，判成 `Intake`，可改）。跟主線單一樣用唯一值（金額）定位，
+    //       不要用案場名或列順序（F 段已指認掉一件，名字／順序都不可靠）。
+    await gotoPage(page, 'energyBillConsole', '單據清單');
+    await sleep(900);
+    const enteredReviewed = await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('[data-testid="bill-row"]'))
+        .find((tr) => (tr as HTMLElement).innerText.includes('5,035.00'));
+      if (!row) return false;
+      (row as HTMLElement).click();
+      return true;
+    });
+    check('K 段改值：找到「校對完沒送出」那張可改的單', enteredReviewed);
+    await sleep(2500);
+
     const amountInput = await page.$('[data-testid="final-totalAmount"]');
     check('找得到最終值輸入框', !!amountInput);
     if (amountInput) {
       await amountInput.click({ clickCount: 3 });
-      await amountInput.type('127900.00', { delay: 15 });
+      await amountInput.type('5200.00', { delay: 15 });
     }
     await sleep(400);
     const saved = await page.evaluate(() => {
@@ -715,9 +734,10 @@ async function run() {
       };
     });
     // 這三條合起來就是「三層值」的證明：改了最終值，**辨識值一個字都沒動**。
+    // 金額換成「校對完沒送出」那張的辨識值（canonical-samples.json 的 payableTotal=5035）。
     check('改過的欄位被標記出來', correctedRow.changed === '1', correctedRow);
-    check('辨識值仍是原值（校對不可覆蓋辨識值）', Number(correctedRow.ocr) === 127848, correctedRow);
-    check('最終值是新值', Number(correctedRow.final) === 127900, correctedRow);
+    check('辨識值仍是原值（校對不可覆蓋辨識值）', Number(correctedRow.ocr) === 5035, correctedRow);
+    check('最終值是新值', Number(correctedRow.final) === 5200, correctedRow);
     await shot(page, 'K2-review-corrected');
 
     // 稽核頁籤：改值要留下紀錄，而且是**中文**。
