@@ -29,6 +29,8 @@ import {
   sourceFieldBoxes,
   billReviewFieldsFor,
   ALL_BILL_REVIEW_FIELDS,
+  BILL_DETAIL_FIELDS,
+  BILL_DETAIL_FIELD_KEYS,
   recognitionSummary,
   type SourceFieldBox,
 } from 'common/plugins/EnergyOpsCommonPlugin/taipowerExtractor';
@@ -162,6 +164,8 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
   const [denied, setDenied] = React.useState(false);
   const [bill, setBill] = React.useState<BillDetail | null>(null);
   const [draft, setDraft] = React.useState<Partial<Record<ReviewField, string>>>({});
+  /** 卡 B S3：電費單明細 19 欄（＋通知單號），獨立一份草稿、獨立存檔，不混進上面 7 欄的。 */
+  const [detailDraft, setDetailDraft] = React.useState<Partial<Record<string, string>>>({});
   const [tab, setTab] = React.useState(0);
   const [attachments, setAttachments] = React.useState<any[]>([]);
   const [audit, setAudit] = React.useState<any[]>([]);
@@ -222,6 +226,11 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
       const d: any = {};
       ALL_BILL_REVIEW_FIELDS.forEach((f) => { d[f] = data[f] == null ? '' : String(data[f]); });
       setDraft(d);
+      // 卡 B S3：明細 19 欄的草稿也從最終值（`detailFields`）起始。
+      const dd: any = {};
+      const detailFields = data.detailFields ?? {};
+      BILL_DETAIL_FIELD_KEYS.forEach((f) => { dd[f] = detailFields[f] == null ? '' : String(detailFields[f]); });
+      setDetailDraft(dd);
     } catch (e: any) {
       if (e?.response?.status === 403) setDenied(true);
       else notify(apiErrorCode(e) || e?.message || 'load failed', { type: 'error' });
@@ -339,8 +348,10 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
 
   const dirty = React.useMemo(() => {
     if (!bill) return false;
-    return ALL_BILL_REVIEW_FIELDS.some((f) => String(bill[f] ?? '') !== String(draft[f] ?? ''));
-  }, [bill, draft]);
+    if (ALL_BILL_REVIEW_FIELDS.some((f) => String(bill[f] ?? '') !== String(draft[f] ?? ''))) return true;
+    const detailFields = bill.detailFields ?? {};
+    return BILL_DETAIL_FIELD_KEYS.some((f) => String(detailFields[f] ?? '') !== String(detailDraft[f] ?? ''));
+  }, [bill, draft, detailDraft]);
 
   /**
    * **金額與度數必須送 `number`**（`correctBillSchema` 用 `z.number()`）。
@@ -367,18 +378,43 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
     return String(v).trim();
   };
 
+  /** 明細 19 欄的型別表驅動 coerce —— 跟上面 7 欄同一個規則，不逐欄手寫。 */
+  const coerceDetail = (f: string, v: string) => {
+    if (v === '') return null;
+    const kind = BILL_DETAIL_FIELDS.find((x) => x.key === f)?.kind;
+    if (kind === 'num') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+    if (kind === 'date') return String(v).slice(0, 10);
+    return String(v).trim();
+  };
+
   const save = async () => {
     if (!bill) return;
     const body: any = {};
     ALL_BILL_REVIEW_FIELDS.forEach((f) => {
       if (String(bill[f] ?? '') !== String(draft[f] ?? '')) body[f] = coerce(f, draft[f] ?? '');
     });
+    const detailFields = bill.detailFields ?? {};
+    const detail: any = {};
+    BILL_DETAIL_FIELD_KEYS.forEach((f) => {
+      if (String(detailFields[f] ?? '') !== String(detailDraft[f] ?? '')) detail[f] = coerceDetail(f, detailDraft[f] ?? '');
+    });
+    if (Object.keys(detail).length) body.detail = detail;
     if (!Object.keys(body).length) return;
     try {
       await energyHttp.patch(`${base}/bills/${bill.id}`, body);
       notify('energy.review.saved', { type: 'success' });
       load();
     } catch (e: any) { notify(apiErrorCode(e) || 'save failed', { type: 'error' }); }
+  };
+
+  /** S1：合約後補之後，重新比對一次（不用改電號、改期間這種繞路的方式）。 */
+  const rematch = async () => {
+    if (!bill) return;
+    try {
+      await energyHttp.post(`${base}/bills/${bill.id}/rematch`);
+      notify('energy.review.rematched', { type: 'success' });
+      load();
+    } catch (e: any) { notify(apiErrorCode(e) || 'rematch failed', { type: 'error' }); }
   };
 
   const markReviewed = async () => {
@@ -770,6 +806,30 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
           這個錯誤原本要到**送審那一刻**才爆（`no_binding_for_business_date`），
           那時候承辦已經校對完整張單了。
           **在人已經做完工才告訴他做不了，是最貴的失敗時機。** */}
+      {/* S2：找不到生效合約 —— 跟「尚未綁定流程」是兩種各自的提示，不要混在一起。 */}
+      {bill?.binding?.bound === false && bill.binding.reason === 'no_contract' && (
+        <Alert
+          severity="warning"
+          data-testid="no-contract-warning"
+          sx={{
+            mb: 2,
+            color: jvTokens.warn,
+            border: `1px solid ${jvTokens.warn}`,
+            backgroundColor: 'transparent',
+          }}
+        >
+          {translate('energy.review.noContractWarn', {
+            station: bill.binding.stationName ?? bill.binding.customerNumber ?? '',
+            from: bill.binding.billingPeriodStart ?? '—',
+            to: bill.binding.billingPeriodEnd ?? '—',
+          })}
+          {bill?.canEditSubject && (
+            <Button size="small" data-testid="bill-rematch" sx={{ ml: 1, color: jvTokens.warn }} onClick={rematch}>
+              {translate('energy.review.rematch')}
+            </Button>
+          )}
+        </Alert>
+      )}
       {bill?.binding?.bound === false && bill.binding.reason === 'no_binding' && (
         <Alert
           severity="warning"
@@ -1014,6 +1074,17 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
               <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                 {bill?.station?.customerNumber || bill?.customerNumberRaw || '—'}
               </Typography>
+              {/* S1：有案場有合約時，詳情要看得到比對到哪一份合約。 */}
+              {bill?.contractId != null && (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                    {translate('energy.bills.contractNo')}
+                  </Typography>
+                  <Typography variant="body2" data-testid="bill-contract-no" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {bill?.contractNo || `#${bill.contractId}`}
+                  </Typography>
+                </>
+              )}
               {!bill?.stationId && (
                 // 沒指認案場 ＝ 例外件，不能標記為已校對（後端也擋）。
                 // 指認的動作**就在這裡**（§7.4）——
@@ -1149,6 +1220,22 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                   />
                 ) : null
               )}
+            />
+            {/* 卡 B S3：電費單明細 19 欄（整併版「電費單明細」DB-088～DB-107 加契約編號／區處），
+                可校對；跟上面 7 欄同一個元件、同一套「辨識值 vs 最終值」規則，只是 fields 換一張表。 */}
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" gutterBottom>{translate('energy.bills.detailTitle')}</Typography>
+            <FieldDiffGrid
+              fields={BILL_DETAIL_FIELD_KEYS}
+              ocrExtracted={bill?.ocrExtracted}
+              changedFields={bill?.detailChangedFields}
+              draft={detailDraft as any}
+              onChange={(f, v) => setDetailDraft({ ...detailDraft, [f]: v })}
+              editable={!!bill?.canEditSubject}
+              rowTestId="review-detail-field"
+              inputTestId={(f) => `final-detail-${f}`}
+              ocrTestId="ocr-detail-value"
+              notExtractedLabel={translate('energy.review.notExtracted')}
             />
           </CardContent>
         </Card>

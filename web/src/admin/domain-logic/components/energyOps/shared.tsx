@@ -31,6 +31,7 @@ export const WAITING_DAYS_WARN = 3;
 const STATUS_COLOR: Record<string, string> = {
   // 電費單校對狀態
   pendingMatch: jvTokens.warn,
+  pendingContract: jvTokens.warn,
   pendingReview: jvTokens.gold,
   reviewed: jvTokens.ok,
   // 發電站

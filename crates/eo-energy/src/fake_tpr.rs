@@ -88,11 +88,29 @@ impl FakeTprState {
             Some(mut d) => {
                 d["sourceFileId"] = json!(source_file_id);
                 d["sourceFileName"] = json!(file_name);
+                // 卡 B 的假資料：上傳檔名帶 `cn-<假電號>` 時覆寫 accountNumber，
+                // 讓 smoke 與使用者操作都用假電號，不會帶出範本裡的真電號。
+                if let Some(cn) = cn_override(file_name) {
+                    if let Some(f) = d.get_mut("record").and_then(|r| r.get_mut("fields")).and_then(|f| f.get_mut("accountNumber")) {
+                        f["value"] = json!(cn);
+                        f["rawValue"] = json!(cn);
+                    }
+                }
                 d
             }
             None => failed("unsupported_template", "無法辨識的版型"),
         }
     }
+}
+
+/// 檔名裡 `cn-` 之後的那段（去掉副檔名）就是假電號。例：
+/// `renewable-surplus-cn-00-0000-0001.pdf` → `00-0000-0001`。
+fn cn_override(file_name: &str) -> Option<String> {
+    let base = file_name.rsplit('/').next().unwrap_or(file_name);
+    let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
+    let idx = stem.find("cn-")?;
+    let v = &stem[idx + 3..];
+    (!v.is_empty()).then(|| v.to_string())
 }
 
 fn now() -> String {

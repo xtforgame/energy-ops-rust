@@ -86,6 +86,13 @@ pub async fn dashboard(tx: &mut Tx<'_>, ctx: &Ctx, month: Option<&str>, stuck_da
     .bind(org)
     .fetch_one(&mut **tx)
     .await?;
+    // S2：找不到生效合約跟找不到案場是兩種各自的待辦，各自一格。
+    let no_contract: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tbl_energy_bill WHERE organization_id = $1 AND review_status = 'pendingContract' AND deleted_at IS NULL",
+    )
+    .bind(org)
+    .fetch_one(&mut **tx)
+    .await?;
     // 卡關：running 的執行裡，有未完成的 task 已經等超過門檻天數。
     let open: Vec<(i64, String, DateTime<Utc>)> = sqlx::query_as(
         "SELECT t.execution_id, t.node_key, t.created_at FROM tbl_energy_workflow_task t
@@ -116,6 +123,7 @@ pub async fn dashboard(tx: &mut Tx<'_>, ctx: &Ctx, month: Option<&str>, stuck_da
         "stuckCount": stuck.len(),
         "releasedUnpaidCount": released_unpaid.len(),
         "unmatchedCount": unmatched,
+        "noContractCount": no_contract,
         "stationTotal": stations.len(),
         "stationByStatus": by_status,
     }))
