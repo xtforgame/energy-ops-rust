@@ -312,6 +312,9 @@ const customChineseTWMessages: TranslationMessages = {
       noOpenTask: '目前這一關沒有待處理的任務（可能已完成或由他人處理中）。',
       tabAttachments: '附件',
       tabAudit: '稽核歷程',
+      // 卡 G3：沒有 energy:audit:view 時，稽核頁籤與表格不能跟「真的沒資料」顯示一樣的字
+      // （否則使用者分不出「沒權限」跟「沒資料」），HF11 拍板文案 B。
+      auditForbidden: '你沒有檢視稽核紀錄的權限，需要的話請管理員開『稽核紀錄檢視』。',
       tabLineage: '血緣',
       filename: '檔名',
       size: '大小',

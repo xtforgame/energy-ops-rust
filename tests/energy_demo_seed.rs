@@ -20,7 +20,9 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!((c.landowners, c.stations, c.contracts, c.contract_stations), (7, 8, 6, 6));
     // 6 座舊案場各一個主電號＋100% 分配，加上新案場的 2 個電號＋2 筆分配（60／40）。
     assert_eq!((c.meters, c.allocations), (8, 8));
-    assert_eq!((c.installments, c.calendar_events), (3, 3));
+    // 3 筆分期到期事件 ＋ 卡 E（02e1e96）demo_seed.rs:650-664 加的「合約到期（示範）」
+    // 那一筆（掛案場 s1，示範「案場詳情」未來事件區與行事曆看得到同一筆）＝ 4。
+    assert_eq!((c.installments, c.calendar_events), (3, 4));
     // 五個內建部門 ＋ 卡 c-org-chart 的示範上層部門「總管理部」（demo_seed.rs 的 admin-hq）＝ 6。
     assert_eq!((c.departments, c.department_members), (6, 10));
     // 四份內建定義 v1 ＋ 核可流程 v2；策略 v1（內建）＋ v2。
