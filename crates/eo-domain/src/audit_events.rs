@@ -535,6 +535,30 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Notable,
         true,
     ),
+    // 卡 B S2：有案場、但這段期間沒有生效中的合約 —— 跟「找不到案場」是兩種各自的例外。
+    ev(
+        "bill.no_contract",
+        "energyBill",
+        &[
+            opt_nul("customerNumberRaw", STR),
+            opt_nul("stationId", INT),
+            opt_nul("contractId", INT),
+            opt("extractedFields", STRS),
+            opt_nul("sourceAttachmentId", INT),
+        ],
+        "audit.type.bill.no_contract",
+        Notable,
+        true,
+    ),
+    // 卡 B S1：合約後補之後，在校對台按「重新比對」。
+    ev(
+        "bill.rematched",
+        "energyBill",
+        &[req("from", STR), req("to", STR), opt_nul("contractId", INT)],
+        "audit.type.bill.rematched",
+        Info,
+        true,
+    ),
     ev(
         "bill.corrected",
         "energyBill",

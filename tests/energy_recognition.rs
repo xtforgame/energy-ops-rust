@@ -53,6 +53,9 @@ async fn rx(polls: u32, tweak: impl FnOnce(&mut eo_platform::config::Config)) ->
         }
         fx.app.wf_binding(fx.org, Some(&cn.replace('-', "")), None, Some("electricityBill"), bill_def, "2000-01-01", None).await;
         fx.app.wf_binding(fx.org, Some(&cn.replace('-', "")), None, Some("consumptionBill"), utility_def, "2000-01-01", None).await;
+        // 卡 B：S1 比對到合約——這幾座案場也要有一份生效合約，不然範本單會變成 pendingContract。
+        let contract = fx.app.contract(fx.org, lo, &format!("RX-{id}"), "2026-01-01", None).await;
+        fx.app.contract_station(contract, id, json!({}), None, None).await;
     }
     Rx { fx, fake, surplus_station }
 }

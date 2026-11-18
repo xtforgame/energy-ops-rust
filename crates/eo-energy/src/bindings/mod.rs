@@ -266,7 +266,7 @@ pub async fn preview(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, kind: Kind, ef
     )
     .bind(ctx.org_id())
     .bind(st.id)
-    .bind(vec!["pendingReview", "pendingMatch", "reviewed"])
+    .bind(vec!["pendingReview", "pendingMatch", "pendingContract", "reviewed"])
     .bind(effective_from)
     .fetch_one(&mut **tx)
     .await?;

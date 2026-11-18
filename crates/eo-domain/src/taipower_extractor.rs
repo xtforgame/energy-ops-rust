@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::bill_extractor::{mock_bill_extractor, ExtractedBill};
 use crate::document_ingest::{doc_type_to_workflow, mock_classifier, ClassifyResult, EnergyDocType};
@@ -171,6 +171,26 @@ pub fn taipower_classifier(ocr_raw: &Value) -> ClassifyResult {
     }
 }
 
+/// 從 canonical record 依 `BILL_DETAIL_FIELDS` 表撈出 19 個明細欄位（表驅動，不逐欄手寫）。
+/// `contractNumberRaw` 已經是 `ExtractedBill` 自己的具名欄位，這裡跳過避免重複。
+fn detail_of(record: &CanonicalRecord) -> Map<String, Value> {
+    let mut out = Map::new();
+    for f in BILL_DETAIL_FIELDS {
+        if f.camel == "contractNumberRaw" {
+            continue;
+        }
+        let v = match f.kind {
+            DetailFieldKind::Text => text_of(record, f.canonical_key).map(Value::from),
+            DetailFieldKind::Date => date_of(record, f.canonical_key).map(Value::from),
+            DetailFieldKind::Num => number_of(record, f.canonical_key).and_then(serde_json::Number::from_f64).map(Value::Number),
+        };
+        if let Some(v) = v {
+            out.insert(f.camel.to_string(), v);
+        }
+    }
+    out
+}
+
 /// 抽取器：canonical → `ExtractedBill`。
 ///
 /// `totalAmount` 依單別取不同欄位：躉購取購電電費（未稅售電收入，分潤基數仍待客戶確認），
@@ -196,6 +216,7 @@ pub fn taipower_bill_extractor(ocr_json: &Value) -> Vec<ExtractedBill> {
         due_date: date_of(&record, "dueDate"),
         contract_number_raw: text_of(&record, "contractNumber"),
         confidence: None,
+        detail: detail_of(&record),
     };
     if out.is_empty() {
         vec![]
@@ -203,6 +224,47 @@ pub fn taipower_bill_extractor(ocr_json: &Value) -> Vec<ExtractedBill> {
         vec![out]
     }
 }
+
+/// 欄位的值怎麼存（DB 型別，驅動 migration／抽取／比對三邊，不逐欄手寫 match）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailFieldKind {
+    Text,
+    Date,
+    Num,
+}
+
+/// 電費單明細一欄：我們的欄位名（camel）、DB 欄名（snake，對應 0104 的欄）、辨識鍵、型別。
+#[derive(Debug, Clone, Copy)]
+pub struct DetailField {
+    pub camel: &'static str,
+    pub snake: &'static str,
+    pub canonical_key: &'static str,
+    pub kind: DetailFieldKind,
+}
+
+/// 卡 B：電費單明細 19 欄（整併版「資料庫欄位字典」DB-088～DB-107 扣主鍵，加「契約編號」「區處」）。
+/// 這張表驅動：0104 migration 的欄名、抽取時從 canonical 讀哪個鍵、校對台顯示與比對 —— 都讀它，不逐欄手寫。
+pub const BILL_DETAIL_FIELDS: &[DetailField] = &[
+    DetailField { camel: "noticeYearMonth", snake: "notice_year_month", canonical_key: "noticeYearMonth", kind: DetailFieldKind::Text },
+    DetailField { camel: "currentReadingDate", snake: "current_reading_date", canonical_key: "currentReadingDate", kind: DetailFieldKind::Date },
+    DetailField { camel: "nextReadingDate", snake: "next_reading_date", canonical_key: "nextReadingDate", kind: DetailFieldKind::Date },
+    DetailField { camel: "purchaseKwh", snake: "purchase_kwh", canonical_key: "purchaseKwh", kind: DetailFieldKind::Num },
+    DetailField { camel: "consumptionKwh", snake: "consumption_kwh", canonical_key: "consumptionKwh", kind: DetailFieldKind::Num },
+    DetailField { camel: "purchaseEnergyFee", snake: "purchase_energy_fee", canonical_key: "purchaseEnergyFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "businessTax", snake: "business_tax", canonical_key: "businessTax", kind: DetailFieldKind::Num },
+    DetailField { camel: "electricityFeeTotal", snake: "electricity_fee_total", canonical_key: "electricityFeeTotal", kind: DetailFieldKind::Num },
+    DetailField { camel: "meterRentalFee", snake: "meter_rental_fee", canonical_key: "meterRentalFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "usageEnergyFee", snake: "usage_energy_fee", canonical_key: "usageEnergyFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "baseEnergyFee", snake: "base_energy_fee", canonical_key: "baseEnergyFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "flowEnergyFee", snake: "flow_energy_fee", canonical_key: "flowEnergyFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "powerFactorAdjustmentFee", snake: "power_factor_adjustment_fee", canonical_key: "powerFactorAdjustmentFee", kind: DetailFieldKind::Num },
+    DetailField { camel: "electricityAdjustmentAmount", snake: "electricity_adjustment_amount", canonical_key: "electricityAdjustmentAmount", kind: DetailFieldKind::Num },
+    DetailField { camel: "payableTotal", snake: "payable_total", canonical_key: "payableTotal", kind: DetailFieldKind::Num },
+    DetailField { camel: "carrierNumber", snake: "carrier_number", canonical_key: "carrierIdentity", kind: DetailFieldKind::Text },
+    DetailField { camel: "invoiceNumber", snake: "invoice_number", canonical_key: "rentalInvoiceNumber", kind: DetailFieldKind::Text },
+    DetailField { camel: "contractNumberRaw", snake: "contract_number_raw", canonical_key: "contractNumber", kind: DetailFieldKind::Text },
+    DetailField { camel: "serviceDepartment", snake: "service_department", canonical_key: "serviceDepartment", kind: DetailFieldKind::Text },
+];
 
 /// 校對台要並排的 canonical 欄位，依版型而異。
 pub fn review_fields_for(template_id: Option<&str>) -> &'static [&'static str] {
@@ -239,8 +301,8 @@ pub const DEFAULT_REVIEW_FIELDS: [&str; 6] = [
 ];
 
 /// 後端寫入與變更標記掃的是兩組的聯集 —— 版型判錯時，改過的欄位才不會靜默地存不進去。
-pub const ALL_BILL_REVIEW_FIELDS: [&str; 7] = [
-    "customerNumberRaw", "billingPeriodStart", "billingPeriodEnd", "totalAmount", "generationKwh", "issuedAt", "dueDate",
+pub const ALL_BILL_REVIEW_FIELDS: [&str; 8] = [
+    "customerNumberRaw", "billingPeriodStart", "billingPeriodEnd", "totalAmount", "generationKwh", "issuedAt", "dueDate", "documentNo",
 ];
 
 /// 欄位名 → `ocrExtracted` 裡的鍵（兩邊不同名是歷史的結果）。

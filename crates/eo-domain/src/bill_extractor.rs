@@ -46,6 +46,10 @@ pub struct ExtractedBill {
     /// 單上的契約編號原樣。對不上不猜，只標示。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract_number_raw: Option<String>,
+    /// 電費單明細 19 欄（卡 B）—— 欄位表驅動（`taipower_extractor::BILL_DETAIL_FIELDS`），
+    /// 不逐欄手寫。鍵是我們的 camelCase 欄位名，值已經是 DB 形狀（數字／`YYYY-MM-DD`／原樣字串）。
+    #[serde(flatten, default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub detail: serde_json::Map<String, Value>,
 }
 
 impl ExtractedBill {

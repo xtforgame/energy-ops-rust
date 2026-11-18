@@ -27,6 +27,8 @@ interface Dashboard {
   /** 已放行未付 —— 目的地是工作台的會計分區。 */
   releasedUnpaidCount: number;
   unmatchedCount: number;
+  /** S2：有案場、但這段計費期間沒有生效中的合約 —— 跟「待指認案場」是兩種各自的例外。 */
+  noContractCount: number;
   stationTotal: number;
   stationByStatus: Record<string, number>;
 }
@@ -212,6 +214,13 @@ const DashboardPage: React.FC = () => {
           translate('energy.dashboard.unmatchedHint'),
           (data?.unmatchedCount ?? 0) > 0,
           () => navigate(billListRoute({ tab: 'pendingMatch' })),
+        )}
+        {kpi(
+          'energy.dashboard.noContract',
+          data?.noContractCount ?? 0,
+          translate('energy.dashboard.noContractHint'),
+          (data?.noContractCount ?? 0) > 0,
+          () => navigate(billListRoute({ tab: 'pendingContract' })),
         )}
       </Stack>
 

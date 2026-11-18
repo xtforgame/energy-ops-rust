@@ -387,6 +387,13 @@ pub struct CorrectBillInput {
     pub doc_type: Option<EnergyDocType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_reviewed: Option<bool>,
+    /// 通知單號（既有 `document_no`，卡 B 起改成可校對）。
+    #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub document_no: Option<Option<String>>,
+    /// 電費單明細 19 欄（卡 B）—— 欄位表驅動，鍵是 `taipower_extractor::BILL_DETAIL_FIELDS` 的 camel 名。
+    /// 不逐欄手寫成 27 個具名欄位：用同一張表驗證、同一支函式寫回 `detail_fields` jsonb。
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub detail: Map<String, Value>,
 }
 
 /// 校對台可以指定的單別。

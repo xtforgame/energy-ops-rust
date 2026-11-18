@@ -293,8 +293,36 @@ const DEFAULT_REVIEW_FIELDS = [
  */
 export const ALL_BILL_REVIEW_FIELDS = [
   'customerNumberRaw',
-  'billingPeriodStart', 'billingPeriodEnd', 'totalAmount', 'generationKwh', 'issuedAt', 'dueDate',
+  'billingPeriodStart', 'billingPeriodEnd', 'totalAmount', 'generationKwh', 'issuedAt', 'dueDate', 'documentNo',
 ] as const;
+
+/**
+ * 卡 B S3：電費單明細 19 欄，欄位表驅動（跟 `eo_domain::taipower_extractor::BILL_DETAIL_FIELDS`
+ * 同一張表，camel 名、型別都對得上）。不逐欄手寫，`FieldDiffGrid` 直接吃這張表的 key 當 `fields`。
+ */
+export const BILL_DETAIL_FIELDS: ReadonlyArray<{ key: string; kind: 'text' | 'date' | 'num' }> = [
+  { key: 'noticeYearMonth', kind: 'text' },
+  { key: 'currentReadingDate', kind: 'date' },
+  { key: 'nextReadingDate', kind: 'date' },
+  { key: 'purchaseKwh', kind: 'num' },
+  { key: 'consumptionKwh', kind: 'num' },
+  { key: 'purchaseEnergyFee', kind: 'num' },
+  { key: 'businessTax', kind: 'num' },
+  { key: 'electricityFeeTotal', kind: 'num' },
+  { key: 'meterRentalFee', kind: 'num' },
+  { key: 'usageEnergyFee', kind: 'num' },
+  { key: 'baseEnergyFee', kind: 'num' },
+  { key: 'flowEnergyFee', kind: 'num' },
+  { key: 'powerFactorAdjustmentFee', kind: 'num' },
+  { key: 'electricityAdjustmentAmount', kind: 'num' },
+  { key: 'payableTotal', kind: 'num' },
+  { key: 'carrierNumber', kind: 'text' },
+  { key: 'invoiceNumber', kind: 'text' },
+  { key: 'contractNumberRaw', kind: 'text' },
+  { key: 'serviceDepartment', kind: 'text' },
+];
+
+export const BILL_DETAIL_FIELD_KEYS = BILL_DETAIL_FIELDS.map((f) => f.key);
 
 /**
  * 欄位名 → `ocrExtracted` 裡的鍵。
