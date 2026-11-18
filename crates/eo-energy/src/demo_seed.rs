@@ -15,7 +15,7 @@ use crate::workflow::{install_builtin_definitions, start_execution, StartExecuti
 use chrono::NaiveDate;
 use eo_domain::business_key::normalize_customer_number;
 use eo_domain::rbac::RbacScope;
-use eo_domain::schemas::DepartmentMemberRole;
+use eo_domain::schemas::{CreateDepartmentInput, DepartmentMemberRole, UpdateDepartmentInput};
 use eo_domain::workflow_defs::{self as defs, DEPT_ACCOUNTING, DEPT_BILL_REVIEW, DEPT_FINANCE, DEPT_SALES};
 use eo_platform::auth::CurrentUser;
 use eo_platform::core::CoreRef;
@@ -721,6 +721,27 @@ async fn seed_flows(
     created.workflow_definitions += installed.definitions.len();
     created.rating_strategies += installed.strategies.len();
     created.departments += installed.departments.len();
+
+    // 總管理部（卡 C／G01）：示範部門上下層，把會計部門、財務部掛到它底下，組織圖一開就有兩層可看。
+    let admin_hq = match crate::org::departments::by_key(tx, &ctx.access, "admin-hq").await? {
+        Some(d) => d,
+        None => {
+            let input = CreateDepartmentInput { key: "admin-hq".into(), name: "總管理部".into(), sort_order: None, parent_id: None };
+            crate::org::departments::create_department(tx, ctx, &input).await?;
+            created.departments += 1;
+            crate::org::departments::by_key(tx, &ctx.access, "admin-hq")
+                .await?
+                .ok_or_else(|| ApiError::internal("demo seed: admin-hq missing after create"))?
+        }
+    };
+    for key in [DEPT_ACCOUNTING, DEPT_FINANCE] {
+        if let Some(d) = crate::org::departments::by_key(tx, &ctx.access, key).await? {
+            if d.parent_id != Some(admin_hq.id) {
+                let input = UpdateDepartmentInput { name: None, sort_order: None, parent_id: Some(Some(admin_hq.id)) };
+                crate::org::departments::update_department(tx, ctx, d.id, &input).await?;
+            }
+        }
+    }
 
     // 部門編制：發起人的部門主管（R1）靠這張表解析，manager@ 一定要是主管，否則主管核准那關沒有候選人。
     // admin 同時是三個部門的成員，登入後就看得到待辦。

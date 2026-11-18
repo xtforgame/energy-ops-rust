@@ -263,3 +263,22 @@ export interface AdminPatchUserInput {
   disabled?: boolean;
   password?: string;
 }
+
+/** 一個帳號的整體關係總覽（`GET /admin/users/:userId/relations`，只准超級使用者看）。 */
+export interface RelationOrg { organizationId: Id; organizationName: string; role: string }
+export interface RelationProject { projectId: Id; projectName: string; organizationId: Id; organizationName: string }
+export interface RelationDepartment { departmentId: Id; path: string; organizationName: string; role: string }
+export interface RelationGrant {
+  roleUniqueName: string;
+  roleName: string;
+  scope: string;
+  scopeName: string;
+  grantedAt: IsoDate;
+  grantedBy: string | null;
+}
+export interface UserRelations {
+  organizations: RelationOrg[];
+  projects: RelationProject[];
+  departments: RelationDepartment[];
+  grants: RelationGrant[];
+}

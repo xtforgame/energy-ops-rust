@@ -145,6 +145,16 @@ const customChineseTWMessages: TranslationMessages = {
       selectScope: '請先選擇組織。',
       noAccess: '你沒有權限管理此處的部門。',
       flatNote: '組織是扁平兩層（部門＋主管／同仁）；一個人可以同時在多個部門，一個部門也可以有多位主管。',
+      tabList: '清單',
+      tabChart: '組織圖',
+      parent: '上層部門',
+      topLevel: '（最上層）',
+      changeParent: '改上層',
+      changeParentTitle: '改「%{name}」的上層部門',
+      parentChanged: '上層已更新',
+      parentNotFound: '找不到這個上層部門（必須是同一個組織、還沒刪除的部門）。',
+      cycleError: '不能把部門掛到自己的下層。',
+      orgChartPickHint: '點左邊的部門節點，看它的主管與成員。',
     },
     usage: {
       title: '用量',
@@ -750,6 +760,9 @@ const customChineseTWMessages: TranslationMessages = {
         consumptionKwh: '用電度數',
         issuedAt: '台電開單日',
         dueDate: '繳費期限',
+        // 這個欄位字典其實是稽核頁泛用的「改前/改後」表格共用（AuditPage.tsx renderPayload），
+        // 不只是電費單欄位；卡 C 的部門上下層稽核（department.updated）也會查這裡。
+        parentName: '上層部門',
       },
     },
     unmatched: {

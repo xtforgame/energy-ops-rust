@@ -4,7 +4,7 @@ import type {
   AddMemberInput, AdminCreateUserInput, AdminPatchUserInput, AdminUserList, CheckResult, CreateGrantInput,
   CreatePermissionInput, CreateRoleInput, EffectivePermissions, GrantQuery, GrantRow, GrantView, Id, Invitation,
   InvitationSummary, InvitePreset, Items, LoginResult, MyOrganization, OrgMember, Organization, Project,
-  ProjectMember, RbacPermission, RbacRole, SessionInfo, UpdatePermissionInput, UpdateRoleInput, User,
+  ProjectMember, RbacPermission, RbacRole, SessionInfo, UpdatePermissionInput, UpdateRoleInput, User, UserRelations,
 } from './types';
 
 const V1 = '/api/v1';
@@ -106,6 +106,7 @@ export const adminApi = {
   users: (q: { q?: string; page?: number; pageSize?: number } = {}) => http.get<AdminUserList>(`${V1}/admin/users`, q),
   createUser: (input: AdminCreateUserInput) => http.post<User>(`${V1}/admin/users`, input),
   updateUser: (userId: Id, input: AdminPatchUserInput) => http.patch<User>(`${V1}/admin/users/${userId}`, input),
+  relations: (userId: Id) => http.get<UserRelations>(`${V1}/admin/users/${userId}/relations`),
 };
 
 export const healthApi = {
