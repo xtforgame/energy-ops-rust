@@ -172,13 +172,12 @@ pub fn taipower_classifier(ocr_raw: &Value) -> ClassifyResult {
 }
 
 /// 從 canonical record 依 `BILL_DETAIL_FIELDS` 表撈出 19 個明細欄位（表驅動，不逐欄手寫）。
-/// `contractNumberRaw` 已經是 `ExtractedBill` 自己的具名欄位，這裡跳過避免重複。
+/// `contractNumberRaw` 也走這張表：`ExtractedBill.contract_number_raw` 是另一個具名欄位（只用在
+/// `ocr_extracted` 序列化與長度檢查），跟這裡寫進 `detail`／`detail_fields` 的鍵不衝突，兩邊同一個來源值，
+/// 不會互相蓋掉（REVIEW-2.md：S3 要明細區看得到契約編號的辨識值，漏掉算缺陷）。
 fn detail_of(record: &CanonicalRecord) -> Map<String, Value> {
     let mut out = Map::new();
     for f in BILL_DETAIL_FIELDS {
-        if f.camel == "contractNumberRaw" {
-            continue;
-        }
         let v = match f.kind {
             DetailFieldKind::Text => text_of(record, f.canonical_key).map(Value::from),
             DetailFieldKind::Date => date_of(record, f.canonical_key).map(Value::from),
