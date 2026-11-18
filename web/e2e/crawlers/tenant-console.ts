@@ -893,8 +893,9 @@ async function run() {
       rows: document.querySelectorAll('[data-testid="calendar-list-row"]').length,
       text: (document.querySelector('[data-testid="calendar-list"]') as HTMLElement)?.innerText || '',
     }));
-    // demo seed 灌 3 筆行事曆事件。
-    check('清單有 3 筆事件', cal.rows === 3, cal);
+    // demo seed 灌 3 筆分期事件 ＋ 卡 E（02e1e96）demo_seed.rs:650-664 加的「合約到期
+    // （示範）」那一筆 = 4 筆（卡 G3：併回後沒人同步改這條，判定在本卡範圍內一併修）。
+    check('清單有 4 筆事件', cal.rows === 4, cal);
     check('顯示地主名', cal.text.includes('林秀英'), cal.text.slice(0, 200));
     check('狀態是中文', /待處理|已完成|已逾期/.test(cal.text), cal.text.slice(0, 200));
     await shot(page, 'M1-calendar-list');
