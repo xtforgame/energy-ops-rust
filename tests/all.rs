@@ -21,3 +21,4 @@ mod tpr;
 mod energy_intake;
 mod energy_recognition;
 mod energy_attachments;
+mod energy_reminders;

@@ -20,6 +20,7 @@ pub mod ingest;
 pub mod master_data;
 pub mod org;
 pub mod rating;
+pub mod reminders;
 pub mod tpr_client;
 pub mod workbench;
 pub mod workflow;
@@ -58,4 +59,5 @@ pub fn register(system: &mut AppPluginSystem, core: &CoreRef) {
     system.register_new(workbench::WorkbenchPlugin);
     system.register_new(attachments::AttachmentsPlugin);
     system.register_new(ingest::IngestPlugin::new(std::sync::Arc::clone(core)));
+    system.register_new(reminders::RemindersPlugin::new(std::sync::Arc::clone(core)));
 }

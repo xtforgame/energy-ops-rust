@@ -16,6 +16,8 @@ import SolarPowerIcon from '@mui/icons-material/SolarPower';
 import SpaceDashboardIcon from '@mui/icons-material/SpaceDashboard';
 import MoveToInboxIcon from '@mui/icons-material/MoveToInbox';
 import EventIcon from '@mui/icons-material/Event';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import AlarmIcon from '@mui/icons-material/Alarm';
 import HistoryIcon from '@mui/icons-material/History';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -100,6 +102,8 @@ const GROUPS: Array<{ key: string; labelKey: string; icon: React.ReactElement; e
       // 卡 20261118-0810-a2：合約維護（清單、新增編輯、合約檔）進選單。
       ['energyContractConsole', <AssignmentIcon />],
       ['energyCalendarConsole', <EventIcon />],
+      ['energyReminderConsole', <AlarmIcon />],
+      ['energyNotificationConsole', <NotificationsIcon />],
       ['energyDashboardConsole', <SpaceDashboardIcon />],
     ],
   },

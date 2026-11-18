@@ -675,6 +675,70 @@ const StationDetailPage: React.FC = () => {
       {/* **策略軸也要有** —— 綁定缺口有兩份，只補流程那一份等於只做一半。 */}
       {renderAxis('energy.stations.strategyAxis', data?.strategyAxis ?? [], 'strategy-axis', 'rating')}
 
+      {/* 卡 E S5：合約時間軸（簽約、起、迄、續約提醒、生效中）。 */}
+      <Card sx={{ mb: 2 }}>
+        <CardContent>
+          <Typography variant="subtitle1" mb={1}>{translate('energy.stations.contractTimeline')}</Typography>
+          <Table size="small" data-testid="contract-timeline">
+            <TableHead>
+              <TableRow>
+                <TableCell>{translate('energy.contracts.no')}</TableCell>
+                <TableCell>{translate('energy.contracts.signedOn')}</TableCell>
+                <TableCell>{translate('energy.stations.validFrom')}</TableCell>
+                <TableCell>{translate('energy.stations.validTo')}</TableCell>
+                <TableCell>{translate('energy.contracts.renewalRemindOn')}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(data?.contracts ?? []).length ? data.contracts.map((c: any) => (
+                <TableRow key={c.id} data-testid="contract-timeline-row">
+                  <TableCell><Typography variant="body2" fontWeight={600}>{c.contractNo}</Typography></TableCell>
+                  <TableCell>{c.signedOn || '—'}</TableCell>
+                  <TableCell>{c.validFrom}</TableCell>
+                  <TableCell>{c.validTo || translate('energy.stations.openEnded')}</TableCell>
+                  <TableCell>{c.renewalRemindOn || '—'}</TableCell>
+                  <TableCell>
+                    {c.active && (
+                      <Chip
+                        size="small" data-testid="contract-timeline-active"
+                        label={translate('energy.stations.activeNow')}
+                        sx={{ background: jvTokens.primary, color: '#fff', fontWeight: 600, height: 20 }}
+                      />
+                    )}
+                  </TableCell>
+                </TableRow>
+              )) : <EmptyRow colSpan={6} />}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* 卡 E S5：未來事件（本案場或掛在本案場合約上的事件，今天起 20 筆）。 */}
+      <Card sx={{ mb: 2 }}>
+        <CardContent>
+          <Typography variant="subtitle1" mb={1}>{translate('energy.stations.upcomingEvents')}</Typography>
+          <Table size="small" data-testid="station-upcoming-events">
+            <TableHead>
+              <TableRow>
+                <TableCell>{translate('energy.events.date')}</TableCell>
+                <TableCell>{translate('energy.events.title')}</TableCell>
+                <TableCell>{translate('energy.events.status')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(data?.upcomingEvents ?? []).length ? data.upcomingEvents.map((e: any) => (
+                <TableRow key={e.id} data-testid="station-upcoming-event-row">
+                  <TableCell sx={{ fontVariantNumeric: 'tabular-nums' }}>{e.eventDate}</TableCell>
+                  <TableCell>{e.title}</TableCell>
+                  <TableCell><StatusChip i18nKey="energy.eventStatus" value={e.status} /></TableCell>
+                </TableRow>
+              )) : <EmptyRow colSpan={3} />}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent>
           <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>

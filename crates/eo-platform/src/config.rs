@@ -26,6 +26,8 @@ pub struct Config {
     pub tpr_batch_size: usize,
     /// 辨識對帳背景任務的間隔秒數；0 ＝ 不啟動。
     pub recognition_tick_secs: u64,
+    /// 提醒檢查器背景任務的間隔秒數；0 ＝ 不啟動（卡 E，手動端點／測試照常可跑）。
+    pub reminder_check_secs: u64,
     /// cookie 加 `Secure`（正式環境走 https 時開）。
     pub cookie_secure: bool,
     /// 開機時建立的初始超級使用者（帳號、密碼）；兩者都設才建。
@@ -66,6 +68,7 @@ impl Config {
                 .map(|n| n.min(50))
                 .unwrap_or(10),
             recognition_tick_secs: env("EO_RECOGNITION_TICK_SECS").and_then(|v| v.parse().ok()).unwrap_or(60),
+            reminder_check_secs: env("EO_REMINDER_CHECK_SECS").and_then(|v| v.parse().ok()).unwrap_or(0),
             cookie_secure: env("EO_COOKIE_SECURE").map(|v| v == "1" || v == "true").unwrap_or(false),
             bootstrap_admin: match (env("EO_BOOTSTRAP_ADMIN_USER"), env("EO_BOOTSTRAP_ADMIN_PASSWORD")) {
                 (Some(u), Some(p)) => Some((u, p)),

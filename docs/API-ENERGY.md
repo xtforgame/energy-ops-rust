@@ -35,9 +35,24 @@
 | 方法 | 新路徑 | 舊 | 閘 |
 |---|---|---|---|
 | GET | `E/dashboard` | 同 | FLOW_VIEW |
-| GET | `E/calendar-events` | 同 | FLOW_VIEW |
+| GET | `E/calendar-events`（卡 E：多回 `stationId`／`stationName`／`occurredOn`） | 同 | FLOW_VIEW |
+| POST | `E/calendar-events`（卡 E S1：手動新增預定事件；`title`／`kind`／`eventDate` 必填） | 新 | MASTER_MANAGE |
+| PATCH | `E/calendar-events/{eventId}`（卡 E S1：記實際發生日／改狀態；填 `occurredOn` 沒帶 `status` 時自動轉 `done`） | 新 | MASTER_MANAGE |
 | GET | `E/me/landing` | 同 | FLOW_VIEW |
 | GET | `E/workbench` | 同 | FLOW_VIEW |
+
+## 提醒機制（卡 E）
+
+| 方法 | 新路徑 | 說明 | 閘 |
+|---|---|---|---|
+| GET | `E/reminder-rules` | 固定四種 `kind`（`installmentDue`／`contractExpiry`／`contractRenewal`／`billExpected`），沒設定的回全部空值 | FLOW_VIEW |
+| PUT | `E/reminder-rules` | body `{ rules: [{kind, leadDays, repeatDays, businessDays, dayOfMonth, enabled}] }`；整段 upsert | MASTER_MANAGE |
+| GET | `E/holidays` | 假日表（`day`／`name`／`isWorkday` 補班日） | FLOW_VIEW |
+| POST | `E/holidays` | 新增；同一天已存在回 409 `holiday_exists` | MASTER_MANAGE |
+| DELETE | `E/holidays/{holidayId}` | 軟刪 | MASTER_MANAGE |
+| GET | `E/notifications?unread=1` | 系統內通知（組織內共用，不指定收件人） | FLOW_VIEW |
+| POST | `E/notifications/{notificationId}/read` | 標已讀 | FLOW_VIEW |
+| POST | `E/reminders/run-check` | body `{ asOf? }`（不帶就是今天）；手動跑一輪檢查器，smoke／管理員用 | MASTER_MANAGE |
 
 ## 流程
 

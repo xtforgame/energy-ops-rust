@@ -43,6 +43,7 @@ const STATUS_COLOR: Record<string, string> = {
   paid: jvTokens.ok,
   done: jvTokens.ok,
   missed: jvTokens.warn,
+  overdue: jvTokens.warn,
   cancelled: jvTokens.muted,
   // 主檔
   active: jvTokens.ok,
