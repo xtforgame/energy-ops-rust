@@ -301,8 +301,8 @@ pub async fn install_definition(
         let node_id: i64 = sqlx::query_scalar(
             "INSERT INTO tbl_energy_workflow_node
                (definition_id, node_key, name, node_type, assignment_rule, allow_self_approval, revertable, allows_subject_edit,
-                allow_jump_target, parallel, join_policy, join_node_key, service_key, layout)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id",
+                allow_jump_target, parallel, join_policy, join_node_key, service_key, layout, requirements)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
         )
         .bind(row.id)
         .bind(&n.node_key)
@@ -318,6 +318,7 @@ pub async fn install_definition(
         .bind(n.join_node_key.as_deref())
         .bind(n.service_key.as_deref())
         .bind(&n.layout)
+        .bind(serde_json::to_value(&n.requirements).unwrap_or_else(|_| json!({})))
         .fetch_one(&mut **tx)
         .await?;
         for a in &n.actions {

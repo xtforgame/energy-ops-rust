@@ -24,6 +24,7 @@ impl AppPlugin for AttachmentsPlugin {
         cfg.post(&path("/contracts/{contractId}/attachments"), web::post().to(handlers::upload_to_contract));
         cfg.get(&path("/attachments/{attachmentId}/download"), web::get().to(handlers::download));
         cfg.post(&path("/attachment-links/{linkId}/remove"), web::post().to(handlers::remove_link));
+        cfg.patch(&path("/attachments/{attachmentId}/category"), web::patch().to(handlers::set_category));
         cfg.post(&path("/uploads/sign"), web::post().to(handlers::sign_upload));
     }
 }

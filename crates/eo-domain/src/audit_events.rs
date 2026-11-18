@@ -503,6 +503,15 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Notable,
         true,
     ),
+    // 補件判不出類別或人要改類別：流程引擎「必傳附件類別」送出前檢查靠這個欄位計數。
+    ev(
+        "attachment.category_set",
+        "energyAttachment",
+        &[req("attachmentId", INT), req("category", STR)],
+        "audit.type.attachment.categorySet",
+        Info,
+        true,
+    ),
     // ── 電費單 ──
     // 辨識判不出來改由人工建單：事後看到沒有辨識值的單，第一個問題是「它哪來的」。
     ev(
