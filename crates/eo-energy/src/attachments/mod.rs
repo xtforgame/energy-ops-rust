@@ -20,6 +20,8 @@ impl AppPlugin for AttachmentsPlugin {
     fn configure_routes(&self, cfg: &mut RouteRegistrar<'_>, _self_arc: &Arc<dyn AppPlugin>) {
         cfg.get(&path("/executions/{executionId}/attachments"), web::get().to(handlers::list_for_execution));
         cfg.post(&path("/executions/{executionId}/attachments"), web::post().to(handlers::upload_to_execution));
+        cfg.get(&path("/contracts/{contractId}/attachments"), web::get().to(handlers::list_for_contract));
+        cfg.post(&path("/contracts/{contractId}/attachments"), web::post().to(handlers::upload_to_contract));
         cfg.get(&path("/attachments/{attachmentId}/download"), web::get().to(handlers::download));
         cfg.post(&path("/attachment-links/{linkId}/remove"), web::post().to(handlers::remove_link));
         cfg.patch(&path("/attachments/{attachmentId}/category"), web::patch().to(handlers::set_category));

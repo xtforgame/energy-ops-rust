@@ -105,6 +105,19 @@ async fn bill_detail(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64) -> ApiResult<Valu
         None => None,
     };
     v["station"] = station.map(|s| json!({ "id": s.id, "name": s.name, "customerNumber": s.customer_number })).unwrap_or(Value::Null);
+    // 合約編號只用來顯示（S1：詳情要看得到比對到哪一份合約），不拿它反過來驅動任何判斷。
+    v["contractNo"] = match bill.contract_id {
+        Some(cid) => {
+            sqlx::query_scalar::<_, String>("SELECT contract_no FROM tbl_energy_contract WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL")
+                .bind(cid)
+                .bind(ctx.org_id())
+                .fetch_optional(&mut **tx)
+                .await?
+                .map(|s| json!(s))
+                .unwrap_or(Value::Null)
+        }
+        None => Value::Null,
+    };
     v["executions"] = json!(bills::executions_of_bill(tx, ctx.org_id(), bill_id).await?);
     v["ingest"] = bills::ingest_of_bill(tx, ctx.org_id(), bill_id).await?;
     v["binding"] = bills::binding_status(tx, &ctx.access, &bill, ctx.today()).await?;
@@ -198,6 +211,17 @@ pub async fn match_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: 
     let row = bills::match_station(&mut tx, &ctx, bill_id, input.station_id).await?;
     tx.commit().await?;
     Ok(HttpResponse::Ok().json(json!({ "id": row.id, "reviewStatus": row.review_status, "stationId": row.station_id })))
+}
+
+/// 合約後補之後，在校對台按「重新比對」（S1）。
+pub async fn rematch_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>) -> ApiResult<HttpResponse> {
+    let (org, bill_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::FLOW_ACT, &meta).await?;
+    let mut tx = core.pool.begin().await?;
+    bills::rematch(&mut tx, &ctx, bill_id).await?;
+    tx.commit().await?;
+    let mut tx = core.pool.begin().await?;
+    Ok(HttpResponse::Ok().json(bill_detail(&mut tx, &ctx, bill_id).await?))
 }
 
 // ── 收件批次 ──

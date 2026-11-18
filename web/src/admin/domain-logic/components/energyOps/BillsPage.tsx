@@ -35,7 +35,7 @@ export interface BillRow {
 }
 
 /** 校對狀態的可選值 —— 與後端 `energyBill.reviewStatus` 的 enum 對齊。 */
-const REVIEW_STATUSES = ['pendingMatch', 'pendingReview', 'reviewed'];
+const REVIEW_STATUSES = ['pendingMatch', 'pendingContract', 'pendingReview', 'reviewed'];
 
 /**
  * `2026-02` → `2026-03-01`（**下個月一號**）。
@@ -114,16 +114,20 @@ const BillsPage: React.FC = () => {
    * `reviewStatus='pendingMatch'`。做成兩份狀態的話，
    * 下拉與頁籤遲早會互相打架（選了頁籤又改下拉，畫面說不出自己在篩什麼）。
    */
-  const tab: 'all' | 'pendingMatch' = searchParams.get('tab') === 'pendingMatch' ? 'pendingMatch' : 'all';
+  const tabParam = searchParams.get('tab');
+  const tab: 'all' | 'pendingMatch' | 'pendingContract' =
+    tabParam === 'pendingMatch' ? 'pendingMatch' : tabParam === 'pendingContract' ? 'pendingContract' : 'all';
   const [reviewStatus, setReviewStatus] = React.useState(() => searchParams.get('reviewStatus') ?? '');
-  const effectiveReviewStatus = tab === 'pendingMatch' ? 'pendingMatch' : reviewStatus;
-  const setTab = (v: 'all' | 'pendingMatch') => {
+  const effectiveReviewStatus = tab !== 'all' ? tab : reviewStatus;
+  const setTab = (v: 'all' | 'pendingMatch' | 'pendingContract') => {
     const next = new URLSearchParams(searchParams);
     if (v === 'all') next.delete('tab'); else next.set('tab', v);
     setSearchParams(next, { replace: true });
   };
   /** 角標的數字 —— 與選單上那個是**同一支端點**（不可能對不起來）。 */
   const [unmatchedCount, setUnmatchedCount] = React.useState(0);
+  /** S2：找不到生效合約那一格的角標。 */
+  const [noContractCount, setNoContractCount] = React.useState(0);
   // Dashboard「本月應付」帶過來的計費期間；本頁沒有月份輸入框 → 不需要 setter。
   const month = searchParams.get('month') ?? '';
   const [keyword, setKeyword] = React.useState('');
@@ -173,6 +177,11 @@ const BillsPage: React.FC = () => {
       const { data } = await energyHttp.get(`${energyBase(orgId)}/bills/unmatched`);
       setUnmatchedCount(Array.isArray(data) ? data.length : 0);
     } catch { setUnmatchedCount(0); }
+    // 找不到生效合約那一格 —— 沒有獨立端點，用同一支 `/bills` 篩選後數長度。
+    try {
+      const { data } = await energyHttp.get(`${energyBase(orgId)}/bills`, { params: { reviewStatus: 'pendingContract', limit: 500 } });
+      setNoContractCount(Array.isArray(data?.items) ? data.items.length : 0);
+    } catch { setNoContractCount(0); }
   }, [orgId, effectiveReviewStatus, month, notify]);
 
   React.useEffect(() => { load(); }, [load]);
@@ -229,6 +238,13 @@ const BillsPage: React.FC = () => {
           label={translate('energy.bills.tabPendingMatch', { count: unmatchedCount })}
           sx={unmatchedCount > 0 ? { color: jvTokens.warn } : undefined}
         />
+        <Tab
+          value="pendingContract"
+          data-testid="bills-tab-pendingContract"
+          data-count={noContractCount}
+          label={translate('energy.bills.tabPendingContract', { count: noContractCount })}
+          sx={noContractCount > 0 ? { color: jvTokens.warn } : undefined}
+        />
       </Tabs>
 
       <Card>
@@ -250,6 +266,22 @@ const BillsPage: React.FC = () => {
               {translate('energy.unmatched.blockingNote')}
             </Alert>
           )}
+          {tab === 'pendingContract' && (
+            <Alert
+              severity="warning"
+              icon={false}
+              data-testid="bills-pendingcontract-note"
+              sx={{
+                mb: 2,
+                color: jvTokens.warn,
+                borderColor: jvTokens.warn,
+                border: '1px solid',
+                backgroundColor: 'transparent',
+              }}
+            >
+              {translate('energy.unmatched.noContractBlockingNote')}
+            </Alert>
+          )}
           <Stack direction="row" gap={2} mb={2} flexWrap="wrap" alignItems="center">
             <TextField
               select
@@ -257,9 +289,9 @@ const BillsPage: React.FC = () => {
               sx={{ minWidth: 180 }}
               label={translate('energy.bills.reviewStatus')}
               value={effectiveReviewStatus}
-              // 頁籤已經釘住 `pendingMatch` 時不讓下拉再改一次 ——
+              // 頁籤已經釘住 `pendingMatch`／`pendingContract` 時不讓下拉再改一次 ——
               // 兩個控制項同時改同一件事，畫面就說不出自己在篩什麼。
-              disabled={tab === 'pendingMatch'}
+              disabled={tab !== 'all'}
               onChange={(e) => setReviewStatus(e.target.value)}
               inputProps={{ 'data-testid': 'bills-review-status' }}
             >

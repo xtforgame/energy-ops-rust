@@ -628,6 +628,34 @@ export const ENERGY_AUDIT_EVENTS: AuditEventDef[] = [
     hasSideEffect: true,
   },
   {
+    // 卡 B S2：有案場、但這段期間沒有生效中的合約 —— 跟 `bill.unmatched` 是兩種各自的例外。
+    type: 'bill.no_contract',
+    targetType: 'energyBill',
+    payloadSchema: z.object({
+      customerNumberRaw: z.string().nullable().optional(),
+      stationId: z.number().int().nullable().optional(),
+      contractId: z.number().int().nullable().optional(),
+      extractedFields: z.array(z.string()).optional(),
+      sourceAttachmentId: z.number().int().nullable().optional(),
+    }),
+    summaryKey: 'audit.type.bill.no_contract',
+    severity: 'notable',
+    hasSideEffect: true,
+  },
+  {
+    // 卡 B S1：合約後補之後，在校對台按「重新比對」。
+    type: 'bill.rematched',
+    targetType: 'energyBill',
+    payloadSchema: z.object({
+      from: z.string(),
+      to: z.string(),
+      contractId: z.number().int().nullable().optional(),
+    }),
+    summaryKey: 'audit.type.bill.rematched',
+    severity: 'info',
+    hasSideEffect: true,
+  },
+  {
     type: 'bill.corrected',
     targetType: 'energyBill',
     payloadSchema: z.object({

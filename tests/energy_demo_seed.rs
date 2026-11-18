@@ -21,7 +21,8 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     // 6 座舊案場各一個主電號＋100% 分配，加上新案場的 2 個電號＋2 筆分配（60／40）。
     assert_eq!((c.meters, c.allocations), (8, 8));
     assert_eq!((c.installments, c.calendar_events), (3, 3));
-    assert_eq!((c.departments, c.department_members), (5, 10));
+    // 五個內建部門 ＋ 卡 c-org-chart 的示範上層部門「總管理部」（demo_seed.rs 的 admin-hq）＝ 6。
+    assert_eq!((c.departments, c.department_members), (6, 10));
     // 四份內建定義 v1 ＋ 核可流程 v2；策略 v1（內建）＋ v2。
     assert_eq!((c.workflow_definitions, c.rating_strategies), (5, 2));
     // 案場層 7 段 ＋ 契約層 4 × 2 段。

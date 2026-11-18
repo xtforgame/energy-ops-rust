@@ -82,9 +82,11 @@ pub struct ContractCoverage {
 }
 
 /// 這座案場在這個業務日期受哪些契約約束（可能多份）。效期兩層：配對自己的優先，沒填沿用契約的。
-pub async fn effective_contracts(
+/// 只吃 `org_id`（不吃 `OrgAccess`）—— `ingest` 的收件路徑拿不到判過權的 `OrgAccess` 時，
+/// 直接呼叫這一支共用；`effective_contracts` 只是它外面包一層型別閘，不是另一份 SQL（commander 2026-11-18 硬規定）。
+pub async fn effective_contracts_for_org(
     tx: &mut Tx<'_>,
-    access: &OrgAccess,
+    org_id: i64,
     station_id: i64,
     business_date: NaiveDate,
 ) -> ApiResult<Vec<ContractCoverage>> {
@@ -96,7 +98,7 @@ pub async fn effective_contracts(
           ORDER BY c.id, cs.id",
     )
     .bind(station_id)
-    .bind(access.org_id())
+    .bind(org_id)
     .fetch_all(&mut **tx)
     .await?;
     Ok(rows
@@ -108,6 +110,16 @@ pub async fn effective_contracts(
         })
         .map(|r| ContractCoverage { coverage_id: r.0, contract_id: r.1, contract_no: r.2, params: r.3, stage: r.8 })
         .collect())
+}
+
+/// 這座案場在這個業務日期受哪些契約約束 —— 已判過權時用這個（內部就是 `effective_contracts_for_org`）。
+pub async fn effective_contracts(
+    tx: &mut Tx<'_>,
+    access: &OrgAccess,
+    station_id: i64,
+    business_date: NaiveDate,
+) -> ApiResult<Vec<ContractCoverage>> {
+    effective_contracts_for_org(tx, access.org_id(), station_id, business_date).await
 }
 
 /// 解出來的一條流程。
@@ -435,7 +447,7 @@ pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResul
         if crate::org::departments::by_key(tx, &ctx.access, key).await?.is_some() {
             continue;
         }
-        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: name.into(), sort_order: None };
+        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: name.into(), sort_order: None, parent_id: None };
         let v = crate::org::departments::create_department(tx, ctx, &input).await?;
         report.departments.push(json!({ "id": v.id, "key": v.key, "name": v.name }));
     }

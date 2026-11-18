@@ -49,11 +49,19 @@ pub struct BillRow {
     pub organization_id: i64,
     pub station_id: Option<i64>,
     pub source_attachment_id: Option<i64>,
+    /// 比對到的合約（S1 `resolve_match`）；`noContract`／`noStation` 時是 NULL。
+    pub contract_id: Option<i64>,
+    /// 比對用的是哪一個電號（一座案場可能有多個電號）；主電號比對不填。
+    pub station_meter_id: Option<i64>,
+    /// 電費單明細 19 欄（卡 B），欄位表驅動：鍵是 `ALL_BILL_REVIEW_FIELDS` 以外、
+    /// `taipower_extractor::BILL_DETAIL_FIELDS` 的 camel 名；一個 jsonb 欄位頂 19 支具名欄，
+    /// 不逐欄手寫 `field_value`／`column_of`／`patch_values` 的 match。
+    pub detail_fields: Value,
 }
 
 pub const BILL_COLS: &str = "id, customer_number_raw, ocr_raw, ocr_extracted, template_id, doc_type, due_date, billing_period_start,
     billing_period_end, total_amount, generation_kwh, issued_at, business_key, document_no, approval_state, approved_at, review_status,
-    data, organization_id, station_id, source_attachment_id";
+    data, organization_id, station_id, source_attachment_id, contract_id, station_meter_id, detail_fields";
 
 impl BillRow {
     pub fn doc_type_source(&self) -> BillDocTypeSource<'_> {
@@ -77,7 +85,9 @@ impl BillRow {
             "dueDate" => d(self.due_date),
             "totalAmount" => n(self.total_amount),
             "generationKwh" => n(self.generation_kwh),
-            _ => Value::Null,
+            "documentNo" => self.document_no.as_ref().map(|s| json!(s)).unwrap_or(Value::Null),
+            // 卡 B 的 19 個明細欄位：一張表頂 19 支具名分支，值就在 `detail_fields` 這個 jsonb 裡。
+            other => self.detail_fields.get(other).cloned().unwrap_or(Value::Null),
         }
     }
 
@@ -134,6 +144,16 @@ pub fn changed_fields(b: &BillRow) -> Vec<String> {
     out
 }
 
+/// 哪些明細欄位（19 欄，卡 B）被人工改過 —— 跟 `changed_fields` 同一條規則，
+/// 但掃的是 `BILL_DETAIL_FIELDS` 那張表，不是 `ALL_BILL_REVIEW_FIELDS`。
+pub fn detail_changed_fields(b: &BillRow) -> Vec<String> {
+    eo_domain::taipower_extractor::BILL_DETAIL_FIELDS
+        .iter()
+        .filter(|f| !same_value(b.ocr_extracted.get(f.camel), b.detail_fields.get(f.camel)))
+        .map(|f| f.camel.to_string())
+        .collect()
+}
+
 pub fn to_view(b: &BillRow) -> Value {
     json!({
         "id": b.id,
@@ -155,6 +175,10 @@ pub fn to_view(b: &BillRow) -> Value {
         "businessKey": b.business_key,
         "documentNo": b.document_no,
         "approvalState": b.approval_state,
+        "contractId": b.contract_id,
+        "stationMeterId": b.station_meter_id,
+        "detailFields": b.detail_fields,
+        "detailChangedFields": detail_changed_fields(b),
     })
 }
 
@@ -190,25 +214,30 @@ pub async fn station_by_id(tx: &mut Tx<'_>, org_id: i64, id: i64) -> ApiResult<O
     .await?)
 }
 
-/// 電號 → 案場：先查 `tbl_energy_station_meter`（一對多；有效期涵蓋今天或沒有迄日才算，
-/// 20261118-0427-a 卡起第二個電號的單也對得到），查不到再比案場主電號（正規化值，找不到再退回原字串，
-/// 相容舊資料，不是模糊比對）。
-pub async fn find_station_by_customer_number(tx: &mut Tx<'_>, org_id: i64, customer_number: &str) -> ApiResult<Option<StationLite>> {
+/// 電號 → 案場＋是哪一個電號：先查 `tbl_energy_station_meter`（一對多；效期比**這張單的業務日期**
+/// ——20261118-0810-b 卡起不再比 `CURRENT_DATE`，回頭補登的舊單才對得到當時有效的那個電號），
+/// 查不到再比案場主電號（正規化值，找不到再退回原字串，相容舊資料，不是模糊比對；主電號沒有獨立 id）。
+pub async fn find_station_and_meter(
+    tx: &mut Tx<'_>,
+    org_id: i64,
+    customer_number: &str,
+    business_date: NaiveDate,
+) -> ApiResult<Option<(StationLite, Option<i64>)>> {
     if let Some(key) = normalize_customer_number(Some(customer_number)) {
-        let via_meter: Option<StationLite> = sqlx::query_as(
-            "SELECT s.id, s.name, s.customer_number FROM tbl_energy_station_meter m
+        let via_meter: Option<(i64, i64, String, String)> = sqlx::query_as(
+            "SELECT m.id, s.id, s.name, s.customer_number FROM tbl_energy_station_meter m
                JOIN tbl_energy_station s ON s.id = m.station_id AND s.deleted_at IS NULL
               WHERE m.organization_id = $1 AND m.customer_number_key = $2 AND m.deleted_at IS NULL
-                AND (m.valid_to IS NULL OR m.valid_to >= CURRENT_DATE)
-                AND (m.valid_from IS NULL OR m.valid_from <= CURRENT_DATE)
+                AND (m.valid_to IS NULL OR m.valid_to >= $3) AND (m.valid_from IS NULL OR m.valid_from <= $3)
               ORDER BY m.id LIMIT 1",
         )
         .bind(org_id)
         .bind(&key)
+        .bind(business_date)
         .fetch_optional(&mut **tx)
         .await?;
-        if via_meter.is_some() {
-            return Ok(via_meter);
+        if let Some((meter_id, station_id, name, customer_number)) = via_meter {
+            return Ok(Some((StationLite { id: station_id, name, customer_number }, Some(meter_id))));
         }
         let hit: Option<StationLite> = sqlx::query_as(
             "SELECT id, name, customer_number FROM tbl_energy_station
@@ -218,18 +247,90 @@ pub async fn find_station_by_customer_number(tx: &mut Tx<'_>, org_id: i64, custo
         .bind(&key)
         .fetch_optional(&mut **tx)
         .await?;
-        if hit.is_some() {
-            return Ok(hit);
+        if let Some(station) = hit {
+            return Ok(Some((station, None)));
         }
     }
-    Ok(sqlx::query_as(
+    let hit: Option<StationLite> = sqlx::query_as(
         "SELECT id, name, customer_number FROM tbl_energy_station
           WHERE organization_id = $1 AND customer_number = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1",
     )
     .bind(org_id)
     .bind(customer_number)
     .fetch_optional(&mut **tx)
-    .await?)
+    .await?;
+    Ok(hit.map(|s| (s, None)))
+}
+
+/// 相容舊呼叫點（卡 A2 的測試）：效期比今天，不帶 meter id。新碼請用 `find_station_and_meter`。
+pub async fn find_station_by_customer_number(tx: &mut Tx<'_>, org_id: i64, customer_number: &str) -> ApiResult<Option<StationLite>> {
+    Ok(find_station_and_meter(tx, org_id, customer_number, chrono::Utc::now().date_naive()).await?.map(|(s, _)| s))
+}
+
+/// 這張單的比對結果：電號 → 案場 → 這段業務日期生效的合約。三種之一，三個入口
+/// （`ingest`／`match_station`／`correct`）＋ `rematch` 共用，不各寫一套。
+#[derive(Debug, Clone)]
+pub enum MatchOutcome {
+    Matched { station: StationLite, meter_id: Option<i64>, contract_id: i64, contract_no: String },
+    NoStation,
+    NoContract { station: StationLite },
+}
+
+impl MatchOutcome {
+    pub fn review_status(&self) -> &'static str {
+        match self {
+            MatchOutcome::Matched { .. } => "pendingReview",
+            MatchOutcome::NoStation => "pendingMatch",
+            MatchOutcome::NoContract { .. } => "pendingContract",
+        }
+    }
+    pub fn station_id(&self) -> Option<i64> {
+        match self {
+            MatchOutcome::Matched { station, .. } | MatchOutcome::NoContract { station } => Some(station.id),
+            MatchOutcome::NoStation => None,
+        }
+    }
+    pub fn meter_id(&self) -> Option<i64> {
+        match self {
+            MatchOutcome::Matched { meter_id, .. } => *meter_id,
+            _ => None,
+        }
+    }
+    pub fn contract_id(&self) -> Option<i64> {
+        match self {
+            MatchOutcome::Matched { contract_id, .. } => Some(*contract_id),
+            _ => None,
+        }
+    }
+}
+
+/// 案場已經定了（人工指認、或 `resolve_match` 自己查到的）—— 只差「這段期間有沒有生效合約」。
+async fn resolve_contract_for_station(
+    tx: &mut Tx<'_>,
+    org_id: i64,
+    station: StationLite,
+    meter_id: Option<i64>,
+    business_date: NaiveDate,
+) -> ApiResult<MatchOutcome> {
+    let coverages = crate::workflow::definition::effective_contracts_for_org(tx, org_id, station.id, business_date).await?;
+    // 同一段期間兩份以上生效合約時記 id 最小的那一份（`ORDER BY c.id` 已經排好，DESIGN.md 暫定）。
+    match coverages.into_iter().next() {
+        Some(cv) => Ok(MatchOutcome::Matched { station, meter_id, contract_id: cv.contract_id, contract_no: cv.contract_no }),
+        None => Ok(MatchOutcome::NoContract { station }),
+    }
+}
+
+/// 比對到合約（S1）：電號 → 案場（含電號表，效期比業務日期）→ 這段期間生效的合約。
+pub async fn resolve_match(
+    tx: &mut Tx<'_>,
+    org_id: i64,
+    customer_number: &str,
+    business_date: NaiveDate,
+) -> ApiResult<MatchOutcome> {
+    match find_station_and_meter(tx, org_id, customer_number, business_date).await? {
+        Some((station, meter_id)) => resolve_contract_for_station(tx, org_id, station, meter_id, business_date).await,
+        None => Ok(MatchOutcome::NoStation),
+    }
 }
 
 fn decimal_of(v: f64) -> Option<Decimal> {
@@ -268,15 +369,19 @@ pub async fn ingest(
     }
     let ocr_raw = if ocr_json.is_null() { json!({}) } else { ocr_json.clone() };
     let mut out = IngestResult { bill_ids: vec![], matched: 0, unmatched: 0 };
+    let today = ctx.today();
     for one in &extracted {
         let business_key =
             bill_business_key(one.customer_number.as_deref(), one.billing_period_start.as_deref(), one.billing_period_end.as_deref());
-        let station = match one.customer_number.as_deref() {
-            Some(cn) if !cn.is_empty() => find_station_by_customer_number(tx, ctx.org_id(), cn).await?,
-            _ => None,
+        let business_date = date_of(one.billing_period_end.as_deref()).unwrap_or(today);
+        let outcome = match one.customer_number.as_deref() {
+            Some(cn) if !cn.is_empty() => resolve_match(tx, ctx.org_id(), cn, business_date).await?,
+            _ => MatchOutcome::NoStation,
         };
-        let review_status = if station.is_some() { "pendingReview" } else { "pendingMatch" };
-        if station.is_some() {
+        let review_status = outcome.review_status();
+        // 「配到了」在收件台的意義是「找到案場」—— 找得到案場但沒有生效合約，
+        // 仍然算 matched（它不是 pendingMatch 那種要重新指認案場的例外）。
+        if outcome.station_id().is_some() {
             out.matched += 1;
         } else {
             out.unmatched += 1;
@@ -286,15 +391,16 @@ pub async fn ingest(
                 .map(|t| t.as_str().to_string())
         });
         let extracted_json = serde_json::to_value(one).unwrap_or_else(|_| json!({}));
+        let detail_json = Value::Object(one.detail.clone());
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO tbl_energy_bill
                (organization_id, station_id, customer_number_raw, source_attachment_id, ocr_raw, ocr_extracted,
                 billing_period_start, billing_period_end, total_amount, generation_kwh, issued_at, template_id, doc_type, due_date,
-                business_key, document_no, review_status, data)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, '{}'::jsonb) RETURNING id",
+                business_key, document_no, review_status, contract_id, station_meter_id, detail_fields, data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, '{}'::jsonb) RETURNING id",
         )
         .bind(ctx.org_id())
-        .bind(station.as_ref().map(|s| s.id))
+        .bind(outcome.station_id())
         .bind(one.customer_number.as_deref())
         .bind(source_attachment_id)
         .bind(&ocr_raw)
@@ -310,19 +416,30 @@ pub async fn ingest(
         .bind(business_key.as_deref())
         .bind(one.document_no.as_deref())
         .bind(review_status)
+        .bind(outcome.contract_id())
+        .bind(outcome.meter_id())
+        .bind(&detail_json)
         .fetch_one(&mut **tx)
         .await?;
         out.bill_ids.push(id);
         let keys: Vec<String> = extracted_json.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
         let label = one.customer_number.clone().unwrap_or_else(|| "(無電號)".into());
-        let input = match &station {
-            Some(s) => AuditInput::new("bill.matched", id, format!("辨識出電費單並配對到案場「{}」", s.name)),
-            None => AuditInput::new(
+        let input = match &outcome {
+            MatchOutcome::Matched { station, .. } => {
+                AuditInput::new("bill.matched", id, format!("辨識出電費單並配對到案場「{}」", station.name))
+            }
+            MatchOutcome::NoStation => AuditInput::new(
                 "bill.unmatched",
                 id,
                 format!("電號「{}」找不到對應案場，轉為例外件待人工指認", one.customer_number.as_deref().unwrap_or("(無)")),
             )
             // 配不上不是失敗，是要有人處理的狀態 —— 用 outcome 標出來，稽核清單才篩得到。
+            .outcome("failed"),
+            MatchOutcome::NoContract { station } => AuditInput::new(
+                "bill.no_contract",
+                id,
+                format!("案場「{}」在這段計費期間沒有生效中的合約，轉為例外件待補合約", station.name),
+            )
             .outcome("failed"),
         };
         audit::record(
@@ -330,7 +447,8 @@ pub async fn ingest(
             ctx,
             input.label(label).payload(json!({
                 "customerNumberRaw": one.customer_number,
-                "stationId": station.as_ref().map(|s| s.id),
+                "stationId": outcome.station_id(),
+                "contractId": outcome.contract_id(),
                 "extractedFields": keys,
                 "sourceAttachmentId": source_attachment_id,
                 "ingestBatchId": ingest_batch_id,
@@ -341,13 +459,18 @@ pub async fn ingest(
     Ok(out)
 }
 
-/// 人工指認：把例外件配到一個案場，回到「待校對」。
+/// 人工指認：把例外件配到一個案場，指認之後再查合約（S1：有生效合約才是「待校對」，沒有是「找不到生效合約」）。
 pub async fn match_station(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, station_id: i64) -> ApiResult<BillRow> {
     let bill = bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
     let station = station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(404, "station_not_found"))?;
-    sqlx::query("UPDATE tbl_energy_bill SET station_id = $2, review_status = 'pendingReview' WHERE id = $1 AND deleted_at IS NULL")
+    let business_date = bill.business_date(ctx.today());
+    let outcome = resolve_contract_for_station(tx, ctx.org_id(), station.clone(), None, business_date).await?;
+    sqlx::query("UPDATE tbl_energy_bill SET station_id = $2, review_status = $3, contract_id = $4, station_meter_id = $5 WHERE id = $1 AND deleted_at IS NULL")
         .bind(bill_id)
         .bind(station_id)
+        .bind(outcome.review_status())
+        .bind(outcome.contract_id())
+        .bind(outcome.meter_id())
         .execute(&mut **tx)
         .await?;
     // 收件台看的是 item 的狀態：與「改電號配上案場」是同一件事的兩個入口，狀態轉換也要一樣。
@@ -373,7 +496,38 @@ pub async fn match_station(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, station_id:
             format!("人工指認：電號「{}」→ 案場「{}」", cn.as_deref().unwrap_or("(無)"), station.name),
         )
         .label(cn.clone().unwrap_or_else(|| bill_id.to_string()))
-        .payload(json!({ "customerNumberRaw": cn, "stationId": station_id, "previousStationId": bill.station_id, "manual": true })),
+        .payload(json!({ "customerNumberRaw": cn, "stationId": station_id, "previousStationId": bill.station_id, "manual": true, "contractId": outcome.contract_id() })),
+    )
+    .await?;
+    bill_in_org(tx, ctx.org_id(), bill_id, false).await
+}
+
+/// 合約後補之後，在校對台按「重新比對」：用現在的電號與計費迄日重跑一次 `resolve_match`，
+/// 不用改電號、改期間那種大費周章的方式去觸發。
+pub async fn rematch(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64) -> ApiResult<BillRow> {
+    let bill = bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
+    let business_date = bill.business_date(ctx.today());
+    let outcome = match bill.customer_number_raw.as_deref().filter(|s| !s.is_empty()) {
+        Some(cn) => resolve_match(tx, ctx.org_id(), cn, business_date).await?,
+        None => MatchOutcome::NoStation,
+    };
+    let before_status = bill.review_status.clone();
+    let after_status =
+        if bill.review_status == "reviewed" { bill.review_status.clone() } else { outcome.review_status().to_string() };
+    sqlx::query("UPDATE tbl_energy_bill SET station_id = $2, review_status = $3, contract_id = $4, station_meter_id = $5 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(bill_id)
+        .bind(outcome.station_id())
+        .bind(&after_status)
+        .bind(outcome.contract_id())
+        .bind(outcome.meter_id())
+        .execute(&mut **tx)
+        .await?;
+    audit::record(
+        tx,
+        ctx,
+        AuditInput::new("bill.rematched", bill_id, format!("重新比對：校對狀態由「{before_status}」變成「{after_status}」"))
+            .label(bill.customer_number_raw.clone().unwrap_or_else(|| bill_id.to_string()))
+            .payload(json!({ "from": before_status, "to": after_status, "contractId": outcome.contract_id() })),
     )
     .await?;
     bill_in_org(tx, ctx.org_id(), bill_id, false).await
@@ -385,6 +539,8 @@ enum Col {
     Date(Option<NaiveDate>),
     Dec(Option<Decimal>),
     Int(Option<i64>),
+    /// 只用在 `detailFields`：寫回去是 `detail_fields = detail_fields || $patch`，不是整欄覆蓋。
+    Json(Value),
 }
 
 fn column_of(field: &str) -> &'static str {
@@ -400,6 +556,10 @@ fn column_of(field: &str) -> &'static str {
         "reviewStatus" => "review_status",
         "docType" => "doc_type",
         "businessKey" => "business_key",
+        "documentNo" => "document_no",
+        "contractId" => "contract_id",
+        "stationMeterId" => "station_meter_id",
+        "detailFields" => "detail_fields",
         _ => unreachable!("未知欄位"),
     }
 }
@@ -430,12 +590,15 @@ fn patch_values(p: &CorrectBillInput) -> Vec<(&'static str, Value)> {
     if let Some(x) = &p.due_date {
         v.push(("dueDate", s(x)));
     }
+    if let Some(x) = &p.document_no {
+        v.push(("documentNo", s(x)));
+    }
     v
 }
 
 fn to_col(field: &str, v: &Value) -> Col {
     match field {
-        "customerNumberRaw" => Col::Text(v.as_str().map(String::from)),
+        "customerNumberRaw" | "documentNo" => Col::Text(v.as_str().map(String::from)),
         "totalAmount" | "generationKwh" => Col::Dec(v.as_f64().and_then(decimal_of)),
         _ => Col::Date(v.as_str().and_then(crate::common::parse_day)),
     }
@@ -482,32 +645,45 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
         changes.insert(f.to_string(), json!({ "from": from, "to": to }));
     }
 
-    // 改了電號就重新配案場：電號決定這張單配到哪座案場、走哪條流程。
+    // 改了電號或計費迄日就重新走一次 S1 的比對（`resolve_match`）—— 電號決定配到哪座案場，
+    // 迄日決定業務日期（合約效期比的是它），兩個都可能改變「這段期間有沒有生效合約」。
     let mut station_changed: Option<(Option<i64>, Option<i64>)> = None;
     let mut station_after = bill.station_id;
-    if patched_json.contains_key("customerNumberRaw") {
+    if patched_json.contains_key("customerNumberRaw") || patched_json.contains_key("billingPeriodEnd") {
         // 已經在跑的單不准改電號：流程是照送審那一刻的電號解出來的。
-        if let Some(e) = live_execution(tx, ctx.org_id(), bill_id).await? {
-            return Err(err_d(409, "customer_number_locked_by_execution", json!({ "executionId": e })));
+        if patched_json.contains_key("customerNumberRaw") {
+            if let Some(e) = live_execution(tx, ctx.org_id(), bill_id).await? {
+                return Err(err_d(409, "customer_number_locked_by_execution", json!({ "executionId": e })));
+            }
         }
-        let raw = patched_json["customerNumberRaw"].as_str().map(String::from).filter(|s| !s.is_empty());
-        let station = match &raw {
-            Some(r) => find_station_by_customer_number(tx, ctx.org_id(), r).await?,
-            None => None,
+        let raw = match patched_json.get("customerNumberRaw") {
+            Some(v) => v.as_str().map(String::from).filter(|s| !s.is_empty()),
+            None => bill.customer_number_raw.clone(),
         };
-        let after = station.as_ref().map(|s| s.id);
+        let business_date = match patched_json.get("billingPeriodEnd") {
+            Some(v) => v.as_str().and_then(crate::common::parse_day),
+            None => bill.billing_period_end,
+        }
+        .unwrap_or_else(|| ctx.today());
+        let outcome = match &raw {
+            Some(r) => resolve_match(tx, ctx.org_id(), r, business_date).await?,
+            None => MatchOutcome::NoStation,
+        };
+        let after = outcome.station_id();
         if bill.station_id != after {
             patch.insert("stationId", Col::Int(after));
             station_changed = Some((bill.station_id, after));
             changes.insert("stationId".into(), json!({ "from": bill.station_id, "to": after }));
         }
         station_after = after;
-        if station.is_none() {
-            patch.insert("reviewStatus", Col::Text(Some("pendingMatch".into())));
-        } else if bill.review_status == "pendingMatch" {
-            patch.insert("reviewStatus", Col::Text(Some("pendingReview".into())));
+        // 已經校對過的單不要被「只是順手改一下期間」靜默打回待校對 —— 跟改電號原本的規則一樣，
+        // 只在還沒校對完（pendingMatch／pendingReview／pendingContract）那幾個狀態之間自動轉換。
+        if bill.review_status != "reviewed" && outcome.review_status() != bill.review_status {
+            patch.insert("reviewStatus", Col::Text(Some(outcome.review_status().into())));
         }
-        // 送件那一列的狀態跟著動（收件台看的是 item）。
+        patch.insert("contractId", Col::Int(outcome.contract_id()));
+        patch.insert("stationMeterId", Col::Int(outcome.meter_id()));
+        // 送件那一列的狀態跟著動（收件台看的是 item）：找不到案場才擋送審，找不到合約不擋 item（擋在送審那一關 409）。
         let linked: Option<(i64, String)> = sqlx::query_as(
             "SELECT id, status FROM tbl_energy_ingest_item WHERE organization_id = $1 AND bill_id = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1",
         )
@@ -516,7 +692,7 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
         .fetch_optional(&mut **tx)
         .await?;
         if let Some((item_id, status)) = linked {
-            let next = match (station.is_some(), status.as_str()) {
+            let next = match (after.is_some(), status.as_str()) {
                 (true, "unmatched") => Some("extracted"),
                 (false, "extracted") => Some("unmatched"),
                 _ => None,
@@ -542,6 +718,24 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
             }
             patch.insert("docType", Col::Text(Some(to.clone())));
             changes.insert("docType".into(), json!({ "from": if from.is_empty() { Value::Null } else { json!(from) }, "to": to }));
+        }
+    }
+
+    // 電費單明細 19 欄（卡 B）—— 欄位表驅動：逐一對照 `BILL_DETAIL_FIELDS` 比對、算 from/to，
+    // 寫回去是整包 merge 進 `detail_fields`（`||`），不是 19 支具名 column。
+    if !input.detail.is_empty() {
+        let mut detail_patch = Map::new();
+        for f in eo_domain::taipower_extractor::BILL_DETAIL_FIELDS {
+            let Some(to) = input.detail.get(f.camel) else { continue };
+            let from = bill.detail_fields.get(f.camel).cloned().unwrap_or(Value::Null);
+            if same_value(Some(&from), Some(to)) {
+                continue;
+            }
+            detail_patch.insert(f.camel.to_string(), to.clone());
+            changes.insert(f.camel.to_string(), json!({ "from": from, "to": to }));
+        }
+        if !detail_patch.is_empty() {
+            patch.insert("detailFields", Col::Json(Value::Object(detail_patch)));
         }
     }
 
@@ -574,12 +768,16 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
         let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE tbl_energy_bill SET ");
         let mut sep = qb.separated(", ");
         for (f, v) in patch {
-            sep.push(format!("{} = ", column_of(f)));
+            let col = column_of(f);
+            // `detailFields` 是整包 merge（`col = col || $patch`），不是覆蓋整欄 ——
+            // 沒被這次校對碰到的舊明細值要留著。
+            sep.push(if matches!(v, Col::Json(_)) { format!("{col} = {col} || ") } else { format!("{col} = ") });
             match v {
                 Col::Text(x) => sep.push_bind_unseparated(x),
                 Col::Date(x) => sep.push_bind_unseparated(x),
                 Col::Dec(x) => sep.push_bind_unseparated(x),
                 Col::Int(x) => sep.push_bind_unseparated(x),
+                Col::Json(x) => sep.push_bind_unseparated(x),
             };
         }
         qb.push(" WHERE id = ").push_bind(bill_id).push(" AND deleted_at IS NULL");
@@ -817,6 +1015,20 @@ pub async fn binding_status(tx: &mut Tx<'_>, access: &OrgAccess, bill: &BillRow,
         return Ok(json!({ "bound": false, "reason": "no_station", "docType": doc_type, "flows": [] }));
     };
     let business_date = bill.business_date(today);
+    // S2：找不到案場跟找不到生效合約是兩種各自的例外提示，不要都塞進 `no_binding`。
+    if bill.review_status == "pendingContract" {
+        return Ok(json!({
+            "bound": false,
+            "reason": "no_contract",
+            "docType": doc_type,
+            "flows": [],
+            "stationName": station.name,
+            "customerNumber": station.customer_number,
+            "businessDate": day(business_date),
+            "billingPeriodStart": day_opt(bill.billing_period_start),
+            "billingPeriodEnd": day_opt(bill.billing_period_end),
+        }));
+    }
     match workflow::resolve_flow_rows(tx, access, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date).await {
         Ok(flows) => Ok(json!({
             "bound": true,

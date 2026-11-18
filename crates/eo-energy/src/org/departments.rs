@@ -21,6 +21,7 @@ pub struct DepartmentRow {
     pub name: String,
     pub sort_order: i32,
     pub organization_id: i64,
+    pub parent_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,10 +39,11 @@ pub struct DepartmentView {
     pub key: String,
     pub name: String,
     pub sort_order: i32,
+    pub parent_id: Option<i64>,
     pub members: Vec<DepartmentMemberView>,
 }
 
-const COLS: &str = "id, key, name, sort_order, organization_id";
+const COLS: &str = "id, key, name, sort_order, organization_id, parent_id";
 
 fn role_str(r: DepartmentMemberRole) -> &'static str {
     match r {
@@ -108,8 +110,40 @@ pub async fn list_departments(tx: &mut Tx<'_>, access: &OrgAccess) -> ApiResult<
             key: r.key,
             name: r.name,
             sort_order: r.sort_order,
+            parent_id: r.parent_id,
         })
         .collect())
+}
+
+/// 驗上層：必須是同組織、還沒刪除的部門，否則 `parent_not_found`。回上層那一列（給呼叫端取名字用）。
+async fn load_parent_in_org(tx: &mut Tx<'_>, org_id: i64, parent_id: i64) -> ApiResult<DepartmentRow> {
+    let row: Option<DepartmentRow> =
+        sqlx::query_as(&format!("SELECT {COLS} FROM tbl_energy_department WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL"))
+            .bind(parent_id)
+            .bind(org_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    row.ok_or_else(|| err(400, "parent_not_found"))
+}
+
+/// 擋循環：新上層不能是自己、也不能是自己的下層。從候選上層往上走一次，走到自己就是循環。
+async fn assert_no_cycle(tx: &mut Tx<'_>, department_id: i64, candidate_parent_id: i64) -> ApiResult<()> {
+    let hits_self: bool = sqlx::query_scalar(
+        "WITH RECURSIVE anc AS (
+           SELECT id, parent_id FROM tbl_energy_department WHERE id = $1
+           UNION ALL
+           SELECT d.id, d.parent_id FROM tbl_energy_department d JOIN anc ON d.id = anc.parent_id
+         )
+         SELECT EXISTS (SELECT 1 FROM anc WHERE id = $2)",
+    )
+    .bind(candidate_parent_id)
+    .bind(department_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if hits_self {
+        return Err(err(400, "department_cycle"));
+    }
+    Ok(())
 }
 
 /// 建部門。同組織 key 重複 → 409。
@@ -117,13 +151,18 @@ pub async fn create_department(tx: &mut Tx<'_>, ctx: &Ctx, input: &CreateDepartm
     if by_key(tx, &ctx.access, &input.key).await?.is_some() {
         return Err(err(409, "department_key_taken"));
     }
+    let parent = match input.parent_id {
+        Some(pid) => Some(load_parent_in_org(tx, ctx.org_id(), pid).await?),
+        None => None,
+    };
     let row: DepartmentRow = sqlx::query_as(&format!(
-        "INSERT INTO tbl_energy_department (organization_id, key, name, sort_order) VALUES ($1, $2, $3, $4) RETURNING {COLS}"
+        "INSERT INTO tbl_energy_department (organization_id, key, name, sort_order, parent_id) VALUES ($1, $2, $3, $4, $5) RETURNING {COLS}"
     ))
     .bind(ctx.org_id())
     .bind(&input.key)
     .bind(&input.name)
     .bind(input.sort_order.unwrap_or(0) as i32)
+    .bind(parent.as_ref().map(|p| p.id))
     .fetch_one(&mut **tx)
     .await?;
     audit::record(
@@ -131,27 +170,50 @@ pub async fn create_department(tx: &mut Tx<'_>, ctx: &Ctx, input: &CreateDepartm
         ctx,
         AuditInput::new("department.created", row.id, format!("建立部門「{}」（{}）", input.name, input.key))
             .label(input.name.clone())
-            .payload(json!({ "departmentKey": input.key, "departmentName": input.name })),
+            .payload(json!({
+                "departmentKey": input.key, "departmentName": input.name,
+                "parentName": parent.as_ref().map(|p| p.name.clone()),
+            })),
     )
     .await?;
-    Ok(DepartmentView { id: row.id, key: row.key, name: row.name, sort_order: row.sort_order, members: vec![] })
+    Ok(DepartmentView { id: row.id, key: row.key, name: row.name, sort_order: row.sort_order, parent_id: row.parent_id, members: vec![] })
 }
 
-async fn update_department(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, input: &UpdateDepartmentInput) -> ApiResult<DepartmentView> {
+async fn name_of_department(tx: &mut Tx<'_>, id: Option<i64>) -> ApiResult<Option<String>> {
+    match id {
+        None => Ok(None),
+        Some(id) => Ok(sqlx::query_scalar("SELECT name FROM tbl_energy_department WHERE id = $1").bind(id).fetch_optional(&mut **tx).await?),
+    }
+}
+
+pub(crate) async fn update_department(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, input: &UpdateDepartmentInput) -> ApiResult<DepartmentView> {
     let before = load_in_org(tx, &ctx.access, id).await?;
+    // 沒給 parentId 就沿用舊的;給 null 是移到最上層;給 id 要驗同組織、擋循環。
+    let new_parent_id: Option<i64> = match input.parent_id {
+        None => before.parent_id,
+        Some(None) => None,
+        Some(Some(pid)) => {
+            let parent = load_parent_in_org(tx, before.organization_id, pid).await?;
+            assert_no_cycle(tx, id, parent.id).await?;
+            Some(parent.id)
+        }
+    };
     let after: DepartmentRow = sqlx::query_as(&format!(
-        "UPDATE tbl_energy_department SET name = COALESCE($2, name), sort_order = COALESCE($3, sort_order)
+        "UPDATE tbl_energy_department SET name = COALESCE($2, name), sort_order = COALESCE($3, sort_order), parent_id = $5
           WHERE id = $1 AND organization_id = $4 AND deleted_at IS NULL RETURNING {COLS}"
     ))
     .bind(id)
     .bind(input.name.as_deref())
     .bind(input.sort_order.map(|n| n as i32))
     .bind(ctx.org_id())
+    .bind(new_parent_id)
     .fetch_one(&mut **tx)
     .await?;
-    // 差異對：只存真的變了的欄位。
-    let b = json!({ "name": before.name, "sortOrder": before.sort_order });
-    let a = json!({ "name": after.name, "sortOrder": after.sort_order });
+    // 差異對：只存真的變了的欄位；上層用名字比對（parentName），不是存 id。
+    let before_parent_name = name_of_department(tx, before.parent_id).await?;
+    let after_parent_name = name_of_department(tx, after.parent_id).await?;
+    let b = json!({ "name": before.name, "sortOrder": before.sort_order, "parentName": before_parent_name });
+    let a = json!({ "name": after.name, "sortOrder": after.sort_order, "parentName": after_parent_name });
     let diff = diff_changes(b.as_object(), a.as_object(), &[]);
     audit::record(
         tx,
@@ -161,12 +223,19 @@ async fn update_department(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, input: &UpdateDe
             .payload(json!({ "departmentKey": after.key, "departmentName": after.name, "changes": diff.changes })),
     )
     .await?;
-    Ok(DepartmentView { id: after.id, key: after.key, name: after.name, sort_order: after.sort_order, members: vec![] })
+    Ok(DepartmentView { id: after.id, key: after.key, name: after.name, sort_order: after.sort_order, parent_id: after.parent_id, members: vec![] })
 }
 
 async fn delete_department(tx: &mut Tx<'_>, ctx: &Ctx, id: i64) -> ApiResult<u64> {
     let dept = load_in_org(tx, &ctx.access, id).await?;
     let now = ctx.now();
+    // 子部門改掛到被刪部門的上層（沒有上層就改成最上層）；軟刪除不觸發 FK 的 ON DELETE SET NULL。
+    let reparented = sqlx::query("UPDATE tbl_energy_department SET parent_id = $2 WHERE parent_id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(dept.parent_id)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
     let removed_members = sqlx::query("UPDATE mn_energy_department_member SET deleted_at = $2 WHERE department_id = $1 AND deleted_at IS NULL")
         .bind(id)
         .bind(now)
@@ -187,7 +256,10 @@ async fn delete_department(tx: &mut Tx<'_>, ctx: &Ctx, id: i64) -> ApiResult<u64
         ctx,
         AuditInput::new("department.deleted", id, format!("刪除部門「{}」（連帶移除 {removed_members} 位成員）", dept.name))
             .label(dept.name.clone())
-            .payload(json!({ "departmentKey": dept.key, "departmentName": dept.name, "removedMembers": removed_members })),
+            .payload(json!({
+                "departmentKey": dept.key, "departmentName": dept.name, "removedMembers": removed_members,
+                "reparentedChildren": reparented,
+            })),
     )
     .await?;
     Ok(removed)

@@ -91,6 +91,9 @@ pub struct CreateDepartmentInput {
     pub name: String,
     #[serde(default)]
     pub sort_order: Option<i64>,
+    /// 上層部門 id；沒給或 null 都是「最上層」。
+    #[serde(default)]
+    pub parent_id: Option<i64>,
 }
 
 impl Validate for CreateDepartmentInput {
@@ -111,6 +114,9 @@ pub struct UpdateDepartmentInput {
     pub name: Option<String>,
     #[serde(default)]
     pub sort_order: Option<i64>,
+    /// 外層 None＝不改上層；`Some(None)`＝移到最上層；`Some(Some(id))`＝改掛到 id。
+    #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<Option<i64>>,
 }
 
 impl Validate for UpdateDepartmentInput {
@@ -119,7 +125,7 @@ impl Validate for UpdateDepartmentInput {
         if let Some(n) = &self.name {
             e.len("name", n, 1, 200);
         }
-        if self.name.is_none() && self.sort_order.is_none() {
+        if self.name.is_none() && self.sort_order.is_none() && self.parent_id.is_none() {
             e.0.push("至少要給一個要更新的欄位".into());
         }
         e.done()
@@ -387,6 +393,13 @@ pub struct CorrectBillInput {
     pub doc_type: Option<EnergyDocType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_reviewed: Option<bool>,
+    /// 通知單號（既有 `document_no`，卡 B 起改成可校對）。
+    #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub document_no: Option<Option<String>>,
+    /// 電費單明細 19 欄（卡 B）—— 欄位表驅動，鍵是 `taipower_extractor::BILL_DETAIL_FIELDS` 的 camel 名。
+    /// 不逐欄手寫成 27 個具名欄位：用同一張表驗證、同一支函式寫回 `detail_fields` jsonb。
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub detail: Map<String, Value>,
 }
 
 /// 校對台可以指定的單別。

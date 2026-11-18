@@ -145,6 +145,14 @@ const DEPARTMENT_MEMBER: &[Field] = &[
     req("role", MEMBER_ROLE),
 ];
 
+/// 合約新增／編輯同一形狀（卡 20261118-0810-a2）。
+const CONTRACT: &[Field] = &[
+    req("contractNo", STR),
+    req("landownerId", INT),
+    opt("landownerName", STR),
+    opt("changes", CHANGES),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AuditEventDef {
     /// 事件命名空間，例 `department.created`。
@@ -544,6 +552,30 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Notable,
         true,
     ),
+    // 卡 B S2：有案場、但這段期間沒有生效中的合約 —— 跟「找不到案場」是兩種各自的例外。
+    ev(
+        "bill.no_contract",
+        "energyBill",
+        &[
+            opt_nul("customerNumberRaw", STR),
+            opt_nul("stationId", INT),
+            opt_nul("contractId", INT),
+            opt("extractedFields", STRS),
+            opt_nul("sourceAttachmentId", INT),
+        ],
+        "audit.type.bill.no_contract",
+        Notable,
+        true,
+    ),
+    // 卡 B S1：合約後補之後，在校對台按「重新比對」。
+    ev(
+        "bill.rematched",
+        "energyBill",
+        &[req("from", STR), req("to", STR), opt_nul("contractId", INT)],
+        "audit.type.bill.rematched",
+        Info,
+        true,
+    ),
     ev(
         "bill.corrected",
         "energyBill",
@@ -705,6 +737,9 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
     ev("allocation.created", "energyLandownerStation", ALLOCATION, "audit.type.allocation.created", Info, true),
     ev("allocation.updated", "energyLandownerStation", ALLOCATION, "audit.type.allocation.updated", Notable, true),
     ev("allocation.ended", "energyLandownerStation", ALLOCATION, "audit.type.allocation.ended", Notable, true),
+    // ── 合約（卡 20261118-0810-a2）──
+    ev("contract.created", "energyContract", CONTRACT, "audit.type.contract.created", Info, true),
+    ev("contract.updated", "energyContract", CONTRACT, "audit.type.contract.updated", Notable, true),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

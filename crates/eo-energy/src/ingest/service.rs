@@ -750,6 +750,10 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
         // 單別的真相在單上（人校對過的那一個），不在 item 上。
         let doc_type = bill.effective_doc_type();
         let station_id = bill.station_id.ok_or_else(|| err(409, "bill_needs_station"))?;
+        // S2：找不到案場擋在上面那一行；找不到生效合約是另一種例外，各自的 409。
+        if bill.review_status == "pendingContract" {
+            return Err(err(409, "bill_needs_contract"));
+        }
         let station = bills::station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(409, "bill_needs_station"))?;
         ("energyBill", bill_id, station.customer_number, Some(station.id), doc_type, bill.attributes(), bill.business_key.clone())
     } else if item_doc_type == "depositRequest" {
@@ -803,6 +807,9 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
 pub async fn submit_bill(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, business_date: Option<NaiveDate>) -> ApiResult<Vec<ExecutionRow>> {
     let bill = bills::bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
     let station_id = bill.station_id.ok_or_else(|| err(409, "bill_needs_station"))?;
+    if bill.review_status == "pendingContract" {
+        return Err(err(409, "bill_needs_contract"));
+    }
     // 同一張單同時只能有一個在跑。
     if let Some(e) = bills::live_execution(tx, ctx.org_id(), bill_id).await? {
         return Err(err_d(409, "bill_already_submitted", json!({ "executionId": e })));

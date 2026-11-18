@@ -168,6 +168,68 @@ async fn upload_execution_file(ctx: &Ctx, incoming: &staged::Incoming, execution
     .await
 }
 
+pub async fn list_for_contract(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>) -> ApiResult<HttpResponse> {
+    let (org, contract_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::ATTACHMENT_DOWNLOAD, &meta).await?;
+    let mut tx = core.pool.begin().await?;
+    crate::master_data::contract_in_org(&mut tx, ctx.org_id(), contract_id).await?;
+    let items = service::list_for_contract(&mut tx, contract_id).await?;
+    Ok(HttpResponse::Ok().json(json!({ "items": items })))
+}
+
+pub async fn upload_to_contract(
+    core: Core,
+    user: CurrentUser,
+    meta: RequestMeta,
+    path: web::Path<(i64, i64)>,
+    req: HttpRequest,
+    payload: web::Payload,
+) -> ApiResult<HttpResponse> {
+    let (org, contract_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::ATTACHMENT_UPLOAD, &meta).await?;
+    {
+        let mut tx = core.pool.begin().await?;
+        crate::master_data::contract_in_org(&mut tx, ctx.org_id(), contract_id).await?;
+    }
+    let incoming = staged::read_incoming(&core, &req, payload, user.id, &format!("contract-{contract_id}")).await?;
+    let result = upload_contract_file(&ctx, &incoming, contract_id).await;
+    staged::finish(&core, &incoming).await;
+    let row = result?;
+    Ok(HttpResponse::Ok().json(service::summary(&row, ctx.now())))
+}
+
+async fn upload_contract_file(ctx: &Ctx, incoming: &staged::Incoming, contract_id: i64) -> ApiResult<service::AttachmentRow> {
+    let supersedes = incoming.field_id("supersedesAttachmentId")?;
+    if let Some(s) = supersedes {
+        let ok: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM tbl_energy_attachment WHERE id = $1 AND contract_id = $2 AND deleted_at IS NULL)",
+        )
+        .bind(s)
+        .bind(contract_id)
+        .fetch_one(&ctx.core.pool)
+        .await?;
+        if !ok {
+            return Err(err_d(400, "supersedes_not_in_contract", json!({ "supersedesAttachmentId": s })));
+        }
+    }
+    let store: &dyn AttachmentStore = &ctx.core.storage;
+    service::upload(
+        ctx,
+        store,
+        UploadInput {
+            owner: Owner::Contract(contract_id),
+            bytes: incoming.bytes.clone(),
+            original_filename: incoming.file_name.clone(),
+            mime_type: incoming.content_type.clone(),
+            task_id: None,
+            role: incoming.field("role").map(String::from),
+            note: incoming.field("note").map(String::from),
+            supersedes_attachment_id: supersedes,
+        },
+    )
+    .await
+}
+
 #[derive(serde::Deserialize)]
 pub struct DownloadQuery {
     redirect: Option<String>,
