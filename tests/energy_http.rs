@@ -1,6 +1,7 @@
 //! HTTP 層：每個閘對錯的角色回 403、跨組織 403／404、未登入 401；以及內建定義安裝、工作台、代理、旁路動作的端到端。
 
 use crate::support::{TestApp, TestUser};
+use eo_domain::workflow_defs::default_bill_approval;
 use reqwest::Method;
 use serde_json::{json, Value};
 
@@ -27,10 +28,12 @@ async fn fixture() -> Fx {
     let accountant = app.member(org, "accountant", Some("energy:finance")).await;
     let viewer = app.member(org, "viewer", Some("energy:viewer")).await;
     let nobody = app.member(org, "nobody", None).await;
+    // 七關樣本先佔住 bill-approval：install-defaults 遇同 key 會跳過（definition.rs:404-405）。
+    app.install_def(&admin, org, &default_bill_approval(), None).await;
     let v = expect_status!(app.post(&admin, &app.e(org, "/setup/install-defaults"), json!({})).await, 200);
-    assert_eq!(v["definitions"].as_array().unwrap().len(), 4);
+    assert_eq!(v["definitions"].as_array().unwrap().len(), 3);
     assert_eq!(v["strategies"].as_array().unwrap().len(), 1);
-    assert_eq!(v["departments"].as_array().unwrap().len(), 3);
+    assert_eq!(v["departments"].as_array().unwrap().len(), 5);
     // 冪等：第二次什麼都不裝。
     let v = expect_status!(app.post(&admin, &app.e(org, "/setup/install-defaults"), json!({})).await, 200);
     assert!(v["definitions"].as_array().unwrap().is_empty() && v["strategies"].as_array().unwrap().is_empty());

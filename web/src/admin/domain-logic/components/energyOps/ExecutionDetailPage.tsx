@@ -257,6 +257,7 @@ const ExecutionDetailPage: React.FC = () => {
                   <TableCell>{translate('energy.executions.assignee')}</TableCell>
                   <TableCell>{translate('energy.executions.outcome')}</TableCell>
                   <TableCell>{translate('energy.myTasks.reason')}</TableCell>
+                  <TableCell>{translate('energy.executions.completedAt')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -272,11 +273,12 @@ const ExecutionDetailPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell>{t.assigneeName || '—'}</TableCell>
-                    <TableCell>{t.outcome || '—'}</TableCell>
+                    <TableCell>{t.outcome ? translate(`energy.executions.outcomeValue.${t.outcome}`, { _: t.outcome }) : '—'}</TableCell>
                     {/* 退回理由要看得見 —— 那是最常被問的一格。 */}
                     <TableCell>{t.reason || '—'}</TableCell>
+                    <TableCell>{t.completedAt ? new Date(t.completedAt).toLocaleString('zh-TW', { hour12: false }) : '—'}</TableCell>
                   </TableRow>
-                )) : <EmptyRow colSpan={6} loading={loading} />}
+                )) : <EmptyRow colSpan={7} loading={loading} />}
               </TableBody>
             </Table>
           </Box>

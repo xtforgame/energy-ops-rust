@@ -639,6 +639,8 @@ const customEnglishMessages: TranslationMessages = {
         taskState: 'State',
         assignee: 'Handled by',
         outcome: 'Outcome',
+        outcomeValue: { approved: 'Approved', sentBack: 'Sent back' },
+        completedAt: 'Completed at',
         openBill: 'Open this bill',
         openContract: 'Open contract & instalments',
         openDefinition: 'Open workflow definition',
@@ -805,6 +807,8 @@ const customEnglishMessages: TranslationMessages = {
         sendBack: 'Send back',
         release: 'Release',
         markPaid: 'Mark as paid',
+        // Q-04 platform data review: single step, any one reviewer's pass completes it.
+        pass: 'Pass review',
         markInvoiced: 'Mark invoice issued',
         requestAbort: 'Request abort',
         cancelAll: 'Cancel all',

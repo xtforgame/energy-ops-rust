@@ -16,7 +16,7 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!((c.users, c.grants), (7, 7));
     assert_eq!((c.landowners, c.stations, c.contracts, c.contract_stations), (2, 6, 6, 6));
     assert_eq!((c.installments, c.calendar_events), (3, 3));
-    assert_eq!((c.departments, c.department_members), (3, 7));
+    assert_eq!((c.departments, c.department_members), (5, 10));
     // 四份內建定義 v1 ＋ 核可流程 v2；策略 v1（內建）＋ v2。
     assert_eq!((c.workflow_definitions, c.rating_strategies), (5, 2));
     // 案場層 7 段 ＋ 契約層 4 × 2 段。
@@ -108,10 +108,10 @@ async fn demo_sample_bills_set_up_the_four_states_and_are_idempotent() {
         1
     );
 
-    // 主線停在承辦確認；候選池那筆已跑完。
+    // 主線停在平台資料審核；候選池那筆已跑完。
     let main = first.main_execution_id.expect("main execution");
     let (status, node) = app.exec_state(main).await;
-    assert_eq!((status.as_str(), node.as_deref()), ("running", Some("clerk-review")));
+    assert_eq!((status.as_str(), node.as_deref()), ("running", Some("platform-review")));
     let cand = first.candidate_execution_id.expect("candidate execution");
     assert_eq!(app.exec_state(cand).await.0, "completed");
     // operator 是承辦確認的候選人，但從沒被指派（只有候選池這一層關聯）。

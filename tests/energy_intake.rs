@@ -3,7 +3,7 @@
 
 use crate::support::{TestApp, TestUser};
 use eo_domain::business_key::{bill_business_key, normalize_customer_number};
-use eo_domain::workflow_defs::EXEC_APPROVAL_THRESHOLD;
+use eo_domain::workflow_defs::{default_bill_approval, EXEC_APPROVAL_THRESHOLD};
 use serde_json::{json, Value};
 use std::cell::Cell;
 
@@ -106,6 +106,8 @@ pub async fn fixture_with(app: TestApp) -> Fx {
     let accountant = app.member(org, "accountant", Some("energy:finance")).await;
     let viewer = app.member(org, "viewer", Some("energy:viewer")).await;
     let nobody = app.member(org, "nobody", None).await;
+    // 七關樣本先佔住 bill-approval：install-defaults 遇同 key 會跳過（definition.rs:404-405）。
+    app.install_def(&admin, org, &default_bill_approval(), None).await;
     expect_status!(app.post(&admin, &app.e(org, "/setup/install-defaults"), json!({})).await, 200);
     let dept = |k: &'static str| {
         let pool = app.core.pool.clone();
