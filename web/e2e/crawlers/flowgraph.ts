@@ -76,19 +76,18 @@ async function run() {
   const browser = await launch();
   const page = hardenPage(await browser.newPage());
   try {
-    hr('① 保證金請款流程：有退回邊的那一版（Q-04：bill-approval 單一審核後只剩 3 點 2 邊，用電電費單那張有已知穿越缺陷見下）');
+    hr('① 用電電費單付款流程：有退回邊的那一版（承辦確認／主管核准／財務放行都可退回）');
     await loginAsAdmin(page);
     check('選得到 demo 組織', (await selectOrg(page)) != null);
     check('進得了流程總覽', await goto(page, 'energyWorkflowConsole', '[data-testid="workflow-row"]'));
     await waitIdle(page);
 
-    // 挑「保證金請款流程」—— 財務放行可退回，4 個節點，bill-approval 改成單一審核後
-    // 只剩 3 點 2 邊，不再適合驗穿越。原本挑用電電費單（6 個節點）實跑撞到產品缺陷：
-    // workflow_defs.rs:702 clerk-review x=180、:706 manager-approve x=200 只差 20，
-    // 退回邊畫穿 clerk-review；修它要動 crates/，超出本卡範圍，另案處理（見卡的「紀錄」）。
+    // 挑「用電電費單付款流程」—— 6 個節點、5 條順向＋2 條退回邊，退回線最會穿過節點。
+    // workflow_defs.rs:764/768/773/775 已把 layout x 座標後移（跟承辦確認的間距從 20 拉開到
+    // 220，其餘都 ≥180），退回邊不再畫穿「承辦確認」。
     await page.evaluate(() => {
       const row = Array.from(document.querySelectorAll('[data-testid="workflow-row"]'))
-        .find((r) => /保證金請款/.test((r as HTMLElement).innerText)) as HTMLElement | undefined;
+        .find((r) => /用電電費單/.test((r as HTMLElement).innerText)) as HTMLElement | undefined;
       row?.click();
     });
     check('點得開流程圖', await waitUntil(page, () => !!document.querySelector('.react-flow__node'),
@@ -98,11 +97,18 @@ async function run() {
       document.querySelector('[data-testid="flow-graph"]')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => { setTimeout(r, 800); });
+    // commander 代看時發現改前那張截圖裁到只剩前三個節點（用電電費單 6 個節點比
+    // 保證金請款 4 個節點寬，預設視角裝不下）——點一下 react-flow 內建的
+    // fit-view 鍵，讓六個節點都進畫面，截圖才看得出退回線真的繞開了哪些節點。
+    await page.evaluate(() => {
+      (document.querySelector('.react-flow__controls-fitview') as HTMLElement | null)?.click();
+    });
+    await new Promise((r) => { setTimeout(r, 500); });
 
     const geo = await geometry(page);
     log(`  節點 ${geo.nodeCount} / 邊 ${geo.edgeCount}`);
     log('  穿越：', JSON.stringify(geo.crossings));
-    check('圖上有節點與邊（不是空畫布）', geo.nodeCount >= 4 && geo.edgeCount >= 4, geo);
+    check('圖上有節點與邊（不是空畫布）', geo.nodeCount >= 6 && geo.edgeCount >= 7, geo);
     // **這一條就是使用者回報的那件事**。
     check('沒有任何一條線壓過節點', geo.crossings.length === 0, geo.crossings);
     await shot(page, '1-definition-graph');

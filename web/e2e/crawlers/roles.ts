@@ -15,7 +15,7 @@ C7 的驗收：**多帳號走完整鏈路 ＋ 身分對不對**（移植自 az `
 import path from 'node:path';
 import type { Page } from 'puppeteer';
 import {
-  Scoreboard, hr, log, sleep, launch, shooter, loginAs, selectOrg, goto, retryOnDetach, hardenPage,
+  Scoreboard, hr, log, sleep, launch, shooter, loginAs, loginAsAdmin, selectOrg, goto, retryOnDetach, hardenPage,
   waitIdle, seedBatch, eapi, demoEmail,
 } from '../lib/energyOpsHarness.ts';
 
@@ -419,6 +419,112 @@ async function run() {
     const cxoLanding = await eapi(page, 'GET', '/me/landing').then((r) => (r.status === 200 ? r.data : { error: r.status }));
     // CXO 是**唯一**以 Dashboard 為家的角色（`FRONTEND.md §1.3`）。
     check('CXO 的落點是 Dashboard', cxoLanding?.route === 'energyDashboardConsole', cxoLanding);
+
+    // ── ⑥-b 用電電費單（卡 G2）：四角色四關走完＋金額跨門檻不增減關卡 ──
+    /**
+     * `utility_bill()` 獨立於上面的 `bill-approval`，沒有金額門檻
+     * （workflow_defs.rs:745-746：金額是台電開的）。選項 A（使用者「建議 A。」）：
+     * 不改產品，驗「四角色走完四關」與「金額跨 EXEC_APPROVAL_THRESHOLD（100,000，
+     * workflow_defs.rs:519）路線一直是四關，不多一關也不少一關」。
+     * roles.ts 本身跑的時候 `EO_DEMO_SAMPLE_BILLS=0`（run-crawlers.sh:59：
+     * `roles` 在「單據全部從收件台走一遍」那一組），demo_seed.rs:1129 那張
+     * 示範樣本根本不存在這個資料庫裡 —— 改成跟這支其餘每張單一樣，走
+     * `uploadNewBatch` 從收件台造一張新的，粗分一定是 `electricityBill`
+     * （`mockOcrForUpload` 只會判這種），再用校對台可以改的單別欄位
+     * （`document_ingest.rs` 的 `correct_bill`／`CorrectBillInput.doc_type`）
+     * 把它改成 `consumptionDevice`／`renewableNoSurplus`（兩者都粗分到
+     * `utility-bill`，`doc_type_to_workflow`），同時把金額改到門檻兩側。
+     */
+    async function uploadUtilityBill(fileName: string, docType: string, amount: number): Promise<number> {
+      await loginAsAdmin(page);
+      await selectOrg(page);
+      // 第 2 版（設計缺陷修正）：customerNumber 要指到真的綁了 utility-bill 的案場
+      // （嘉義六腳一號 11-72-0328-95-9，demo_seed.rs:864 把 consumptionBill 綁過去），
+      // 不然送審會因為「案場＋單別」找不到綁定而 409（ingest/service.rs:793-797）。
+      const batch = await seedBatch(page, [fileName], { customerNumber: '11-72-0328-95-9' });
+      check(`${fileName}：開得出一批送件`, batch.ok, batch);
+      const bid: number = batch.ok ? await page.evaluate(async (args: { bid: number }) => {
+        const org = (window as any).__demoOrgId;
+        const r = await fetch(`/api/v1/orgs/${org}/energy/ingest-batches/${args.bid}`, { credentials: 'include' });
+        if (!r.ok) return 0;
+        const b = await r.json();
+        const it = (b.items ?? []).find((i: any) => i.billId != null);
+        return it ? Number(it.billId) : 0;
+      }, { bid: batch.batchId }) : 0;
+      check(`${fileName}：產出了電費單`, bid > 0, { bid });
+      if (!bid) return 0;
+      const patched = (await eapi(page, 'PATCH', `/bills/${bid}`, { docType, totalAmount: amount })).status;
+      check(`${fileName}：單別改成 ${docType}、金額改成 ${amount}`, patched === 200, { patched });
+      const after = await eapi(page, 'GET', `/bills/${bid}`);
+      check(`${fileName}：GET 確認 docType 真的變成 ${docType}`,
+        after.status === 200 && after.data?.docType === docType, after.data?.docType);
+      return bid;
+    }
+
+    /**
+     * 嘉義六腳一號同時綁了 `depositRequest`／`electricityBill`／`consumptionBill`
+     * 三種單別，送審會把「該開的流程全部開起來」（跟 doctype.ts① 的躉購有餘電
+     * 同一個產品行為：核可＋開發票平行）。不能拿 `executions[0]`，要指名
+     * `workflowKey === 'utility-bill'` 的那一條。
+     */
+    async function utilityBillStatus(bid: number): Promise<{ node: string; status: string }> {
+      const r = await eapi(page, 'GET', `/bills/${bid}`);
+      const execs: any[] = r.status === 200 ? (r.data?.executions ?? []) : [];
+      const ex = execs.find((e: any) => e.workflowKey === 'utility-bill');
+      return ex ? { node: ex.currentNodeKey as string, status: ex.status as string } : { node: '', status: 'none' };
+    }
+
+    async function walkUtilityBill(bid: number, label: string) {
+      if (!bid) return { bid: 0, node: '', status: 'none' };
+      await loginAsAdmin(page);
+      await selectOrg(page);
+      const submitResp = await eapi(page, 'POST', `/bills/${bid}/submit`);
+      log(`  ${label} 送審回應：status=${submitResp.status} ${JSON.stringify(submitResp.data)}`);
+      check(`${label}：送審成功（POST /bills/${bid}/submit）`, submitResp.status === 200, submitResp);
+      // 指名關卡＋指名動作（actOnNode，不是 actOnWorkbench 猜按鈕）——
+      // 這張單可能同時掛著 utility-bill 跟 issue-invoice 兩條 execution，
+      // 工作台上會有兩列同樣的 data-bill，只按文字會推到不相干的那一列。
+      check(`${label}：承辦（admin）推得動承辦確認（送出）`,
+        await actOnNode(page, 'clerk-review', 'submit', bid));
+      await loginAs(page, demoEmail('manager'));
+      await selectOrg(page);
+      check(`${label}：主管核准得動`, await actOnNode(page, 'manager-approve', 'approve', bid));
+      await loginAs(page, demoEmail('finance'));
+      await selectOrg(page);
+      check(`${label}：財務放行得動`, await actOnNode(page, 'finance-release', 'release', bid));
+      await loginAs(page, demoEmail('accounting'));
+      await selectOrg(page);
+      check(`${label}：會計標記已付款得動`, await actOnNode(page, 'payment', 'markPaid', bid));
+      check(`${label}：會計送出得動（走完付款關）`, await actOnNode(page, 'payment', 'submit', bid));
+      const result = await utilityBillStatus(bid);
+      log(`  ${label} 最終狀態：${JSON.stringify(result)}`);
+      return { bid, ...result };
+    }
+
+    hr('⑥-b 用電電費單：門檻以下（60,000）四角色四關走完');
+    const lowBid = await uploadUtilityBill('gate-util-low.png', 'consumptionDevice', 60000);
+    const lowBill = await walkUtilityBill(lowBid, '門檻以下');
+    check('門檻以下：走到 end（status=completed）',
+      lowBill.status === 'completed' && lowBill.node === 'end', lowBill);
+    await shot(page, '6b-utility-bill-low');
+
+    hr('⑥-b 用電電費單：門檻以上（138,195）四角色四關走完（不多一關）');
+    const highBid = await uploadUtilityBill('gate-util-high.png', 'renewableNoSurplus', 138195);
+    const highBill = await walkUtilityBill(highBid, '門檻以上');
+    check('門檻以上：走到 end（status=completed，跟門檻以下一樣是四關）',
+      highBill.status === 'completed' && highBill.node === 'end', highBill);
+    await shot(page, '6b-utility-bill-high');
+
+    // 稽核：兩張單都不該出現 `bill.route_gate_removed`（utility_bill() 本來就沒有
+    // 金額門檻可以「少一關」）。
+    const gateAuditCheck = await (async () => {
+      const r = await eapi(page, 'GET', '/audit-events?limit=200');
+      const rows: any[] = r.status === 200 ? (r.data?.items ?? []) : [];
+      return rows.filter((x: any) => x.type === 'bill.route_gate_removed'
+        && (x.payload?.billId === lowBill.bid || x.payload?.billId === highBill.bid));
+    })();
+    check('用電電費單兩張都沒有 bill.route_gate_removed 稽核事件',
+      gateAuditCheck.length === 0, gateAuditCheck);
 
     // ── ⑧ 三個實體頁 ────────────────────────────────────────
     hr('⑧ C7b 三個實體頁');

@@ -44,7 +44,7 @@
  */
 import type { Page } from 'puppeteer';
 import {
-  Scoreboard, hr, log, sleep, launch, shooter, loginAs, selectOrg, goto,
+  Scoreboard, hr, log, sleep, launch, shooter, loginAs, loginAsAdmin, selectOrg, goto,
   seedBatch, writeUploadFiles, hardenPage,
   waitIdle, eapi, demoEmail,
 } from '../lib/energyOpsHarness.ts';
@@ -391,6 +391,69 @@ async function run() {
     check('欄位變唯讀', ownerAtGate.fieldDisabled === true, ownerAtGate);
     check('readonly：左欄一樣看得到原檔', ownerAtGate.hasSource, ownerAtGate);
     await shot(page, '3-readonly-owner-at-gate');
+
+    // ── ③-c 用電電費單：revise → 主管退回 → revise（卡 G2）───────
+    /**
+     * `utility-bill` 流程獨立於上面的 `bill-approval`：`clerk-review`
+     * 跟舊版一樣 `self_approval(true)`，發起人在這一關能看得到、改得動。
+     * 用示範資料裡「校對完沒送出」那張用電電費單（demo_seed.rs:1129，
+     * `SampleRole::Reviewed`，發起人是 admin、在業務部、是承辦確認的候選人）：
+     * 送審 → 停在承辦確認拿 revise → 送出 → manager@ 退回 → 回到承辦確認
+     * 又拿 revise。斷言照卡 F 刪掉的 ②、③-b（`git show 994e13b`）。
+     */
+    hr('③-c 用電電費單：revise → 主管退回 → revise');
+    await loginAsAdmin(page);
+    await selectOrg(page);
+    const utilityBillId: number = await (async () => {
+      const r = await eapi(page, 'GET', '/bills?limit=50');
+      const list: any[] = r.status === 200 ? (r.data?.items ?? []) : [];
+      const hit = list.find((b: any) => b.docType === 'consumptionDevice');
+      return hit ? Number(hit.id) : 0;
+    })();
+    check('找得到示範資料「校對完沒送出」那張用電電費單', utilityBillId > 0, { utilityBillId });
+
+    await goto(page, `energyBillConsole/${utilityBillId}/show`, '[data-testid="review-field"], table');
+    await waitIdle(page);
+    const beforeSubmit = await snapshot(page);
+    check('校對完沒送出：有「送審」的出口', beforeSubmit.hasSubmit, beforeSubmit);
+    await page.evaluate(() => {
+      (document.querySelector('[data-testid="review-submit"]') as HTMLElement | null)?.click();
+    });
+    await waitIdle(page);
+
+    // 承辦確認 `self_approval(true)`：admin 自己送出，自己又是候選人。
+    await goto(page, `energyBillConsole/${utilityBillId}/show`, '[data-testid="review-field"], table');
+    await waitIdle(page);
+    const revise1 = await snapshot(page);
+    check('用電電費單 revise：發起人自己打開有動作可按（不是死路一條）',
+      revise1.actionButtons.length > 0, revise1);
+    check('用電電費單 revise：欄位可編輯（allowsSubjectEdit ＋ 自核放行）',
+      revise1.fieldDisabled === false, revise1);
+    check('用電電費單 revise：左欄一樣看得到原檔', revise1.hasSource, revise1);
+    check('用電電費單 revise：補件也開著', revise1.hasAddAttachment, revise1);
+    await shot(page, '3c-utility-bill-revise-before-sendback');
+
+    hr('③-c-2 主管退回 → 原送件者改得動');
+    check('承辦（admin）把這一關推過去（送出）',
+      await actOnWorkbench(page, '送出', utilityBillId));
+    await loginAs(page, demoEmail('manager'));
+    await selectOrg(page);
+    check('主管退回得動',
+      await actOnWorkbench(page, '退回', utilityBillId, '金額跟紙上對不起來，請重新核對'));
+
+    await loginAsAdmin(page);
+    await selectOrg(page);
+    await goto(page, `energyBillConsole/${utilityBillId}/show`, '[data-testid="review-field"], table');
+    await waitIdle(page);
+    const revise2 = await snapshot(page);
+    check('用電電費單被退回後：欄位可編輯', revise2.fieldDisabled === false, revise2);
+    check('用電電費單被退回後：有出口可按（認領 → 送出，＝重新送審）',
+      revise2.actionButtons.some((t) => t.includes('送出'))
+        || revise2.actionButtons.some((t) => t.includes('認領')),
+      revise2.actionButtons);
+    check('用電電費單被退回後：左欄看得到原檔', revise2.hasSource, revise2);
+    check('用電電費單被退回後：補件也開著', revise2.hasAddAttachment, revise2);
+    await shot(page, '3c-utility-bill-revise-after-sendback');
 
     // ── ④ act（finance 認領後：唯讀 ＋ 有動作 ＋ 可補件）──────────
     hr('④ act：finance 認領後，欄位唯讀但補得了件');
