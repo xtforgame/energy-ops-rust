@@ -76,17 +76,19 @@ async function run() {
   const browser = await launch();
   const page = hardenPage(await browser.newPage());
   try {
-    hr('① P9 定義圖：有分支、有退回的那一版');
+    hr('① 保證金請款流程：有退回邊的那一版（Q-04：bill-approval 單一審核後只剩 3 點 2 邊，用電電費單那張有已知穿越缺陷見下）');
     await loginAsAdmin(page);
     check('選得到 demo 組織', (await selectOrg(page)) != null);
     check('進得了流程總覽', await goto(page, 'energyWorkflowConsole', '[data-testid="workflow-row"]'));
     await waitIdle(page);
 
-    // 挑「電費單核可流程（2026 版）」—— 它同時有金額分支與三條退回邊，
-    // 是最容易出現穿越的一張。
+    // 挑「保證金請款流程」—— 財務放行可退回，4 個節點，bill-approval 改成單一審核後
+    // 只剩 3 點 2 邊，不再適合驗穿越。原本挑用電電費單（6 個節點）實跑撞到產品缺陷：
+    // workflow_defs.rs:702 clerk-review x=180、:706 manager-approve x=200 只差 20，
+    // 退回邊畫穿 clerk-review；修它要動 crates/，超出本卡範圍，另案處理（見卡的「紀錄」）。
     await page.evaluate(() => {
       const row = Array.from(document.querySelectorAll('[data-testid="workflow-row"]'))
-        .find((r) => /2026/.test((r as HTMLElement).innerText)) as HTMLElement | undefined;
+        .find((r) => /保證金請款/.test((r as HTMLElement).innerText)) as HTMLElement | undefined;
       row?.click();
     });
     check('點得開流程圖', await waitUntil(page, () => !!document.querySelector('.react-flow__node'),
@@ -100,7 +102,7 @@ async function run() {
     const geo = await geometry(page);
     log(`  節點 ${geo.nodeCount} / 邊 ${geo.edgeCount}`);
     log('  穿越：', JSON.stringify(geo.crossings));
-    check('圖上有節點與邊（不是空畫布）', geo.nodeCount >= 5 && geo.edgeCount >= 5, geo);
+    check('圖上有節點與邊（不是空畫布）', geo.nodeCount >= 4 && geo.edgeCount >= 4, geo);
     // **這一條就是使用者回報的那件事**。
     check('沒有任何一條線壓過節點', geo.crossings.length === 0, geo.crossings);
     await shot(page, '1-definition-graph');

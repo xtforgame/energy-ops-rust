@@ -506,8 +506,8 @@ async function run() {
       return { node: el.dataset.node ?? '', execution: el.dataset.execution ?? '' };
     }, newBillId);
     log('  主管佇列裡的那一筆：', JSON.stringify(queued));
-    check('主管的佇列裡有這張單（承辦確認那一關）',
-      !!queued && queued.node === 'clerk-review', queued);
+    check('主管的佇列裡有這張單（平台資料審核那一關）',
+      !!queued && queued.node === 'platform-review', queued);
 
     const drawerReady = await waitUntil(page, () => !!document.querySelector(
       '[data-testid="bill-detail-execution"][data-execution-id]:not([data-execution-id=""])',
