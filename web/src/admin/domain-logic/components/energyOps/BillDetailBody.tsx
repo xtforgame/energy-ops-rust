@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableHead, TableBody, TableRow, TableCell,
-  Stack, Tooltip, IconButton, TextField, Alert, Tabs, Tab, Chip, Divider, MenuItem,
+  Stack, Tooltip, IconButton, TextField, Alert, Tabs, Tab, Chip, Divider, MenuItem, Select,
   Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -34,6 +34,9 @@ import {
 } from 'common/plugins/EnergyOpsCommonPlugin/taipowerExtractor';
 
 interface StationOption { id: number; name: string; customerNumber: string; status: string }
+
+/** 附件類別：封閉代碼，照後端 `eo_domain::attachment_limits::AttachmentCategory`。 */
+const ATTACHMENT_CATEGORIES = ['taipowerNotice', 'bankbookCopy', 'transferList', 'approvalSheet', 'receipt', 'other'] as const;
 
 // 欄位清單與那一格的呈現規則都在 `FieldDiffGrid` —— 這裡只是消費它。
 
@@ -169,6 +172,10 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
   const [actions, setActions] = React.useState<TaskAction[]>([]);
   /** 不能做事時後端會說**為什麼**（C7 增補 A）。前端不自己算。 */
   const [blocked, setBlocked] = React.useState<ActionBlocked | null>(null);
+  /** 這一關的「本關要求」：`.../executions/:id/actions` 頂層回的，每項帶 met（流程引擎：必傳附件／必填欄位）。 */
+  const [requirements, setRequirements] = React.useState<any[]>([]);
+  /** 按下動作被 422 step_requirements_unmet 擋下時，逐項列出缺項。 */
+  const [requirementsBlocked, setRequirementsBlocked] = React.useState<{ missingAttachments: string[]; missingFields: string[] } | null>(null);
   const [openTaskId, setOpenTaskId] = React.useState<number | null>(null);
   /**
    * 這一關**認領了沒**（後端給，前端不自己從 state 推）。
@@ -243,32 +250,41 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
     return () => { alive = false; };
   }, [orgId, billId, base]);
 
-  // 分頁籤與動作列的資料 —— 都掛在 execution 上，沒有 execution 就沒有這些。
-  React.useEffect(() => {
-    if (!orgId || !execution) {
-      setAttachments([]); setAudit([]); setLineage([]); setActions([]); setBlocked(null); return;
-    }
-    const eid = execution.id;
+  /**
+   * 附件與「本關要求」清單一起重抓（S3/S4）——補件辨識中的時候要每 3 秒重拉這兩個，
+   * 直到沒有檔案在辨識；不重拉 audit／lineage／task，那幾個不會因為辨識而變。
+   */
+  const refreshAttachmentsAndActions = React.useCallback((eid: number) => {
     energyHttp.get(`${energyBase(orgId)}/executions/${eid}/attachments`)
       .then(({ data }) => setAttachments(Array.isArray(data) ? data : [])).catch(() => setAttachments([]));
-    energyHttp.get(`${base}/audit-events`, { params: { targetType: 'energyWorkflowExecution', targetId: String(eid) } })
-      .then(({ data }) => setAudit(Array.isArray(data) ? data : [])).catch(() => setAudit([]));
-    energyHttp.get(`${base}/executions/${eid}/lineage`)
-      .then(({ data }) => setLineage(Array.isArray(data) ? data : (data?.nodes ?? []))).catch(() => setLineage([]));
     // 動作按鈕由後端決定（前端不判斷 kind）。
-    // 回的是**可執行性過濾後**的結果：`{ availableActions, actionBlocked }`。
+    // 回的是**可執行性過濾後**的結果：`{ availableActions, actionBlocked, requirements }`。
     // 不再是「這一關有哪些動作」——那等於對使用者說謊（`FRONTEND.md §2.8`）。
     energyHttp.get(`${base}/executions/${eid}/actions`)
       .then(({ data }) => {
         setActions(Array.isArray(data?.availableActions) ? data.availableActions : []);
         setBlocked(data?.actionBlocked ?? null);
+        setRequirements(Array.isArray(data?.requirements) ? data.requirements : []);
         // 認領狀態：沒有它的話這一頁畫得出按鈕、按下去卻 403（見後端那一段）。
         setClaimState({
           claimable: !!data?.claimable,
           claimedByMe: !!data?.claimedByMe,
         });
       })
-      .catch(() => { setActions([]); setBlocked(null); setClaimState(null); });
+      .catch(() => { setActions([]); setBlocked(null); setClaimState(null); setRequirements([]); });
+  }, [orgId, base]);
+
+  // 分頁籤與動作列的資料 —— 都掛在 execution 上，沒有 execution 就沒有這些。
+  React.useEffect(() => {
+    if (!orgId || !execution) {
+      setAttachments([]); setAudit([]); setLineage([]); setActions([]); setBlocked(null); setRequirements([]); return;
+    }
+    const eid = execution.id;
+    refreshAttachmentsAndActions(eid);
+    energyHttp.get(`${base}/audit-events`, { params: { targetType: 'energyWorkflowExecution', targetId: String(eid) } })
+      .then(({ data }) => setAudit(Array.isArray(data) ? data : [])).catch(() => setAudit([]));
+    energyHttp.get(`${base}/executions/${eid}/lineage`)
+      .then(({ data }) => setLineage(Array.isArray(data) ? data : (data?.nodes ?? []))).catch(() => setLineage([]));
     // 目前這一關的 task —— 動作要打在 task 上。
     energyHttp.get(`${base}/executions/${eid}`)
       .then(({ data }) => {
@@ -276,7 +292,21 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
         setOpenTaskId(open ? open.id : null);
       })
       .catch(() => setOpenTaskId(null));
-  }, [orgId, execution, base]);
+  }, [orgId, execution, base, refreshAttachmentsAndActions]);
+
+  /** 有附件在辨識中就每 3 秒重抓附件與要求，直到沒有（S3/S4：使用者怎麼看畫面自動變化）。 */
+  const hasRecognizing = attachments.some((a) => a.classifyState === 'recognizing');
+  React.useEffect(() => {
+    if (!execution || !hasRecognizing) return undefined;
+    const eid = execution.id;
+    const timer = setInterval(() => refreshAttachmentsAndActions(eid), 3000);
+    return () => clearInterval(timer);
+  }, [execution, hasRecognizing, refreshAttachmentsAndActions]);
+
+  /** 補齊之後，上一次「通過」留下的被擋提示不該繼續賴著——都 ✓ 了就自己收掉。 */
+  React.useEffect(() => {
+    if (requirements.length > 0 && requirements.every((r: any) => r.met)) setRequirementsBlocked(null);
+  }, [requirements]);
 
   /**
    * 增補 B-2：**改金額 → 下方流程圖的分支即時重算**。
@@ -405,6 +435,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
     action: TaskAction, withReason?: string, then?: 'next' | 'close',
   ) => {
     if (!openTaskId) return;
+    setRequirementsBlocked(null);
     try {
       const { data } = await energyHttp.post(`${base}/tasks/${openTaskId}/actions`, {
         actionKey: action.actionKey, ...(withReason ? { reason: withReason } : {}),
@@ -431,7 +462,18 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
       }
       notify('energy.myTasks.actionDone', { type: 'success' });
       load();
-    } catch (e: any) { notify(apiErrorCode(e) || 'action failed', { type: 'error' }); }
+    } catch (e: any) {
+      const payload = apiErrorPayload(e);
+      // 送出前的最後一道（S2）：422 step_requirements_unmet，被擋提示逐項列出缺項，不送出。
+      if (payload?.code === 'step_requirements_unmet') {
+        setRequirementsBlocked({
+          missingAttachments: Array.isArray(payload.details?.missingAttachments) ? payload.details.missingAttachments : [],
+          missingFields: Array.isArray(payload.details?.missingFields) ? payload.details.missingFields : [],
+        });
+        return;
+      }
+      notify(apiErrorCode(e) || 'action failed', { type: 'error' });
+    }
   };
 
   /**
@@ -557,6 +599,14 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
       if (sourceInputRef.current) sourceInputRef.current.value = '';
       if (addedInputRef.current) addedInputRef.current.value = '';
     }
+  };
+
+  /** 人選類別（判不出或要改類別都走這裡，S4）；選完即存、重抓附件與要求。 */
+  const setAttachmentCategory = async (attachmentId: number, category: string) => {
+    try {
+      await energyHttp.patch(`${base}/attachments/${attachmentId}/category`, { category });
+      if (execution) refreshAttachmentsAndActions(execution.id);
+    } catch (e: any) { notify(apiErrorCode(e) || 'save failed', { type: 'error' }); }
   };
 
   /**
@@ -1236,6 +1286,53 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
           {execution ? (
             <>
               <FlowGraph organizationId={orgId} executionId={execution.id} height={300} />
+              {/* 「本關要求」：這一關必傳的附件類別、必填欄位，缺的標紅（流程引擎 S1）。
+                  按鈕照常可按，缺東西按下去才擋（S2）——不在這裡就 disable 按鈕。 */}
+              {requirements.length > 0 && (
+                <Box mt={2} data-testid="step-requirements">
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                    {translate('energy.stepRequirements.title')}
+                  </Typography>
+                  <Stack direction="row" gap={0.75} flexWrap="wrap">
+                    {requirements.map((r: any, i: number) => {
+                      const label = r.type === 'attachment'
+                        ? translate(`energy.attachmentCategory.${r.category}`, { _: r.category })
+                        : translate(r.labelKey, { _: r.path });
+                      return (
+                        <Chip
+                          key={`req-${r.type}-${r.type === 'attachment' ? r.category : r.path}-${i}`}
+                          size="small"
+                          data-testid="req-item"
+                          data-met={r.met ? '1' : '0'}
+                          label={`${r.met ? '✓' : '✗'} ${label}`}
+                          variant="outlined"
+                          sx={r.met
+                            ? { color: jvTokens.caption, borderColor: jvTokens.border }
+                            : { color: jvTokens.warn, borderColor: jvTokens.warn, fontWeight: 700 }}
+                        />
+                      );
+                    })}
+                  </Stack>
+                </Box>
+              )}
+              {/* 被擋提示（S2）：按動作被 422 step_requirements_unmet 擋下時，逐項列出缺項。 */}
+              {requirementsBlocked && (
+                <Alert
+                  severity="warning"
+                  data-testid="step-requirements-blocked"
+                  sx={{ mt: 1.5, border: `1px solid ${jvTokens.warn}`, backgroundColor: 'transparent', color: jvTokens.warn }}
+                >
+                  {translate('energy.stepRequirements.blocked')}
+                  {'：'}
+                  {[
+                    ...requirementsBlocked.missingAttachments.map((c) => translate(`energy.attachmentCategory.${c}`, { _: c })),
+                    ...requirementsBlocked.missingFields.map((p) => {
+                      const match = requirements.find((r: any) => r.type === 'field' && r.path === p);
+                      return match ? translate(match.labelKey, { _: p }) : p;
+                    }),
+                  ].join('、')}
+                </Alert>
+              )}
               {/* 動作按鈕在**圖外** —— 流程圖不是操作介面（`FRONTEND.md §3`）。
                   而且**不畫按不動的按鈕**：不能做時 `ActionBar` 會改印那一句原因
                   （C7 增補 A —— 這是它必須出現的三個地方之一）。 */}
@@ -1358,6 +1455,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                   <TableRow>
                     <TableCell>{translate('energy.review.filename')}</TableCell>
                     <TableCell>{translate('energy.review.attachmentRole')}</TableCell>
+                    <TableCell>{translate('energy.attachmentClassify.columnTitle')}</TableCell>
                     <TableCell>{translate('energy.review.size')}</TableCell>
                     <TableCell align="right" />
                   </TableRow>
@@ -1380,6 +1478,44 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                               : { color: jvTokens.caption, borderColor: jvTokens.border }}
                           />
                         </TableCell>
+                        <TableCell data-testid="att-classify" data-state={a.classifyState ?? ''}>
+                          {a.classifyState === 'recognizing' && (
+                            <Typography variant="caption" color="text.secondary">
+                              {translate('energy.attachmentClassify.recognizing')}
+                            </Typography>
+                          )}
+                          {a.classifyState === 'auto' && (
+                            <Typography variant="caption">
+                              {translate('energy.attachmentClassify.auto', {
+                                category: translate(`energy.attachmentCategory.${a.category}`, { _: a.category }),
+                              })}
+                            </Typography>
+                          )}
+                          {(a.classifyState === 'needsCategory' || a.classifyState === 'manual') && (
+                            <Select
+                              size="small"
+                              value={a.category ?? ''}
+                              displayEmpty
+                              data-testid="att-category-select"
+                              onChange={(e) => setAttachmentCategory(a.id, String(e.target.value))}
+                              sx={{ minWidth: 160, background: '#fff' }}
+                            >
+                              <MenuItem value="" disabled data-testid="att-category-placeholder">
+                                {translate('energy.attachmentClassify.pickCategory')}
+                              </MenuItem>
+                              {ATTACHMENT_CATEGORIES.map((c) => (
+                                <MenuItem key={c} value={c} data-testid="att-category-option" data-category={c}>
+                                  {translate(`energy.attachmentCategory.${c}`)}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          )}
+                          {role === 'source' && !a.classifyState && (
+                            <Typography variant="caption">
+                              {translate(`energy.attachmentCategory.${a.category ?? 'taipowerNotice'}`)}
+                            </Typography>
+                          )}
+                        </TableCell>
                         <TableCell>{Math.ceil(Number(a.size) / 1024)} KB</TableCell>
                         <TableCell align="right">
                           <IconButton
@@ -1393,7 +1529,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                         </TableCell>
                       </TableRow>
                     );
-                  }) : <EmptyRow colSpan={4} />}
+                  }) : <EmptyRow colSpan={5} />}
                 </TableBody>
               </Table>
             </>

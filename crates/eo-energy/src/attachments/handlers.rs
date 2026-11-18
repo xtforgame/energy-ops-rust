@@ -4,10 +4,14 @@ use super::service::{self, AttachmentStore, Owner, UploadInput};
 use super::staged;
 use crate::common::{err, err_d, Ctx, RequestMeta};
 use crate::gates;
+use crate::tpr_client::{TprClient, TprUploadFile};
 use crate::workflow::authorize_execution;
 use actix_web::{web, HttpRequest, HttpResponse};
-use eo_domain::attachment_limits::{is_allowed_mime, MAX_FILE_BYTES};
+use eo_domain::attachment_limits::{is_allowed_mime, AttachmentCategory, MAX_FILE_BYTES};
 use eo_domain::content_disposition::content_disposition;
+use eo_domain::document_ingest::EnergyDocType;
+use eo_domain::taipower_canonical::is_tpr_terminal;
+use eo_domain::taipower_extractor::energy_document_classifier;
 use eo_platform::auth::CurrentUser;
 use eo_platform::core::CoreRef;
 use eo_platform::error::ApiResult;
@@ -51,7 +55,71 @@ pub async fn upload_to_execution(
     let result = upload_execution_file(&ctx, &incoming, execution_id).await;
     staged::finish(&core, &incoming).await;
     let row = result?;
+    // 補件（role=added）才會判定；收件原檔走 service::upload 一律標 taipowerNotice，不重複送辨識——
+    // 這是唯一接自動判定的地方（DESIGN.md「三件一定要守」第二條）。
+    if service::classify_state(&row.data, chrono::Utc::now()).as_deref() == Some("recognizing") {
+        spawn_classify(core.get_ref().clone(), ctx.org_id(), row.id);
+    }
     Ok(HttpResponse::Ok().json(service::summary(&row)))
+}
+
+/// 補件的背景分類：建 job → 每 2 秒輪詢到終態（180 秒逾時）→ 取結果 → 過判讀器。
+/// 任何一步失敗、逾時、沒設定服務都落 `needsCategory`（fail-closed：寧可請人選，不可亂猜）。
+fn spawn_classify(core: CoreRef, org_id: i64, attachment_id: i64) {
+    actix_web::rt::spawn(async move {
+        if let Err(e) = classify_added_attachment(&core, org_id, attachment_id).await {
+            log::warn!("[energy][attachment] 補件辨識 attachment={attachment_id} 失敗：{e}");
+            let ctx = Ctx::system(&core, org_id);
+            let _ = service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await;
+        }
+    });
+}
+
+async fn classify_added_attachment(core: &CoreRef, org_id: i64, attachment_id: i64) -> ApiResult<()> {
+    let ctx = Ctx::system(core, org_id);
+    let Some(tpr) = TprClient::from_config(&core.config) else {
+        return service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await;
+    };
+    let (row, bytes) = service::read_bytes(&ctx, attachment_id).await?;
+    let file = TprUploadFile {
+        source_file_id: attachment_id.to_string(),
+        file_name: row.original_filename.clone(),
+        bytes,
+        content_type: row.mime_type.clone(),
+        password: None,
+    };
+    let job = match tpr.create_job(vec![file]).await {
+        Ok(j) => j,
+        Err(_) => return service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await,
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(180);
+    loop {
+        if std::time::Instant::now() >= deadline {
+            let _ = tpr.delete_job(&job.job_id).await;
+            return service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await;
+        }
+        match tpr.get_job(&job.job_id).await {
+            Ok(s) if is_tpr_terminal(s.status.as_str()) => break,
+            Ok(_) => {}
+            Err(_) => {
+                let _ = tpr.delete_job(&job.job_id).await;
+                return service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await;
+            }
+        }
+        actix_web::rt::time::sleep(Duration::from_secs(2)).await;
+    }
+    let result = tpr.get_result_raw(&job.job_id).await;
+    let _ = tpr.delete_job(&job.job_id).await;
+    let Ok(result) = result else {
+        return service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await;
+    };
+    let doc = result.get("documents").and_then(Value::as_array).and_then(|a| a.first()).cloned().unwrap_or(json!({}));
+    let classify = energy_document_classifier(&doc);
+    if classify.doc_type == EnergyDocType::Unclassified {
+        service::apply_classify_result(&ctx, attachment_id, None, "needsCategory").await
+    } else {
+        service::apply_classify_result(&ctx, attachment_id, Some(AttachmentCategory::TaipowerNotice.as_str()), "auto").await
+    }
 }
 
 async fn upload_execution_file(ctx: &Ctx, incoming: &staged::Incoming, execution_id: i64) -> ApiResult<service::AttachmentRow> {
@@ -150,6 +218,21 @@ pub async fn remove_link(core: Core, user: CurrentUser, meta: RequestMeta, path:
     service::remove_link(&mut tx, &ctx, &link, &attachment, &reason).await?;
     tx.commit().await?;
     Ok(HttpResponse::Ok().json(json!({ "ok": true })))
+}
+
+/// 人選類別（判不出或要改類別都走這裡）：`PATCH /organizations/:org/attachments/:id/category`。
+pub async fn set_category(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
+    let (org, attachment_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::ATTACHMENT_UPLOAD, &meta).await?;
+    let category = body.get("category").and_then(Value::as_str).unwrap_or("").to_string();
+    let mut tx = core.pool.begin().await?;
+    let attachment = service::attachment_in_org(&mut tx, org, attachment_id).await?;
+    if let Some(e) = attachment.execution_id {
+        authorize_execution(&core, &mut tx, &ctx.access, e).await?;
+    }
+    service::set_category_manual(&mut tx, &ctx, &attachment, &category).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true, "category": category })))
 }
 
 /// 直傳第一步：與真正的上傳端點同一道閘，回暫存位置與預簽 PUT 網址。

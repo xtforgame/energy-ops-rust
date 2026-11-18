@@ -400,6 +400,24 @@ const customEnglishMessages: TranslationMessages = {
         contract: 'Contract',
         remittanceProof: 'Remittance proof',
       },
+      stepRequirements: {
+        title: 'Requirements for this step',
+        blocked: 'Missing',
+      },
+      attachmentCategory: {
+        taipowerNotice: 'Taipower bill notice',
+        bankbookCopy: 'Bankbook copy',
+        transferList: 'Taipower transfer list',
+        approvalSheet: 'Approval sheet copy',
+        receipt: 'Receipt',
+        other: 'Other',
+      },
+      attachmentClassify: {
+        columnTitle: 'Category',
+        recognizing: 'Recognizing…',
+        auto: 'Auto-judged: %{category}',
+        pickCategory: 'Pick a category',
+      },
       docType: {
         renewableSurplus: 'Feed-in bill (surplus, invoice needed)',
         renewableNoSurplus: 'Feed-in bill (no surplus, we pay)',
@@ -924,6 +942,7 @@ const customEnglishMessages: TranslationMessages = {
           downloaded: 'downloaded an attachment',
           superseded: 'replaced an attachment with a newer version',
           linkRemoved: 'removed an attachment\u2019s link to this document',
+          categorySet: 'set an attachment\u2019s category',
         },
         bill: {
           matched: 'matched a bill to a station',

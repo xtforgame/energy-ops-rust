@@ -251,6 +251,39 @@ impl ActionDef {
     }
 }
 
+/// 這一關要求的附件類別與份數。`min` 是至少要幾份（不是上限）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentRequirement {
+    /// 封閉代碼：見 `eo_domain::attachment_limits::AttachmentCategory`。
+    pub category: String,
+    pub min: i64,
+}
+
+/// 這一關要求必填的單據欄位。`path` 是單據表（`to_jsonb` 之後）的欄位名，snake_case。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldRequirement {
+    pub path: String,
+    pub label_key: String,
+}
+
+/// 一關的「必傳附件類別」「必填欄位」。空＝這一關沒有要求（舊流程、大多數節點）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepRequirements {
+    #[serde(default)]
+    pub attachments: Vec<AttachmentRequirement>,
+    #[serde(default)]
+    pub fields: Vec<FieldRequirement>,
+}
+
+impl StepRequirements {
+    pub fn is_empty(&self) -> bool {
+        self.attachments.is_empty() && self.fields.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeDef {
@@ -277,6 +310,9 @@ pub struct NodeDef {
     pub layout: Value,
     #[serde(default)]
     pub actions: Vec<ActionDef>,
+    /// 這一關的「必傳附件類別」「必填欄位」；`advance` 送出前的最後一道檢查就靠它。
+    #[serde(default)]
+    pub requirements: StepRequirements,
 }
 
 impl NodeDef {
@@ -297,6 +333,7 @@ impl NodeDef {
             service_key: None,
             layout: json!({}),
             actions: vec![],
+            requirements: StepRequirements::default(),
         }
     }
 
@@ -317,6 +354,18 @@ impl NodeDef {
 
     pub fn subject_edit(mut self, allow: bool) -> Self {
         self.allows_subject_edit = allow;
+        self
+    }
+
+    /// 這一關要求至少 `min` 份某類別的附件（`category` 是封閉代碼）。
+    pub fn requires_attachment(mut self, category: &str, min: i64) -> Self {
+        self.requirements.attachments.push(AttachmentRequirement { category: category.into(), min });
+        self
+    }
+
+    /// 這一關要求單據本體的某個欄位非空；`label_key` 是畫面上「本關要求」清單要顯示的 i18n key。
+    pub fn requires_field(mut self, path: &str, label_key: &str) -> Self {
+        self.requirements.fields.push(FieldRequirement { path: path.into(), label_key: label_key.into() });
         self
     }
 
@@ -636,6 +685,15 @@ pub fn platform_review_bill() -> WorkflowDefinition {
         NodeDef::new("platform-review", "平台資料審核", NodeType::HumanTask)
             .rule(AssignmentRule::department(DEPT_BILL_REVIEW, "all"))
             .layout(220, 120)
+            // 使用者 2026-11-18 拍板：這一關開放改欄位、預設要求台電電費通知單＋電號／計費起迄日／
+            // 應付總金額／繳費期限（「預設要求」，不是「待確認」——那組字不准用）。
+            .subject_edit(true)
+            .requires_attachment("taipowerNotice", 1)
+            .requires_field("customerNumberRaw", "energy.bills.field.customerNumberRaw")
+            .requires_field("billingPeriodStart", "energy.bills.field.billingPeriodStart")
+            .requires_field("billingPeriodEnd", "energy.bills.field.billingPeriodEnd")
+            .requires_field("totalAmount", "energy.bills.field.totalAmount")
+            .requires_field("dueDate", "energy.bills.field.dueDate")
             .actions(vec![ActionDef::new("pass", "flow.action.pass", ActionKind::Advance, 0)]),
         NodeDef::new("end", "平台審核通過", NodeType::End).layout(440, 120),
     ];

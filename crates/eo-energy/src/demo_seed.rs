@@ -872,6 +872,63 @@ async fn seed_flows(
         .await?;
         created.rating_bindings += 1;
     }
+
+    // 示範「本關要求」：一張假電費單停在平台資料審核，缺台電電費通知單、應付總金額空著——
+    // 使用者一開畫面就看到「本關要求」清單裡兩個 ✗（S1）。假電號，不對到任何真案場。
+    const FAKE_BILL_CUSTOMER_NUMBER: &str = "00-00-0000-00-0";
+    let existing_fake_bill: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM tbl_energy_bill WHERE organization_id = $1 AND customer_number_raw = $2 AND deleted_at IS NULL",
+    )
+    .bind(org)
+    .bind(FAKE_BILL_CUSTOMER_NUMBER)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let fake_bill_id = match existing_fake_bill {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar(
+                "INSERT INTO tbl_energy_bill
+                   (organization_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, data)
+                 VALUES ($1, $2, $3, $4, $5, 'reviewed', '{}'::jsonb) RETURNING id",
+            )
+            .bind(org)
+            .bind(FAKE_BILL_CUSTOMER_NUMBER)
+            .bind(date("2026-10-01"))
+            .bind(date("2026-10-31"))
+            .bind(date("2026-11-25"))
+            .fetch_one(&mut **tx)
+            .await?
+        }
+    };
+    let has_running: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM tbl_energy_workflow_execution
+           WHERE organization_id = $1 AND workflow_key = $2 AND subject_type = 'energyBill' AND subject_id = $3
+             AND status = 'running' AND deleted_at IS NULL)",
+    )
+    .bind(org)
+    .bind(&bill.key)
+    .bind(fake_bill_id.to_string())
+    .fetch_one(&mut **tx)
+    .await?;
+    if !has_running {
+        start_execution(
+            tx,
+            ctx,
+            StartExecution {
+                station_key: pingtung.into(),
+                workflow_key: bill.key.clone(),
+                subject_type: "energyBill".into(),
+                subject_id: fake_bill_id.to_string(),
+                business_date: date("2026-11-10"),
+                attributes: json!({ "bill": { "customerNumberRaw": FAKE_BILL_CUSTOMER_NUMBER } }),
+                definition: None,
+                station_id: None,
+            },
+        )
+        .await?;
+        created.executions += 1;
+    }
+
     Ok(())
 }
 

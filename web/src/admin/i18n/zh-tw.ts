@@ -410,6 +410,27 @@ const customChineseTWMessages: TranslationMessages = {
       contract: '合約',
       remittanceProof: '匯款憑證',
     },
+    // 流程引擎：每一關「必傳附件類別」「必填欄位」的定義與送出前檢查。那組要求就叫「預設要求」。
+    stepRequirements: {
+      title: '本關要求',
+      blocked: '缺',
+    },
+    // 附件類別：封閉代碼，照 eo_domain::attachment_limits::AttachmentCategory。
+    attachmentCategory: {
+      taipowerNotice: '台電電費通知單',
+      bankbookCopy: '存摺影本',
+      transferList: '台電轉供單清單',
+      approvalSheet: '核准單影本',
+      receipt: '收據',
+      other: '其他',
+    },
+    // 補件自動判定（辨識服務先判，判不出才請人選）。
+    attachmentClassify: {
+      columnTitle: '類別',
+      recognizing: '辨識中…',
+      auto: '自動判定：%{category}',
+      pickCategory: '請選類別',
+    },
     docType: {
       // 四種細分單別（`RECOGNITION.md §9-9`）：版型只有兩種，
       // 但每一種的後續作業不同，而「要開哪些流程」是照後續作業決定的。
@@ -988,6 +1009,7 @@ const customChineseTWMessages: TranslationMessages = {
         downloaded: '下載了附件',
         superseded: '用新版本取代了舊附件',
         linkRemoved: '解除了附件與這張單的關聯',
+        categorySet: '設定了附件類別',
       },
       bill: {
         matched: '把電費單指認到案場',
