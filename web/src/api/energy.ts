@@ -155,6 +155,14 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'PATCH', path: '/landowners/:landownerId' },
   { method: 'GET', path: '/landowners/:landownerId' },
   { method: 'GET', path: '/landowners/:landownerId/overview' },
+  // 合約（卡 20261118-0810-a2 S1）＋合約檔（S2）＋發電案場清單匯入（S3）。
+  { method: 'GET', path: '/contracts', adapt: unwrapItems },
+  { method: 'POST', path: '/contracts' },
+  { method: 'GET', path: '/contracts/:contractId' },
+  { method: 'PATCH', path: '/contracts/:contractId' },
+  { method: 'GET', path: '/contracts/:contractId/attachments', adapt: unwrapItems },
+  { method: 'POST', path: '/contracts/:contractId/attachments' },
+  { method: 'POST', path: '/imports/stations' },
 ];
 
 const ENERGY_URL = /^\/api\/v1\/orgs\/([^/?#]+)\/energy(\/[^?#]*)?/;

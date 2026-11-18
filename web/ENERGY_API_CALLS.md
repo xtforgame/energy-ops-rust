@@ -108,6 +108,18 @@
 | POST | `E/landowners` | — | `LandownersPage.tsx:100` |
 | PATCH | `E/landowners/{landownerId}` | — | `LandownersPage.tsx:99` |
 
+## 卡 20261118-0810-a2 新增（合約維護、合約檔上傳、發電案場清單 Excel 匯入）
+
+| 方法 | 新路徑 | 回應轉換 | 呼叫端 |
+|---|---|---|---|
+| GET | `E/contracts`（可篩 `q`） | `{items}` → 陣列 | `ContractsPage.tsx` |
+| POST | `E/contracts` | — | `ContractsPage.tsx` |
+| GET | `E/contracts/{contractId}` | — | （目前前端沿用清單那一列，端點保留給之後要單筆重讀的頁面） |
+| PATCH | `E/contracts/{contractId}` | — | `ContractsPage.tsx` |
+| GET | `E/contracts/{contractId}/attachments` | `{items}` → 陣列 | `ContractsPage.tsx` |
+| POST | `E/contracts/{contractId}/attachments`（multipart） | — | `ContractsPage.tsx` |
+| POST | `E/imports/stations`（multipart `file`＋`dryRun`） | — | `StationsPage.tsx`（匯入 Excel 對話框） |
+
 ## 新後端另有、頁面目前沒有呼叫的端點
 
 都已列在 `ENERGY_ROUTES`（形狀原樣，清單類照樣 `{items}` → 陣列），之後開頁面時直接用 `energyHttp`：

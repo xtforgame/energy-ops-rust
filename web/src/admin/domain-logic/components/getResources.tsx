@@ -25,6 +25,8 @@ import LandownersPage from './energyOps/LandownersPage';
 import StationDetailPage from './energyOps/StationDetailPage';
 // 卡 20261118-0427-a S1：案場清單頁（新增案場、算專案編號）。
 import StationsPage from './energyOps/StationsPage';
+// 卡 20261118-0810-a2 S1：合約清單頁（新增編輯、合約檔上傳）。
+import ContractsPage from './energyOps/ContractsPage';
 import IngestConsolePage from './energyOps/IngestConsolePage';
 import IngestBatchDetailPage from './energyOps/IngestBatchDetailPage';
 // P9 流程總覽（管理員的家）—— 治理層。
@@ -75,6 +77,7 @@ const getResources = (permissions?: string[] | null) => {
     // 這裡是**陣列字面值** —— 不可以用 `{/* */}` 註解，
     // 那會變成一個空物件被塞進 resources（React render 時才炸）。
     <Resource key="energyStationConsole" name="energyStationConsole" list={StationsPage} show={StationDetailPage} />,
+    <Resource key="energyContractConsole" name="energyContractConsole" list={ContractsPage} />,
     <Resource key="energyWorkflowConsole" name="energyWorkflowConsole" list={WorkflowOverviewPage} />,
     <Resource key="energyDashboardConsole" name="energyDashboardConsole" list={DashboardPage} />,
     <Resource key="energyCalendarConsole" name="energyCalendarConsole" list={CalendarPage} />,

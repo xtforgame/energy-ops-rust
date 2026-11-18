@@ -134,6 +134,13 @@
 | PATCH | `E/landowners/{landownerId}`（卡 A：編輯，整包送上來） | MASTER_MANAGE |
 | GET | `E/landowners/{landownerId}` | FLOW_VIEW |
 | GET | `E/landowners/{landownerId}/overview` | FLOW_VIEW |
+| GET | `E/contracts`（卡 20261118-0810-a2 S1：可篩 `q`、`landownerId`、`stationId`；回傳帶 `stations:[{id,name}]`、`attachmentCount`） | FLOW_VIEW |
+| POST | `E/contracts`（新增；`contractNo`／`landownerId`／`validFrom` 必填；`stationIds` 同步 `mn_energy_contract_station`；寫 `contract.created`） | MASTER_MANAGE |
+| GET | `E/contracts/{contractId}` | FLOW_VIEW |
+| PATCH | `E/contracts/{contractId}`（整包送上來；`validTo` 早於 `validFrom` 回 400 `bad_date_range`；`paymentFrequency` 不在白名單回 400 `bad_payment_frequency`；寫 `contract.updated`） | MASTER_MANAGE |
+| GET | `E/contracts/{contractId}/attachments`（卡 20261118-0810-a2 S2：合約檔清單） | `energy:attachment:download` |
+| POST | `E/contracts/{contractId}/attachments`（multipart；合約檔上傳，照抄 `upload_to_execution`） | `energy:attachment:upload` |
+| POST | `E/imports/stations`（卡 20261118-0810-a2 S3：multipart `file`＋`dryRun=1|0`，匯入「發電案場清單」；有任何錯整批不寫，回 `{dryRun, created, updated, skipped, errors}`） | MASTER_MANAGE |
 
 閘的常數（照 App 5 `AcEnergyOpsController.ts:88-104`）：
 GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage；FLOW_ACT＝flow:act；FLOW_VIEW＝flow:view ∪ flow:view-all；FLOW_ADMIN＝flow:admin；ABORT_APPROVE＝flow:abort-approve；MASTER_MANAGE＝`energy:master:manage`（卡 20261118-0427-a 新增：案場／電號／受款對象／地主分配的新增與編輯）（皆 `energy:` 前綴）。

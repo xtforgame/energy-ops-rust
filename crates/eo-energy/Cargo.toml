@@ -28,3 +28,4 @@ percent-encoding.workspace = true
 futures.workspace = true
 bytes.workspace = true
 rand.workspace = true
+calamine.workspace = true
