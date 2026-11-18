@@ -27,7 +27,8 @@ Usage:
 */
 import type { Browser, Page } from 'puppeteer';
 import {
-  APP, Scoreboard, hr, log, sleep, launch, shooter, loginAsAdmin, selectOrg, seedBatch, hardenPage,
+  APP, Scoreboard, hr, log, sleep, launch, shooter, loginAsAdmin, loginAs, demoEmail, selectOrg, seedBatch,
+  hardenPage,
 } from '../lib/energyOpsHarness.ts';
 
 const board = new Scoreboard();
@@ -307,7 +308,8 @@ async function run() {
     // LIFECYCLE 【4】【5】之後的名字：
     // 「收件台／送單紀錄」→「送件」、「工作台」→「我的工作」、
     // 「例外件」**整項消失**（併成電費單的一個頁籤，見 §7.4）。
-    const menuLabels = ['我的工作', '送件', '電費單', '地主 / 發電站'];
+    // 卡 A（20261118-0427-a）併回：地主頁改名「受款對象」（地主/受款對象合併）。
+    const menuLabels = ['我的工作', '送件', '電費單', '受款對象'];
     const menuText = await page.evaluate(() => document.body.innerText || '');
     for (const label of menuLabels) {
       check(`選單有「${label}」`, menuText.includes(label));
@@ -452,18 +454,23 @@ async function run() {
     hr('G. P5 地主 / 發電站');
     await gotoPage(page, 'energyLandownerConsole', '地主');
     await sleep(1000);
+    // 卡 A 併回：這頁現在混了受款對象（台電區處／子公司／公司／機關），
+    // 不核總數（會隨卡 A 的示範資料變動），只核兩位地主都還在清單裡。
     const ownerRows = await page.$$eval('[data-testid="landowner-row"]', (els) => els.length);
-    check('2 位地主', ownerRows === 2, { ownerRows });
     const ownerText = await page.evaluate(() => document.body.innerText || '');
+    check('清單裡有陳明德、林秀英', ownerText.includes('陳明德') && ownerText.includes('林秀英'), { ownerRows });
     check('異常案場標出來了', ownerText.includes('1 異常'), null);
     await shot(page, 'G1-landowners');
 
     // 點開陳明德 → 詳情抽屜（「一個地主的所有錢與時間」）
     const openedOwner = await page.evaluate(() => {
+      // 只有列裡第一格（名字那格）掛了 onClick 導頁，點整列不會動
+      // （`LandownersPage.tsx`：onClick 在 `TableCell` 上，不是 `TableRow`）。
       const row = Array.from(document.querySelectorAll('[data-testid="landowner-row"]'))
         .find((tr) => (tr as HTMLElement).innerText.includes('林秀英'));
-      if (!row) return false;
-      (row as HTMLElement).click();
+      const cell = row?.querySelector('td') as HTMLElement | null;
+      if (!cell) return false;
+      cell.click();
       return true;
     });
     check('點得開地主詳情', openedOwner);
@@ -499,6 +506,15 @@ async function run() {
 
     // ---------------------------------------------------------------
     hr('H. P1 角色工作台');
+    /**
+     * Q-04（2026-11-16）：bill-approval 換成單一審核，候選人只剩部門
+     * `bill-reviewers`（manager／finance／accounting）。admin（業務部）
+     * 已經不是候選人了，工作台上看不到示範主線那筆 —— 這一段換成用
+     * 審核組帳號（finance）看，J 段看完流程圖再切回 admin（後面 K～P
+     * 段要的是 admin 的管理權限）。
+     */
+    await loginAs(page, demoEmail('finance'));
+    await selectOrg(page);
     await gotoPage(page, 'energyMyWorkConsole', '我的工作');
     // 「工作台」在**選單上也有** → `gotoPage` 會太早回來。等真正的內容。
     check('工作台內容 render 出來了',
@@ -519,7 +535,8 @@ async function run() {
       };
     });
 
-    // demo seed 發起了一筆執行、admin 是業務部成員 ⇒ 他是「承辦確認」的候選人。
+    // demo seed 發起了一筆執行、finance 是部門 bill-reviewers 成員 ⇒ 他是
+    // 「平台資料審核」的候選人（Q-04：單一審核，admin 已經不是候選人了）。
     check('工作台有分區（不是通用清單）', wb.sections.length > 0, wb.sections);
     check('沒有空的分區', wb.emptySections.length === 0, wb.emptySections);
     check('至少一列', wb.rows >= 1, wb);
@@ -528,9 +545,9 @@ async function run() {
     // 列的資訊密度：案場 · 地主 · 金額 · 關卡（不只有單號）。
     check('列上有案場名', /屏東枋寮一號/.test(wb.text), wb.text.slice(0, 300));
     check('列上有地主', /陳明德|林秀英/.test(wb.text), wb.text.slice(0, 300));
-    check('列上有目前關卡', /承辦確認|主管核准|財務放行|付款/.test(wb.text), wb.text.slice(0, 300));
+    check('列上有目前關卡', /平台資料審核/.test(wb.text), wb.text.slice(0, 300));
     check('畫面上沒有 nodeKey',
-      !/clerk-review|manager-approve|finance-release/.test(wb.text));
+      !/clerk-review|manager-approve|finance-release|platform-review/.test(wb.text));
     check('畫面上沒有 raw key', !/energy:|ryxis:/.test(wb.text));
     await shot(page, 'H1-workbench');
 
@@ -588,16 +605,15 @@ async function run() {
       };
     });
     check('流程圖畫出來了', graphInfo.present, graphInfo);
-    check('8 個節點（七節點流程 ＋ start/end）', graphInfo.nodeCount === '8', graphInfo);
-    check('react-flow 真的 render 了 8 個節點', graphInfo.nodes.length === 8, graphInfo.nodes);
+    // Q-04：bill-approval 換成單一審核，3 個節點（start → platform-review → end）。
+    check('3 個節點（單一審核 ＋ start/end）', graphInfo.nodeCount === '3', graphInfo);
+    check('react-flow 真的 render 了 3 個節點', graphInfo.nodes.length === 3, graphInfo.nodes);
     check('圖上是中文節點名不是 nodeKey',
-      graphInfo.nodes.includes('承辦確認')
+      graphInfo.nodes.includes('平台資料審核')
       && !graphInfo.nodes.some((n) => /-/.test(n) && /[a-z]/.test(n)),
       graphInfo.nodes);
-    // 退回路徑是由 revert 動作**推導**的（預設流程沒有 sendBack transition）。
-    check('退回路徑有畫出來（推導自 revert 動作）',
-      Number(graphInfo.sendBackCount) > 0, graphInfo);
-    check('目前停在承辦確認', graphInfo.current === 'clerk-review', graphInfo);
+    // 單一審核沒有退回（Q-04 lack 待確認），不再驗「退回路徑有畫出來」。
+    check('目前停在平台資料審核', graphInfo.current === 'platform-review', graphInfo);
     check('有圖例（沒圖例分不出灰色虛線是什麼）', graphInfo.legend);
     await shot(page, 'J1-flow-graph');
 
@@ -606,6 +622,10 @@ async function run() {
       return n ? n.classList.contains('draggable') : null;
     });
     check('節點不可拖曳（唯讀）', draggable === false, { draggable });
+
+    // J 段看完流程圖，切回 admin —— 後面 K～P 段要的是 admin 的管理權限。
+    await loginAsAdmin(page);
+    await selectOrg(page);
 
     // ---------------------------------------------------------------
     hr('K. C3 校對台（P3）');
@@ -738,8 +758,9 @@ async function run() {
      * 最後那一張是後來加的 —— 而這條斷言從那時起就一直紅著沒人看到。
      */
     check('五張 KPI 卡都在', dash.cards.length === 5, dash.cards);
-    // demo seed 有 6 座案場（1 座異常、3 座建設中，其中 2 座還沒有座標）。
-    check('案場表有 6 列', dash.stationRows === 6, { rows: dash.stationRows });
+    // demo seed 有 7 座案場（卡 A 20261118-0427-a 加了 s7 示範雙電號案場；
+    // demo_seed.rs s1-s7：1 座異常、3 座建設中，其中 2 座（s5/s6）還沒有座標）。
+    check('案場表有 7 列', dash.stationRows === 7, { rows: dash.stationRows });
     check('狀態是中文', dash.text.includes('運轉中') && dash.text.includes('異常'));
     // 卡關門檻由後端回，文案要寫出天數（不是一個沒頭沒尾的數字）。
     check('卡關卡片寫出門檻天數', /超過 \d+ 天/.test(dash.text), dash.cards);
@@ -885,9 +906,9 @@ async function run() {
     });
     check('地圖元件在', map.present);
     check('WebGL canvas 建起來了（不是 0×0）', map.hasCanvas && map.canvasW > 100 && map.canvasH > 100, map);
-    // 絕對數字：demo seed 有 6 座案場，其中 **4 座有座標、2 座沒有**。
+    // 絕對數字：demo seed 有 7 座案場（卡 A 加了 s7），其中 **5 座有座標、2 座沒有**。
     //    WebGL 裡面讀不回來，只能靠場景回拋的計數 —— 這是唯一能證明「點真的畫出去」的訊號。
-    check('地圖上畫了 4 個點', map.plotted === '4', map);
+    check('地圖上畫了 5 個點', map.plotted === '5', map);
     check('2 座沒座標的**沒有**被標在 (0,0)', map.skipped === '2', map);
     check('圖例三個狀態都在', /運轉中/.test(map.text) && /建設中/.test(map.text) && /異常/.test(map.text), map.text);
     await shot(page, 'O1-station-map');
@@ -1023,12 +1044,14 @@ async function run() {
           .map((e) => (e as HTMLElement).innerText.trim()),
       };
     });
-    check('採用後地圖上變成 5 個點（重整仍成立＝真的寫進 DB）', after3.plotted === '5', after3);
+    // 卡 A 加了 s7（本來就有座標，算人工標定）：原本 5 manual＋2 無座標，
+    // 這裡採用一座（屏東枋寮三號，mock 地址推估）之後變 6 個點、剩 1 座沒座標。
+    check('採用後地圖上變成 6 個點（重整仍成立＝真的寫進 DB）', after3.plotted === '6', after3);
     check('沒座標的剩 1 座', after3.skipped === '1', after3);
     check('推估按鈕剩 1 顆', after3.btns === 1, after3);
-    // 來源要看得出來：4 座 manual ＋ 1 座 mock。
+    // 來源要看得出來：5 座 manual ＋ 1 座 mock。
     check('座標來源標得出「人工標定」與「地址推估」',
-      after3.sources.filter((t) => t.includes('人工標定')).length === 4
+      after3.sources.filter((t) => t.includes('人工標定')).length === 5
       && after3.sources.filter((t) => t.includes('地址推估')).length === 1,
       after3.sources);
     await shot(page, 'P2-after-apply');
@@ -1080,7 +1103,12 @@ async function run() {
     log('  403 的請求：', JSON.stringify([...new Set(forbidden)]));
     // 登入前 RA 會先探一次 /api/sessions/me（authProvider.checkError 的 403 探針），
     //    那一發必然 403，是設計行為不是 bug。其餘 403 才算。
-    const realForbidden = [...new Set(forbidden)].filter((u) => !u.endsWith('/api/sessions/me'));
+    // H／J 段改用 finance@ 看校對台（Q-04：platform-review 候選人只剩 bill-reviewers，
+    //    admin 不是候選人了）：finance 沒有 `energy:audit:view`（跟 modes.ts 的註解
+    //    同一件事），BillDetailBody 背景拉 audit-events 分頁資料必然 403，前端已經
+    //    `.catch` 吞掉不顯示錯誤，是設計行為不是 bug。
+    const realForbidden = [...new Set(forbidden)].filter((u) => !u.endsWith('/api/sessions/me')
+      && !u.endsWith('/audit-events'));
     check('沒有非預期的 403', realForbidden.length === 0, realForbidden);
     // 本版沒有 403 探針；對應的是登入頁先問一次 `/api/v1/auth/session`（未登入 → 401，checkAuth 的設計行為）。
     log('  401 的請求：', JSON.stringify([...new Set(unauthorized)]));

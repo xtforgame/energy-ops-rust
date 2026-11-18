@@ -6,7 +6,10 @@
 #   web/e2e/run-crawlers.sh flowgraph mywork      # 指定幾支
 #
 # 環境變數：
-#   E2E_DB            專用資料庫名（預設 eo_e2e；只會 DROP／CREATE 這一個）
+#   E2E_DB            專用資料庫名（預設 eo_e2e；只會 DROP／CREATE 這一個；也接受 energy_ops_cardf_* 開頭）
+#   E2E_S3_BUCKET     MinIO bucket（預設 energy-files；不帶時行為不變）
+#   E2E_API_PORT      後端固定埠（預設隨機找空埠）
+#   E2E_TPR_PORT      假辨識服務固定埠（預設隨機找空埠）
 #   CARGO_TARGET_DIR  後端 binary 所在（預設 <repo>/target）
 #   E2E_SKIP_BUILD=1  不重建後端與 web/dist（直接用現有的）
 #   CRAWLER_HEADFUL=1 開著瀏覽器視窗跑
@@ -20,7 +23,7 @@ ALL=(audit-i18n flowgraph mywork queue binding executions doctype modes recognit
 if [ $# -gt 0 ]; then CRAWLERS=("$@"); else CRAWLERS=("${ALL[@]}"); fi
 
 DB=${E2E_DB:-eo_e2e}
-case "$DB" in eo_e2e*) ;; *) echo "E2E_DB 必須以 eo_e2e 開頭（避免誤刪別的資料庫）：$DB" >&2; exit 2 ;; esac
+case "$DB" in eo_e2e*|energy_ops_cardf_*) ;; *) echo "E2E_DB 必須以 eo_e2e 或 energy_ops_cardf_ 開頭（避免誤刪別的資料庫）：$DB" >&2; exit 2 ;; esac
 TARGET=${CARGO_TARGET_DIR:-$ROOT/target}
 BIN=$TARGET/debug/energy-ops
 SHOTS=$ROOT/web/e2e/shots
@@ -57,11 +60,11 @@ for c in "${CRAWLERS[@]}"; do
 
   psql_admin -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB" >/dev/null || { echo "$c: 重建資料庫失敗" | tee -a "$SUMMARY"; total_fail=1; continue; }
 
-  TPR_PORT=$(free_port); API_PORT=$(free_port)
+  TPR_PORT=${E2E_TPR_PORT:-$(free_port)}; API_PORT=${E2E_API_PORT:-$(free_port)}
   "$BIN" fake-tpr "$TPR_PORT" "${E2E_TPR_POLLS:-3}" > "$OUT/fake-tpr.log" 2>&1 & pids+=($!)
   env -i PATH="$PATH" HOME="$HOME" RUST_LOG=info \
     EO_DATABASE_URL="postgres://energy:energy@127.0.0.1:${EO_PG_PORT:-56432}/$DB" \
-    EO_S3_ENDPOINT="http://127.0.0.1:${EO_MINIO_PORT:-56900}" EO_S3_REGION=us-east-1 EO_S3_BUCKET=energy-files \
+    EO_S3_ENDPOINT="http://127.0.0.1:${EO_MINIO_PORT:-56900}" EO_S3_REGION=us-east-1 EO_S3_BUCKET="${E2E_S3_BUCKET:-energy-files}" \
     EO_S3_ACCESS_KEY=energyminio EO_S3_SECRET_KEY=energyminio-secret \
     EO_S3_KEY_PREFIX="e2e/$c-$(date +%s)/" \
     EO_HTTP_PORT="$API_PORT" EO_WEB_DIR="$ROOT/web/dist" \
