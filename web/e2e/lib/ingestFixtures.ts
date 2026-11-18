@@ -82,6 +82,7 @@ const electricityBill = (
       billingPeriodStart: p.start,
       billingPeriodEnd: p.end,
       issuedAt: p.issued,
+      dueDate: p.issued,
     }],
   };
 };
