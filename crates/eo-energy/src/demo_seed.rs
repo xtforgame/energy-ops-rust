@@ -875,9 +875,28 @@ async fn seed_flows(
 
     // 示範「本關要求」：一張假電費單停在平台資料審核，缺台電電費通知單、應付總金額空著——
     // 使用者一開畫面就看到「本關要求」清單裡兩個 ✗（S1）。電號本身是假的（不對應任何真實台電戶），
-    // 但掛在既有的屏東案場（s1）底下——沒掛案場會撞上 energy_demo_seed.rs 的「全組織的單都配得到案場」
-    // 這條既有不變式（run_sample_bills 那組 4 張單也靠它），用詞上這組要求就叫「預設要求」。
+    // 掛一個專屬的示範假案場（不是借用屏東枋寮一號那種真案場）——
+    // workflow/subjects.rs:211 顯示電號時一律優先用「案場自己的電號」，借用真案場會讓畫面顯示
+    // 真案場的真電號、蓋掉假電號（R1 審查抓到的缺陷，20261118-0811-d REVIEW-1）。
+    // 掛一個假案場同時滿足 energy_demo_seed.rs「全組織的單都配得到案場」這條既有不變式，
+    // 也讓畫面上看到的還是設計要的那組假電號。
     const FAKE_BILL_CUSTOMER_NUMBER: &str = "00-00-0000-00-0";
+    let demo_landowner: i64 = sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE organization_id = $1 ORDER BY id LIMIT 1")
+        .bind(org)
+        .fetch_one(&mut **tx)
+        .await?;
+    let fake_station = ensure_station(
+        tx,
+        ctx,
+        demo_landowner,
+        FAKE_BILL_CUSTOMER_NUMBER,
+        "示範案場（本關要求）",
+        "operating",
+        None,
+        "",
+        created,
+    )
+    .await?;
     let existing_fake_bill: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM tbl_energy_bill WHERE organization_id = $1 AND customer_number_raw = $2 AND deleted_at IS NULL",
     )
@@ -894,7 +913,7 @@ async fn seed_flows(
                  VALUES ($1, $2, $3, $4, $5, $6, 'reviewed', '{}'::jsonb) RETURNING id",
             )
             .bind(org)
-            .bind(s1)
+            .bind(fake_station)
             .bind(FAKE_BILL_CUSTOMER_NUMBER)
             .bind(date("2026-10-01"))
             .bind(date("2026-10-31"))
