@@ -1,15 +1,98 @@
-// 超級使用者的帳號管理：搜尋、建立、改名／權限等級／停用、重設密碼。
+// 超級使用者的帳號管理：搜尋、建立、改名／權限等級／停用、重設密碼、整體關係總覽。
 import * as React from 'react';
 import {
   Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Switch,
-  Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip,
+  Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useGetIdentity, useTranslate } from 'react-admin';
 import { adminApi } from '../../api/platform';
-import type { Privilege, User } from '../../api/types';
+import type { Privilege, User, UserRelations } from '../../api/types';
 import { ErrorAlert, fmtDate, Loading, PageHeader, useAction, useAsync } from './common';
+
+/** 關係總覽四區共用的一個小表格：欄位名由呼叫端給，值直接印後端組好的字串。 */
+const RelSection: React.FC<{
+  title: string;
+  columns: string[];
+  rows: Array<Array<React.ReactNode>>;
+  none: string;
+}> = ({ title, columns, rows, none }) => (
+  <Box mb={2}>
+    <Typography variant="subtitle2" gutterBottom>{title}</Typography>
+    {rows.length ? (
+      <Table size="small">
+        <TableHead>
+          <TableRow>{columns.map((c) => <TableCell key={c}>{c}</TableCell>)}</TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((r, i) => (
+            <TableRow key={i} data-testid="relations-row" data-section={title}>
+              {r.map((v, j) => <TableCell key={j}>{v}</TableCell>)}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    ) : (
+      <Typography variant="body2" color="text.secondary">{none}</Typography>
+    )}
+  </Box>
+);
+
+const UserRelationsDialog: React.FC<{ open: boolean; user: User | null; onClose: () => void }> = ({ open, user, onClose }) => {
+  const translate = useTranslate();
+  const { data, loading, error } = useAsync<UserRelations>(() => adminApi.relations(user!.id), [user?.id], open && !!user);
+  const none = translate('eo.admin.relationsNone');
+  // 畫面是繁體中文，後端回的 owner/member/manager/organization 這些是內部鍵值，不是給人看的字——
+  // 一律查 i18n 翻譯，翻不到才退回原始鍵（保底，不吞掉資訊）。
+  const orgRoleLabel = (role: string) => translate(`eo.admin.orgRole.${role}`, { _: role });
+  const deptRoleLabel = (role: string) => translate(role === 'manager' ? 'tc.departments.roleManager' : 'tc.departments.roleMember');
+  const scopeLabel = (scope: string) => translate(`eo.rbac.scope.${scope}`, { _: scope });
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" data-testid="user-relations-dialog">
+      <DialogTitle>{translate('eo.admin.relationsTitle', { name: user?.name })}</DialogTitle>
+      <DialogContent>
+        {loading && <Loading />}
+        <ErrorAlert error={error} />
+        {data && (
+          <>
+            <RelSection
+              title={translate('eo.admin.relationsOrganizations')}
+              columns={[translate('eo.common.name'), translate('eo.admin.relationsRole')]}
+              rows={data.organizations.map((o) => [o.organizationName, orgRoleLabel(o.role)])}
+              none={none}
+            />
+            <RelSection
+              title={translate('eo.admin.relationsProjects')}
+              columns={[translate('eo.common.name'), translate('eo.common.organization')]}
+              rows={data.projects.map((p) => [p.projectName, p.organizationName])}
+              none={none}
+            />
+            <RelSection
+              title={translate('eo.admin.relationsDepartments')}
+              columns={[translate('eo.common.organization'), translate('eo.admin.relationsDepartment'), translate('eo.admin.relationsRole')]}
+              rows={data.departments.map((d) => [d.organizationName, d.path, deptRoleLabel(d.role)])}
+              none={none}
+            />
+            <RelSection
+              title={translate('eo.admin.relationsGrants')}
+              columns={[
+                translate('eo.admin.relationsRole'), translate('eo.admin.relationsScope'), translate('eo.admin.relationsScopeName'),
+                translate('eo.admin.relationsGrantedAt'), translate('eo.admin.relationsGrantedBy'),
+              ]}
+              rows={data.grants.map((g) => [g.roleName, scopeLabel(g.scope), g.scopeName, fmtDate(g.grantedAt), g.grantedBy || none])}
+              none={none}
+            />
+          </>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{translate('ra.action.cancel')}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 const PRIVILEGES: Array<Privilege | ''> = ['', 'user', 'manager', 'admin'];
 
@@ -84,6 +167,7 @@ const AdminUsersPage: React.FC = () => {
   const [pageSize, setPageSize] = React.useState(50);
   const list = useAsync(() => adminApi.users({ q: query || undefined, page: page + 1, pageSize }), [query, page, pageSize]);
   const [editing, setEditing] = React.useState<{ open: boolean; user: User | null }>({ open: false, user: null });
+  const [relating, setRelating] = React.useState<{ open: boolean; user: User | null }>({ open: false, user: null });
   React.useEffect(() => {
     const t = setTimeout(() => { setQuery(q.trim()); setPage(0); }, 300);
     return () => clearTimeout(t);
@@ -131,6 +215,11 @@ const AdminUsersPage: React.FC = () => {
                   </TableCell>
                   <TableCell>{fmtDate(u.createdAt)}</TableCell>
                   <TableCell align="right">
+                    <Tooltip title={translate('eo.admin.relations')}>
+                      <IconButton size="small" data-testid="user-relations-button" onClick={() => setRelating({ open: true, user: u })}>
+                        <AccountTreeIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title={translate('ra.action.edit')}>
                       <IconButton size="small" onClick={() => setEditing({ open: true, user: u })}><EditIcon fontSize="small" /></IconButton>
                     </Tooltip>
@@ -151,6 +240,7 @@ const AdminUsersPage: React.FC = () => {
         </Card>
       )}
       <UserDialog open={editing.open} user={editing.user} onClose={() => setEditing({ open: false, user: null })} onDone={list.reload} />
+      <UserRelationsDialog open={relating.open} user={relating.user} onClose={() => setRelating({ open: false, user: null })} />
     </Box>
   );
 };

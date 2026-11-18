@@ -145,6 +145,14 @@ const DEPARTMENT_MEMBER: &[Field] = &[
     req("role", MEMBER_ROLE),
 ];
 
+/// 合約新增／編輯同一形狀（卡 20261118-0810-a2）。
+const CONTRACT: &[Field] = &[
+    req("contractNo", STR),
+    req("landownerId", INT),
+    opt("landownerName", STR),
+    opt("changes", CHANGES),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AuditEventDef {
     /// 事件命名空間，例 `department.created`。
@@ -720,6 +728,9 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
     ev("allocation.created", "energyLandownerStation", ALLOCATION, "audit.type.allocation.created", Info, true),
     ev("allocation.updated", "energyLandownerStation", ALLOCATION, "audit.type.allocation.updated", Notable, true),
     ev("allocation.ended", "energyLandownerStation", ALLOCATION, "audit.type.allocation.ended", Notable, true),
+    // ── 合約（卡 20261118-0810-a2）──
+    ev("contract.created", "energyContract", CONTRACT, "audit.type.contract.created", Info, true),
+    ev("contract.updated", "energyContract", CONTRACT, "audit.type.contract.updated", Notable, true),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

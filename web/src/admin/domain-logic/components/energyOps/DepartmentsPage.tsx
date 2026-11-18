@@ -1,20 +1,40 @@
 import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableHead, TableBody, TableRow, TableCell,
-  Chip, CircularProgress, Alert, Stack, Tooltip, IconButton, MenuItem,
+  Chip, CircularProgress, Alert, Stack, Tooltip, IconButton, MenuItem, Tabs, Tab,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { energyHttp, energyBase, fetchMemberOptions } from '@/api/energy';
 import { useNotify, useTranslate } from 'react-admin';
 import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
+import OrgChart from './OrgChart';
 
 interface DepartmentMember { userId: number; name: string | null; role: 'manager' | 'member' }
-interface Department { id: number; key: string; name: string; sortOrder: number; members: DepartmentMember[] }
+interface Department {
+  id: number; key: string; name: string; sortOrder: number; parentId: number | null; members: DepartmentMember[];
+}
+
+/** 這個部門自己與它所有下層的 id（含自己）——「改上層」的下拉要排除這一整組，不然會造出循環。 */
+function selfAndDescendants(departments: Department[], id: number): Set<number> {
+  const out = new Set<number>([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    departments.forEach((d) => {
+      if (d.parentId != null && out.has(d.parentId) && !out.has(d.id)) {
+        out.add(d.id);
+        grew = true;
+      }
+    });
+  }
+  return out;
+}
 
 /**
  * 部門管理頁（org-scope）。
@@ -40,16 +60,31 @@ const DepartmentsPage: React.FC = () => {
   const [denied, setDenied] = React.useState(false);
   const [departments, setDepartments] = React.useState<Department[]>([]);
   const [members, setMembers] = React.useState<any[]>([]);
+  const [tab, setTab] = React.useState<'list' | 'chart'>('list');
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newKey, setNewKey] = React.useState('');
   const [newName, setNewName] = React.useState('');
+  const [newParentId, setNewParentId] = React.useState('');
   const [createError, setCreateError] = React.useState<string | null>(null);
 
   const [assignTarget, setAssignTarget] = React.useState<Department | null>(null);
   const [assignUserId, setAssignUserId] = React.useState('');
   const [assignRole, setAssignRole] = React.useState<'manager' | 'member'>('member');
   const [assignError, setAssignError] = React.useState<string | null>(null);
+
+  const [reparentTarget, setReparentTarget] = React.useState<Department | null>(null);
+  const [reparentValue, setReparentValue] = React.useState('');
+  const [reparentError, setReparentError] = React.useState<string | null>(null);
+
+  const friendlyError = (code: string) => {
+    const map: Record<string, string> = {
+      department_key_taken: translate('tc.departments.keyTaken'),
+      parent_not_found: translate('tc.departments.parentNotFound'),
+      department_cycle: translate('tc.departments.cycleError'),
+    };
+    return map[code] || code || 'failed';
+  };
 
   const base = energyBase(orgId);
 
@@ -74,16 +109,29 @@ const DepartmentsPage: React.FC = () => {
   const createDepartment = async () => {
     setCreateError(null);
     try {
-      await energyHttp.post(`${base}/departments`, { key: newKey.trim(), name: newName.trim() });
+      await energyHttp.post(`${base}/departments`, {
+        key: newKey.trim(), name: newName.trim(), parentId: newParentId ? Number(newParentId) : null,
+      });
       notify('tc.departments.created', { type: 'success' });
-      setCreateOpen(false); setNewKey(''); setNewName('');
+      setCreateOpen(false); setNewKey(''); setNewName(''); setNewParentId('');
       load();
     } catch (e: any) {
-      const msg = apiErrorCode(e);
-      const friendly: Record<string, string> = {
-        department_key_taken: translate('tc.departments.keyTaken'),
-      };
-      setCreateError(friendly[msg] || msg || 'create failed');
+      setCreateError(friendlyError(apiErrorCode(e)));
+    }
+  };
+
+  const submitReparent = async () => {
+    if (!reparentTarget) return;
+    setReparentError(null);
+    try {
+      await energyHttp.patch(`${base}/departments/${reparentTarget.id}`, {
+        parentId: reparentValue ? Number(reparentValue) : null,
+      });
+      notify('tc.departments.parentChanged', { type: 'success' });
+      setReparentTarget(null); setReparentValue('');
+      load();
+    } catch (e: any) {
+      setReparentError(friendlyError(apiErrorCode(e)));
     }
   };
 
@@ -148,6 +196,11 @@ const DepartmentsPage: React.FC = () => {
         </Stack>
       </Stack>
 
+      <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 1 }} data-testid="departments-tabs">
+        <Tab value="list" label={translate('tc.departments.tabList')} data-testid="departments-tab-list" />
+        <Tab value="chart" icon={<AccountTreeIcon fontSize="small" />} iconPosition="start" label={translate('tc.departments.tabChart')} data-testid="departments-tab-chart" />
+      </Tabs>
+
       {/*
         **載入指示不可以佔版面空間。**
         原本這是一個正常元素，`loading` 一 true 就多出 56px、
@@ -173,19 +226,24 @@ const DepartmentsPage: React.FC = () => {
         </Box>
       )}
 
+      {tab === 'chart' ? (
+        <Card>
+          <CardContent>
+            <OrgChart orgName={orgName} departments={departments} />
+          </CardContent>
+        </Card>
+      ) : (
       <Card>
         <CardContent>
           <Typography variant="subtitle1" gutterBottom>
             {translate('tc.departments.list')}（{departments.length}）
-          </Typography>
-          <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-            {translate('tc.departments.flatNote')}
           </Typography>
           <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>{translate('tc.departments.name')}</TableCell>
                 <TableCell>{translate('tc.departments.key')}</TableCell>
+                <TableCell>{translate('tc.departments.parent')}</TableCell>
                 <TableCell>{translate('tc.departments.managers')}</TableCell>
                 <TableCell>{translate('tc.departments.members')}</TableCell>
                 <TableCell align="right" />
@@ -208,10 +266,14 @@ const DepartmentsPage: React.FC = () => {
                     sx={{ mr: 0.5, mb: 0.5 }}
                   />
                 );
+                const parentName = d.parentId != null ? departments.find((p) => p.id === d.parentId)?.name : null;
                 return (
                   <TableRow key={d.id} data-testid="department-row" data-key={d.key}>
                     <TableCell>{d.name}</TableCell>
                     <TableCell><Typography variant="caption" color="text.secondary">{d.key}</Typography></TableCell>
+                    <TableCell data-testid="department-parent">
+                      {parentName || <Typography variant="caption" color="text.secondary">—</Typography>}
+                    </TableCell>
                     <TableCell>
                       {managers.length
                         ? managers.map((m) => chip(m, 'primary'))
@@ -223,6 +285,15 @@ const DepartmentsPage: React.FC = () => {
                         : <Typography variant="caption" color="text.secondary">—</Typography>}
                     </TableCell>
                     <TableCell align="right">
+                      <Tooltip title={translate('tc.departments.changeParent')}>
+                        <IconButton
+                          size="small"
+                          data-testid="department-reparent"
+                          onClick={() => { setReparentError(null); setReparentValue(d.parentId != null ? String(d.parentId) : ''); setReparentTarget(d); }}
+                        >
+                          <AccountTreeIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title={translate('tc.departments.assign')}>
                         <IconButton size="small" data-testid="department-assign" onClick={() => { setAssignError(null); setAssignTarget(d); }}>
                           <PersonAddIcon fontSize="small" />
@@ -239,7 +310,7 @@ const DepartmentsPage: React.FC = () => {
               })}
               {!departments.length && !loading && (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Typography variant="body2" color="text.secondary">{translate('tc.departments.none')}</Typography>
                   </TableCell>
                 </TableRow>
@@ -248,6 +319,7 @@ const DepartmentsPage: React.FC = () => {
           </Table>
         </CardContent>
       </Card>
+      )}
 
       {/* 新增部門 */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="xs">
@@ -266,12 +338,52 @@ const DepartmentsPage: React.FC = () => {
               onChange={(e) => setNewKey(e.target.value)}
               helperText={translate('tc.departments.keyHelp')}
             />
+            <TextField
+              select
+              data-testid="department-create-parent"
+              label={translate('tc.departments.parent')}
+              value={newParentId}
+              onChange={(e) => setNewParentId(e.target.value)}
+            >
+              <MenuItem value="">{translate('tc.departments.topLevel')}</MenuItem>
+              {departments.map((d) => (
+                <MenuItem key={d.id} value={String(d.id)} data-testid={`parent-option-${d.id}`}>{d.name}</MenuItem>
+              ))}
+            </TextField>
             {createError && <Alert severity="error">{createError}</Alert>}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>{translate('ra.action.cancel')}</Button>
           <Button variant="contained" onClick={createDepartment}>{translate('ra.action.create')}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 改上層 */}
+      <Dialog open={!!reparentTarget} onClose={() => setReparentTarget(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{translate('tc.departments.changeParentTitle', { name: reparentTarget?.name })}</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            <TextField
+              select
+              data-testid="department-reparent-select"
+              label={translate('tc.departments.parent')}
+              value={reparentValue}
+              onChange={(e) => setReparentValue(e.target.value)}
+            >
+              <MenuItem value="">{translate('tc.departments.topLevel')}</MenuItem>
+              {departments
+                .filter((d) => !reparentTarget || !selfAndDescendants(departments, reparentTarget.id).has(d.id))
+                .map((d) => (
+                  <MenuItem key={d.id} value={String(d.id)} data-testid={`reparent-option-${d.id}`}>{d.name}</MenuItem>
+                ))}
+            </TextField>
+            {reparentError && <Alert severity="error" data-testid="reparent-error">{reparentError}</Alert>}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReparentTarget(null)}>{translate('ra.action.cancel')}</Button>
+          <Button variant="contained" onClick={submitReparent} data-testid="department-reparent-submit">{translate('ra.action.save')}</Button>
         </DialogActions>
       </Dialog>
 

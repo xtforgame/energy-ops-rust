@@ -32,6 +32,7 @@ export const RESOURCE_PERMISSION_MAP: Record<string, string[]> = {
   energyExecutionConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
   energyLandownerConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
   energyStationConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
+  energyContractConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
   energyWorkflowConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
   energyAuditConsole: [RBAC, 'energy:audit:view'],
   energyDashboardConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],

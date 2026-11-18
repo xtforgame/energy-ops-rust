@@ -16,8 +16,8 @@
 | 方法 | 新路徑 | 舊 | 閘 |
 |---|---|---|---|
 | GET | `E/departments` | `{ORG}/departments` | GOVERN_ORG |
-| POST | `E/departments` | 同上 | GOVERN_ORG |
-| PATCH | `E/departments/{departmentId}` | 同 | GOVERN_ORG |
+| POST | `E/departments` body 可帶 `parentId`（卡 C／G01，上層部門 id；沒給或 `null`＝最上層） | `{ORG}/departments` | GOVERN_ORG |
+| PATCH | `E/departments/{departmentId}` body 可帶 `parentId`（同上；給 `null` 是移到最上層） | 同 | GOVERN_ORG |
 | DELETE | `E/departments/{departmentId}` | 同 | GOVERN_ORG |
 | PUT | `E/departments/{departmentId}/members/{userId}` body `{role: manager\|member}` | `POST {ORG}/departments/:id/members` | GOVERN_ORG |
 | DELETE | `E/departments/{departmentId}/members/{userId}` | 同 | GOVERN_ORG |
@@ -28,6 +28,7 @@
 | POST | `E/role-assignments/revoke` body `{userId, roleUniqueName, reason?}` | 同 | ASSIGN_ROLE（同上＋最後一位治理者） |
 | GET | `E/audit-events` | 同 | `energy:audit:view` |
 | GET | `E/audit-actors` | 同 | `energy:audit:view` |
+| GET | `/api/v1/admin/users/{userId}/relations`（卡 C／G03，一個帳號的整體關係總覽；跨組織查，不走 `E/` 前綴） | 無 | 只准超級使用者（否則 403 `super_user_required`） |
 
 ## 儀表板、工作台
 
@@ -133,6 +134,13 @@
 | PATCH | `E/landowners/{landownerId}`（卡 A：編輯，整包送上來） | MASTER_MANAGE |
 | GET | `E/landowners/{landownerId}` | FLOW_VIEW |
 | GET | `E/landowners/{landownerId}/overview` | FLOW_VIEW |
+| GET | `E/contracts`（卡 20261118-0810-a2 S1：可篩 `q`、`landownerId`、`stationId`；回傳帶 `stations:[{id,name}]`、`attachmentCount`） | FLOW_VIEW |
+| POST | `E/contracts`（新增；`contractNo`／`landownerId`／`validFrom` 必填；`stationIds` 同步 `mn_energy_contract_station`；寫 `contract.created`） | MASTER_MANAGE |
+| GET | `E/contracts/{contractId}` | FLOW_VIEW |
+| PATCH | `E/contracts/{contractId}`（整包送上來；`validTo` 早於 `validFrom` 回 400 `bad_date_range`；`paymentFrequency` 不在白名單回 400 `bad_payment_frequency`；寫 `contract.updated`） | MASTER_MANAGE |
+| GET | `E/contracts/{contractId}/attachments`（卡 20261118-0810-a2 S2：合約檔清單） | `energy:attachment:download` |
+| POST | `E/contracts/{contractId}/attachments`（multipart；合約檔上傳，照抄 `upload_to_execution`） | `energy:attachment:upload` |
+| POST | `E/imports/stations`（卡 20261118-0810-a2 S3：multipart `file`＋`dryRun=1|0`，匯入「發電案場清單」；有任何錯整批不寫，回 `{dryRun, created, updated, skipped, errors}`） | MASTER_MANAGE |
 
 閘的常數（照 App 5 `AcEnergyOpsController.ts:88-104`）：
 GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage；FLOW_ACT＝flow:act；FLOW_VIEW＝flow:view ∪ flow:view-all；FLOW_ADMIN＝flow:admin；ABORT_APPROVE＝flow:abort-approve；MASTER_MANAGE＝`energy:master:manage`（卡 20261118-0427-a 新增：案場／電號／受款對象／地主分配的新增與編輯）（皆 `energy:` 前綴）。
@@ -143,6 +151,8 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 - 會改資料的 task 端點（`claim`、`actions`）回 `{ ok, row }`：`row` 是更新後的那一列（與工作台列同一份 DTO），前端就地替換。其餘動作回 `{ ok: true }`。
 - `PUT E/departments/{id}/members/{userId}` body `{ role?: "manager"|"member" }`（預設 member），回 `{ userId, name, role }`；`DELETE` 回 `{ removed }`。
 - `GET E/members` 每列 `{ userId, name, email, orgRole, energyRoles: [{uniqueName, name}], departments: [{id, key, name, role}] }`。`DELETE E/members/{userId}` 撤掉該員在本組織的所有授權、成員關係與部門成員列；撤完若組織已無人持有 `energy:govern:org` 或 `platform:rbac:manage` 就整筆拒絕（400 `cannot_remove_last_admin`）。
+- 部門列（卡 C／G01）多一欄 `parentId`（`number | null`）。新增、修改可以帶 `parentId`：上層必須是同一個組織、還沒刪除的部門，不然 400 `parent_not_found`；不能把部門掛到自己或自己的下層，不然 400 `department_cycle`；刪除部門時它的子部門改掛到它的上層。
+- `GET /api/v1/admin/users/{userId}/relations`（卡 C／G03）回 `{ organizations, projects, departments, grants }`：`organizations` 每列 `{ organizationId, organizationName, role }`；`projects` 每列 `{ projectId, projectName, organizationId, organizationName }`；`departments` 每列 `{ departmentId, path, organizationName, role }`（`path` 是後端組好的完整路徑，例「總管理部 › 會計部門」）；`grants` 每列 `{ roleUniqueName, roleName, scope, scopeName, grantedAt, grantedBy }`（`scope` 是 `organization`／`project`／`resource`，`scopeName` 是對應的組織／專案名稱或資源識別碼）。
 - `GET E/executions/{idOrNo}`：純數字當 id，否則當單號（單號在 subject 上，同單號多列時已通過的優先）。回執行摘要＋`tasks`＋模式判定（`mode`、`modeReason`、`canEditSubject`、`canAddAttachment`、`availableActions`、`executionId`）。
 - `GET E/executions/{id}/actions?nodeKey=` 回 `{ availableActions, actionBlocked, taskId, claimable, claimedByMe }`（動作已依「我」能不能做過濾）。
 - `GET E/delegations?all=1`：預設列「我設的與替我設的」（`all=1` 且有 `energy:delegation:manage` 時列全組織），每列帶 `active`、`mine`、`delegatorName`、`delegateName`。`POST E/delegations/{id}/revoke` 已收回的回 409 `delegation_already_revoked`。

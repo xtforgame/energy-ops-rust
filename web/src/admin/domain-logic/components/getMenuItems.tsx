@@ -97,6 +97,8 @@ const GROUPS: Array<{ key: string; labelKey: string; icon: React.ReactElement; e
       // （主檔維護：新增案場、算專案編號）。地主詳情同理，不進選單。
       ['energyLandownerConsole', <SolarPowerIcon />],
       ['energyStationConsole', <SolarPowerIcon />],
+      // 卡 20261118-0810-a2：合約維護（清單、新增編輯、合約檔）進選單。
+      ['energyContractConsole', <AssignmentIcon />],
       ['energyCalendarConsole', <EventIcon />],
       ['energyDashboardConsole', <SpaceDashboardIcon />],
     ],

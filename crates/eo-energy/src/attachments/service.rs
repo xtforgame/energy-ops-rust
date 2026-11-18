@@ -53,12 +53,13 @@ pub struct AttachmentRow {
     pub organization_id: i64,
     pub execution_id: Option<i64>,
     pub ingest_batch_id: Option<i64>,
+    pub contract_id: Option<i64>,
     pub uploaded_by_user_id: Option<i64>,
     pub supersedes_attachment_id: Option<i64>,
 }
 
 pub const ATTACHMENT_COLS: &str = "id, storage_key, original_filename, mime_type, size, hash, hash_algo, uploaded_at, status,
-    organization_id, execution_id, ingest_batch_id, uploaded_by_user_id, supersedes_attachment_id";
+    organization_id, execution_id, ingest_batch_id, contract_id, uploaded_by_user_id, supersedes_attachment_id";
 
 #[derive(Debug, Clone, FromRow)]
 pub struct LinkRow {
@@ -72,20 +73,22 @@ pub struct LinkRow {
 
 const LINK_COLS: &str = "id, role, seq, note, attachment_id, task_id";
 
-/// 附件的歸屬：execution 或收件批次（DB 有 CHECK 擋兩個都空）。
+/// 附件的歸屬：execution、收件批次、或合約（DB 有 CHECK 擋三個都空）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Owner {
     Execution(i64),
     Batch(i64),
+    Contract(i64),
 }
 
-/// 兩種前綴：流程進行中掛上去的、收件時的原始掃描檔（那時 execution 還不存在）。
+/// 三種前綴：流程進行中掛上去的、收件時的原始掃描檔（那時 execution 還不存在）、合約檔。
 pub fn build_storage_key(owner: Owner, mime_type: &str) -> String {
     let ext = ext_for_mime(mime_type);
     let id = uuid::Uuid::new_v4();
     match owner {
         Owner::Execution(e) => format!("energy/executions/{e}/{id}.{ext}"),
         Owner::Batch(b) => format!("energy/batches/{b}/{id}.{ext}"),
+        Owner::Contract(c) => format!("energy/contracts/{c}/{id}.{ext}"),
     }
 }
 
@@ -132,6 +135,7 @@ pub async fn upload(ctx: &Ctx, store: &dyn AttachmentStore, input: UploadInput) 
     let (owner_col, owner_id) = match input.owner {
         Owner::Execution(e) => ("execution_id", e),
         Owner::Batch(b) => ("ingest_batch_id", b),
+        Owner::Contract(c) => ("contract_id", c),
     };
     let (count, total): (i64, Option<i64>) = sqlx::query_as(&format!(
         "SELECT COUNT(*), SUM(size)::bigint FROM tbl_energy_attachment WHERE {owner_col} = $1 AND deleted_at IS NULL"
@@ -169,20 +173,22 @@ pub async fn upload(ctx: &Ctx, store: &dyn AttachmentStore, input: UploadInput) 
 }
 
 async fn insert_rows(tx: &mut Tx<'_>, ctx: &Ctx, input: &UploadInput, storage_key: &str, hash: &str, size: i64) -> ApiResult<AttachmentRow> {
-    let (execution_id, batch_id) = match input.owner {
-        Owner::Execution(e) => (Some(e), None),
-        Owner::Batch(b) => (None, Some(b)),
+    let (execution_id, batch_id, contract_id) = match input.owner {
+        Owner::Execution(e) => (Some(e), None, None),
+        Owner::Batch(b) => (None, Some(b), None),
+        Owner::Contract(c) => (None, None, Some(c)),
     };
     let role = input.role.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "submitted".into());
     let attachment: AttachmentRow = sqlx::query_as(&format!(
         "INSERT INTO tbl_energy_attachment
-           (organization_id, execution_id, ingest_batch_id, storage_key, original_filename, mime_type, size, hash, hash_algo,
+           (organization_id, execution_id, ingest_batch_id, contract_id, storage_key, original_filename, mime_type, size, hash, hash_algo,
             uploaded_by_user_id, uploaded_at, status, supersedes_attachment_id, data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'sha256', $9, $10, 'active', $11, $12) RETURNING {ATTACHMENT_COLS}"
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sha256', $10, $11, 'active', $12, $13) RETURNING {ATTACHMENT_COLS}"
     ))
     .bind(ctx.org_id())
     .bind(execution_id)
     .bind(batch_id)
+    .bind(contract_id)
     .bind(storage_key)
     .bind(&input.original_filename)
     .bind(&input.mime_type)
@@ -425,6 +431,32 @@ pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64) -> ApiResult
         .collect())
 }
 
+/// 某合約的附件（新到舊；合約檔沒有關卡連結，照抄 `list_for_execution` 不含 links）。
+pub async fn list_for_contract(tx: &mut Tx<'_>, contract_id: i64) -> ApiResult<Vec<AttachmentView>> {
+    let rows: Vec<AttachmentRow> = sqlx::query_as(&format!(
+        "SELECT {ATTACHMENT_COLS} FROM tbl_energy_attachment WHERE contract_id = $1 AND deleted_at IS NULL
+          ORDER BY uploaded_at DESC, id DESC"
+    ))
+    .bind(contract_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| AttachmentView {
+            links: vec![],
+            id: r.id,
+            original_filename: r.original_filename,
+            mime_type: r.mime_type,
+            size: r.size,
+            hash: r.hash,
+            status: r.status,
+            uploaded_by_user_id: r.uploaded_by_user_id,
+            uploaded_at: r.uploaded_at,
+            supersedes_attachment_id: r.supersedes_attachment_id,
+        })
+        .collect())
+}
+
 /// 連結與它的附件（解除連結前判權用）。
 pub async fn link_in_org(tx: &mut Tx<'_>, org_id: i64, link_id: i64) -> ApiResult<(LinkRow, AttachmentRow)> {
     let link: Option<LinkRow> =
@@ -474,6 +506,7 @@ pub fn summary(row: &AttachmentRow) -> Value {
         "status": row.status,
         "executionId": row.execution_id,
         "ingestBatchId": row.ingest_batch_id,
+        "contractId": row.contract_id,
         "supersedesAttachmentId": row.supersedes_attachment_id,
     })
 }

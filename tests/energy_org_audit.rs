@@ -521,3 +521,106 @@ fn audit_columns() -> Vec<&'static str> {
     let body = &sql[start..start + sql[start..].find(");").unwrap()];
     body.lines().skip(1).filter_map(|l| l.split_whitespace().next()).collect()
 }
+
+/// 來源：卡 C／G01，DESIGN.md Story S1。部門上下層：設上層、改上層、擋循環（自己與自己的下層）、
+/// 跨組織上層 400、刪除有子部門的上層後子部門改掛到它的上層，並留稽核。
+#[actix_web::test]
+async fn department_tree_over_http() {
+    let f = fixture().await;
+    let app = &f.app;
+    let url = |p: &str| app.e(f.org, p);
+    let mk = |key: &str, name: &str, parent: Option<i64>| {
+        let mut b = json!({ "key": key, "name": name });
+        if let Some(p) = parent {
+            b["parentId"] = json!(p);
+        }
+        b
+    };
+
+    let hq = expect_status!(app.post(&f.cxo, &url("/departments"), mk("hq", "總管理部", None)).await, 200)["id"].as_i64().unwrap();
+    let mid = expect_status!(app.post(&f.cxo, &url("/departments"), mk("mid", "中層部", Some(hq))).await, 200)["id"].as_i64().unwrap();
+    let leaf = expect_status!(app.post(&f.cxo, &url("/departments"), mk("leaf", "底層部", Some(mid))).await, 200)["id"].as_i64().unwrap();
+
+    let list = expect_status!(app.get(&f.cxo, &url("/departments")).await, 200);
+    let items = list["items"].as_array().unwrap().clone();
+    let find = |id: i64| items.iter().find(|d| d["id"] == id).unwrap().clone();
+    assert_eq!(find(mid)["parentId"], json!(hq));
+    assert_eq!(find(leaf)["parentId"], json!(mid));
+    assert_eq!(find(hq)["parentId"], Value::Null);
+
+    // 擋循環：hq 不能掛到自己的下層 mid；也不能掛到自己。
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{hq}")), json!({ "parentId": mid })).await, 400);
+    assert_eq!(v["code"], "department_cycle");
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{mid}")), json!({ "parentId": mid })).await, 400);
+    assert_eq!(v["code"], "department_cycle");
+
+    // 跨組織：上層 id 屬於別家組織的部門 → 400 parent_not_found。
+    let (_other_owner, other_org) = app.energy_org("org-tree-other").await;
+    let other_cxo = app.member(other_org, "other-cxo", Some("energy:cxo")).await;
+    let other_dept =
+        expect_status!(app.post(&other_cxo, &app.e(other_org, "/departments"), mk("od", "別組織部門", None)).await, 200)["id"].as_i64().unwrap();
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{leaf}")), json!({ "parentId": other_dept })).await, 400);
+    assert_eq!(v["code"], "parent_not_found");
+
+    // 改上層：leaf 從 mid 改掛到 hq，再改回 mid（留兩筆上層變動的稽核）。
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{leaf}")), json!({ "parentId": hq })).await, 200);
+    assert_eq!(v["parentId"], json!(hq));
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{leaf}")), json!({ "parentId": mid })).await, 200);
+    assert_eq!(v["parentId"], json!(mid));
+
+    // 刪除有子部門的上層（mid）：子部門（leaf）改掛到 mid 的上層（hq）。
+    expect_status!(app.delete(&f.cxo, &url(&format!("/departments/{mid}"))).await, 200);
+    let list = expect_status!(app.get(&f.cxo, &url("/departments")).await, 200);
+    let leaf_row = list["items"].as_array().unwrap().iter().find(|d| d["id"] == leaf).unwrap().clone();
+    assert_eq!(leaf_row["parentId"], json!(hq), "刪除 mid 後，leaf 改掛到 mid 的上層 hq");
+
+    // 稽核：department.updated 的差異裡帶出上層的變動。
+    let rows = app.audit_rows(f.org, "energyDepartment", leaf).await;
+    assert!(
+        rows.iter().any(|r| r.0 == "department.updated" && r.1["changes"]["parentName"].is_object()),
+        "稽核看得到上層的變動"
+    );
+
+    // 移到最上層：parentId 給 null。
+    let v = expect_status!(app.patch(&f.cxo, &url(&format!("/departments/{leaf}")), json!({ "parentId": null })).await, 200);
+    assert_eq!(v["parentId"], Value::Null);
+}
+
+/// 來源：卡 C／G03，DESIGN.md Story S3。一個帳號的整體關係總覽：只准超級使用者看，
+/// 回組織、專案、部門（含完整路徑）、角色授權四個陣列；非超級使用者打這支 API → 403。
+#[actix_web::test]
+async fn admin_user_relations_over_http() {
+    let app = TestApp::new().await;
+    let root = app.admin().await;
+    let (owner, org) = app.energy_org("org-rel").await;
+    let alice = app.member(org, "alice-rel", Some("energy:finance")).await;
+
+    let dept = expect_status!(app.post(&owner, &app.e(org, "/departments"), json!({ "key": "rel-dept", "name": "關係測試部" })).await, 200)
+        ["id"]
+        .as_i64()
+        .unwrap();
+    expect_status!(
+        TestApp::send(
+            app.req(Some(&owner), Method::PUT, &app.e(org, &format!("/departments/{dept}/members/{}", alice.id)))
+                .json(&json!({ "role": "manager" }))
+        )
+        .await,
+        200
+    );
+
+    let v = expect_status!(app.get(&root, &format!("/api/v1/admin/users/{}/relations", alice.id)).await, 200);
+    let orgs = v["organizations"].as_array().unwrap();
+    assert!(orgs.iter().any(|o| o["organizationId"] == org && o["role"] == "member"));
+    let depts = v["departments"].as_array().unwrap();
+    assert!(depts.iter().any(|d| d["path"] == "關係測試部" && d["role"] == "manager"));
+    // 加入組織會自動加入它的 lobby 專案（tenancy::add_org_member），所以不是空陣列；
+    // 驗的是「這個組織的 lobby 專案在列表裡」，不是「完全沒有專案」。
+    let projects = v["projects"].as_array().unwrap();
+    assert!(projects.iter().any(|p| p["organizationId"] == org && p["projectName"] == "Lobby"), "projects 陣列（{projects:?}）");
+    let grants = v["grants"].as_array().unwrap();
+    assert!(grants.iter().any(|g| g["roleUniqueName"] == "energy:finance" && g["scope"] == "organization" && g["scopeName"] == "org-rel"));
+
+    // 非超級使用者打這支 API → 403。
+    let v = expect_status!(app.get(&owner, &format!("/api/v1/admin/users/{}/relations", alice.id)).await, 403);
+    assert_eq!(v["code"], "super_user_required");
+}
