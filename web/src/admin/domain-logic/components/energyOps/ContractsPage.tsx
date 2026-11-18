@@ -13,6 +13,18 @@ import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
 import { EnergyPageFrame, EmptyRow } from './shared';
 
+/** 卡 20261118-0810-a2 小修（照卡 A commit fdbc0db 的寫法）：附件上傳時間存的是 UTC ISO 字串，
+ *  直接印出來給人看會變成 UTC，要轉成本地時間。後端存的 UTC 不動，只管顯示這一層。 */
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function localDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
 interface ContractRow {
   id: number; contractNo: string; contractType: string | null; landownerId: number; landownerName: string | null;
   stations: Array<{ id: number; name: string }>; signedOn: string | null; validFrom: string; validTo: string | null;
@@ -299,7 +311,7 @@ const ContractsPage: React.FC = () => {
                         </Button>
                       }
                     >
-                      <ListItemText primary={a.originalFilename} secondary={`${a.size} bytes · ${a.uploadedAt}`} />
+                      <ListItemText primary={a.originalFilename} secondary={`${a.size} bytes · ${localDateTime(a.uploadedAt)}`} />
                     </ListItem>
                   )) : (
                     <Typography variant="body2" color="text.secondary">{translate('energy.contracts.noAttachments')}</Typography>
