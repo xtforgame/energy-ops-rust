@@ -434,7 +434,7 @@ pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResul
         if crate::org::departments::by_key(tx, &ctx.access, key).await?.is_some() {
             continue;
         }
-        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: name.into(), sort_order: None };
+        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: name.into(), sort_order: None, parent_id: None };
         let v = crate::org::departments::create_department(tx, ctx, &input).await?;
         report.departments.push(json!({ "id": v.id, "key": v.key, "name": v.name }));
     }

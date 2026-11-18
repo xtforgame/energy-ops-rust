@@ -71,7 +71,8 @@ const OUTCOME_COLOR: Record<string, string> = {
  * 代理是稽核最需要看得出來的東西，藏起來等於沒有稽核。
  *
  * 展開後顯示 `payload` 的**差異對**（欄位／原值／新值）。
- * `AuditLogger.diffChanges` 寫進去的形狀是 `{ field: { before, after } }`。
+ * `diff_changes()`（`eo-domain/src/audit_events.rs`）寫進去的形狀是 `{ field: { from, to } }`
+ * ——不是 `before`／`after`；卡 C 修過這裡讀錯鍵的缺陷，不要再改回 before／after。
  */
 const AuditPage: React.FC = () => {
   const notify = useNotify();
@@ -192,8 +193,11 @@ const AuditPage: React.FC = () => {
             {Object.entries(changes).map(([field, v]: [string, any]) => (
               <TableRow key={field}>
                 <TableCell>{translate(`energy.bills.field.${field}`, { _: field })}</TableCell>
-                <TableCell sx={{ color: jvTokens.muted }}>{String(v?.before ?? '—')}</TableCell>
-                <TableCell>{String(v?.after ?? '—')}</TableCell>
+                {/* 後端 diff_changes() 存的鍵是 from/to（Change 結構，見 eo-domain/src/audit_events.rs），
+                    不是 before/after——這裡原本讀錯鍵，所有用 diff_changes 產生的「更新」稽核（部門、
+                    地主、案場…）改前改後欄都只會顯示「—」。卡 C 需要看「上層」的改動才發現，順手修掉。 */}
+                <TableCell sx={{ color: jvTokens.muted }}>{String(v?.from ?? '—')}</TableCell>
+                <TableCell>{String(v?.to ?? '—')}</TableCell>
               </TableRow>
             ))}
           </TableBody>

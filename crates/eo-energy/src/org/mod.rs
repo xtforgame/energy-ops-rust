@@ -2,6 +2,7 @@
 
 pub mod departments;
 pub mod members;
+pub mod relations;
 pub mod roles;
 
 use crate::path;
@@ -28,6 +29,9 @@ impl AppPlugin for OrgPlugin {
         cfg.get(&path("/assignable-roles"), web::get().to(roles::assignable));
         cfg.post(&path("/role-assignments"), web::post().to(roles::assign));
         cfg.post(&path("/role-assignments/revoke"), web::post().to(roles::revoke));
+
+        // 跨組織查，不走 `E/` 前綴：一個帳號的整體關係總覽，只准超級使用者看。
+        cfg.get("/api/v1/admin/users/{userId}/relations", web::get().to(relations::user_relations));
     }
 
     /// 能源的 permission／complex／角色；rbac plugin 開機時冪等寫入。
