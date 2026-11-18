@@ -33,7 +33,7 @@ pub async fn list_for_execution(core: Core, user: CurrentUser, meta: RequestMeta
     let ctx = gate(&core, &user, org, gates::ATTACHMENT_DOWNLOAD, &meta).await?;
     let mut tx = core.pool.begin().await?;
     authorize_execution(&core, &mut tx, &ctx.access, execution_id).await?;
-    let items = service::list_for_execution(&mut tx, execution_id).await?;
+    let items = service::list_for_execution(&mut tx, execution_id, ctx.now()).await?;
     Ok(HttpResponse::Ok().json(json!({ "items": items })))
 }
 
@@ -57,10 +57,10 @@ pub async fn upload_to_execution(
     let row = result?;
     // 補件（role=added）才會判定；收件原檔走 service::upload 一律標 taipowerNotice，不重複送辨識——
     // 這是唯一接自動判定的地方（DESIGN.md「三件一定要守」第二條）。
-    if service::classify_state(&row.data, chrono::Utc::now()).as_deref() == Some("recognizing") {
+    if service::classify_state(&row.data, ctx.now()).as_deref() == Some("recognizing") {
         spawn_classify(core.get_ref().clone(), ctx.org_id(), row.id);
     }
-    Ok(HttpResponse::Ok().json(service::summary(&row)))
+    Ok(HttpResponse::Ok().json(service::summary(&row, ctx.now())))
 }
 
 /// 補件的背景分類：建 job → 每 2 秒輪詢到終態（180 秒逾時）→ 取結果 → 過判讀器。

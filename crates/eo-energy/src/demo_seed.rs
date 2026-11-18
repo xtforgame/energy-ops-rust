@@ -874,7 +874,9 @@ async fn seed_flows(
     }
 
     // 示範「本關要求」：一張假電費單停在平台資料審核，缺台電電費通知單、應付總金額空著——
-    // 使用者一開畫面就看到「本關要求」清單裡兩個 ✗（S1）。假電號，不對到任何真案場。
+    // 使用者一開畫面就看到「本關要求」清單裡兩個 ✗（S1）。電號本身是假的（不對應任何真實台電戶），
+    // 但掛在既有的屏東案場（s1）底下——沒掛案場會撞上 energy_demo_seed.rs 的「全組織的單都配得到案場」
+    // 這條既有不變式（run_sample_bills 那組 4 張單也靠它），用詞上這組要求就叫「預設要求」。
     const FAKE_BILL_CUSTOMER_NUMBER: &str = "00-00-0000-00-0";
     let existing_fake_bill: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM tbl_energy_bill WHERE organization_id = $1 AND customer_number_raw = $2 AND deleted_at IS NULL",
@@ -888,10 +890,11 @@ async fn seed_flows(
         None => {
             sqlx::query_scalar(
                 "INSERT INTO tbl_energy_bill
-                   (organization_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, data)
-                 VALUES ($1, $2, $3, $4, $5, 'reviewed', '{}'::jsonb) RETURNING id",
+                   (organization_id, station_id, customer_number_raw, billing_period_start, billing_period_end, due_date, review_status, data)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'reviewed', '{}'::jsonb) RETURNING id",
             )
             .bind(org)
+            .bind(s1)
             .bind(FAKE_BILL_CUSTOMER_NUMBER)
             .bind(date("2026-10-01"))
             .bind(date("2026-10-31"))

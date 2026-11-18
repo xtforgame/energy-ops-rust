@@ -34,14 +34,17 @@ struct Fx {
     app: TestApp,
     org: i64,
     owner: TestUser,
+    /// 發起人：跟 `operator` 是不同人，否則防自核會讓 operator 連候選池都進不去（not_a_candidate）。
+    starter: TestUser,
     operator: TestUser,
 }
 
 async fn fixture(tweak: impl FnOnce(&mut eo_platform::config::Config)) -> Fx {
     let app = TestApp::with_config(tweak).await;
     let (owner, org) = app.energy_org("step-req").await;
+    let starter = app.member(org, "starter", Some("energy:operator")).await;
     let operator = app.member(org, "operator", Some("energy:operator")).await;
-    Fx { app, org, owner, operator }
+    Fx { app, org, owner, starter, operator }
 }
 
 impl Fx {
@@ -54,8 +57,9 @@ impl Fx {
         let def_id = self.app.install_def(&self.owner, self.org, &def(), None).await;
         self.app.wf_binding(self.org, Some("ST-STEPREQ"), None, None, def_id, "2000-01-01", None).await;
         let bill_id = self.app.bill(self.org, None, "2026-01-01", "2026-01-31", None, None).await;
+        let starter_ctx = self.app.ctx(&self.starter, self.org).await;
         let ctx = self.app.ctx(&self.operator, self.org).await;
-        let exec = in_tx!(self.app, tx => start_execution(&mut tx, &ctx, StartExecution {
+        let exec = in_tx!(self.app, tx => start_execution(&mut tx, &starter_ctx, StartExecution {
             station_key: "ST-STEPREQ".into(),
             workflow_key: def().key,
             subject_type: "energyBill".into(),

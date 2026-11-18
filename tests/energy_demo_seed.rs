@@ -25,7 +25,8 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!((c.workflow_definitions, c.rating_strategies), (5, 2));
     // 案場層 7 段 ＋ 契約層 4 × 2 段。
     assert_eq!((c.workflow_bindings, c.rating_bindings), (15, 3));
-    assert_eq!(c.executions, 1);
+    // 保證金請款那筆 ＋ 卡 20261118-0811-d 起：示範「本關要求」的假電費單（停在平台資料審核）。
+    assert_eq!(c.executions, 2);
 
     let q = |sql: &str| sql.replace("$ORG", &org.to_string());
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $ORG")).await, 7);
@@ -128,5 +129,6 @@ async fn demo_sample_bills_set_up_the_four_states_and_are_idempotent() {
     let second = eo_energy::demo_seed::run_sample_bills(&app.core, &seed, dir).await.unwrap();
     assert!(!second.created);
     assert_eq!(second.batch_id, first.batch_id);
-    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_bill WHERE organization_id = $ORG")).await, 4);
+    // 四份範本單 ＋ run() 那邊卡 20261118-0811-d 加的示範假單（1 筆）＝ 5。
+    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_bill WHERE organization_id = $ORG")).await, 5);
 }

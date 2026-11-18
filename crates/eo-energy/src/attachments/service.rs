@@ -450,7 +450,9 @@ pub struct AttachmentView {
 }
 
 /// 某 execution 的附件（新到舊，含它們掛在哪些關卡）。
-pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64) -> ApiResult<Vec<AttachmentView>> {
+/// `now`：算 classify 逾時要用app 的 Clock（`ctx.now()`），不可以用 `chrono::Utc::now()`——
+/// 測試用 `ManualClock` 固定在某一天，兩套時間一混，剛寫入的 `recognizing` 會被誤判成早就逾時。
+pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64, now: DateTime<Utc>) -> ApiResult<Vec<AttachmentView>> {
     let rows: Vec<AttachmentRow> = sqlx::query_as(&format!(
         "SELECT {ATTACHMENT_COLS} FROM tbl_energy_attachment WHERE execution_id = $1 AND deleted_at IS NULL
           ORDER BY uploaded_at DESC, id DESC"
@@ -468,7 +470,6 @@ pub async fn list_for_execution(tx: &mut Tx<'_>, execution_id: i64) -> ApiResult
     .bind(&ids)
     .fetch_all(&mut **tx)
     .await?;
-    let now = chrono::Utc::now();
     Ok(rows
         .into_iter()
         .map(|r| AttachmentView {
@@ -552,8 +553,8 @@ pub async fn set_category_manual(tx: &mut Tx<'_>, ctx: &Ctx, attachment: &Attach
     Ok(())
 }
 
-/// 給回應用的附件摘要。
-pub fn summary(row: &AttachmentRow) -> Value {
+/// 給回應用的附件摘要。`now` 同 `list_for_execution`：要用 app 的 Clock。
+pub fn summary(row: &AttachmentRow, now: DateTime<Utc>) -> Value {
     json!({
         "id": row.id,
         "originalFilename": row.original_filename,
@@ -562,7 +563,7 @@ pub fn summary(row: &AttachmentRow) -> Value {
         "hash": row.hash,
         "status": row.status,
         "category": row.category,
-        "classifyState": classify_state(&row.data, Utc::now()),
+        "classifyState": classify_state(&row.data, now),
         "executionId": row.execution_id,
         "ingestBatchId": row.ingest_batch_id,
         "supersedesAttachmentId": row.supersedes_attachment_id,
