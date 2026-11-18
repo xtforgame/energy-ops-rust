@@ -16,11 +16,13 @@ pub const PLATFORM_RBAC_MANAGE: &str = "platform:rbac:manage";
 const SCOPE: RbacScope = RbacScope::Organization;
 
 /// simple permission：(uniqueName, 中文顯示名)。顯示名不可洩漏 uniqueName。
-pub const ENERGY_SIMPLE_PERMISSIONS: [(&str, &str); 17] = [
+pub const ENERGY_SIMPLE_PERMISSIONS: [(&str, &str); 18] = [
     // ── 組織治理 ──
     ("energy:member:manage", "能源營運：成員與角色指派"),
     ("energy:department:manage", "能源營運：部門管理"),
     ("energy:delegation:manage", "能源營運：代理規則管理"),
+    // ── 主檔 ──
+    ("energy:master:manage", "能源營運：主檔維護"),
     // ── 稽核 ──
     ("energy:audit:view", "能源營運：稽核紀錄檢視"),
     // ── 流程 ──
@@ -98,6 +100,7 @@ pub const ENERGY_ROLE_DEFS: [EnergyRoleDef; 5] = [
         permissions: &[
             "energy:govern:system", "energy:govern:org", "energy:oversight",
             "energy:flow:participate", "energy:finance:act", "energy:flow:abort-approve",
+            "energy:master:manage",
         ],
     },
     EnergyRoleDef {

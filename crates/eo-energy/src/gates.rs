@@ -18,6 +18,8 @@ pub const ATTACHMENT_DOWNLOAD: &[&str] = &["energy:attachment:download"];
 pub const ATTACHMENT_UNLINK: &[&str] = &["energy:attachment:unlink"];
 pub const PAYOUT_VIEW: &[&str] = &["energy:payout:view"];
 pub const PAYOUT_RECOMPUTE: &[&str] = &["energy:payout:recompute"];
+/// 主檔維護：案場／電號／受款對象／地主分配的新增與編輯。
+pub const MASTER_MANAGE: &[&str] = &["energy:master:manage"];
 
 /// 組織治理（「最後一位治理者」防呆看這兩個）。
 pub const GOVERNANCE: &[&str] = &["energy:govern:org", "platform:rbac:manage"];

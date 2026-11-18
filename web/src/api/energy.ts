@@ -123,9 +123,18 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'GET', path: '/recognition/status', intake: true },
   // 主檔與綁定
   { method: 'GET', path: '/stations', adapt: unwrapItems },
+  { method: 'POST', path: '/stations' },
   { method: 'GET', path: '/station-list', adapt: unwrapItems },
+  { method: 'PATCH', path: '/stations/:stationId' },
   { method: 'GET', path: '/unbound-stations', adapt: unwrapItems },
   { method: 'GET', path: '/stations/:stationId/overview' },
+  { method: 'GET', path: '/stations/:stationId/meters', adapt: unwrapItems },
+  { method: 'POST', path: '/stations/:stationId/meters', adapt: unwrapItems },
+  { method: 'PATCH', path: '/meters/:meterId' },
+  { method: 'GET', path: '/stations/:stationId/allocations', adapt: unwrapItems },
+  { method: 'POST', path: '/stations/:stationId/allocations', adapt: unwrapItems },
+  { method: 'PATCH', path: '/allocations/:allocationId' },
+  { method: 'GET', path: '/stations/:stationId/allocation-history', adapt: unwrapItems },
   // 建議座標的頁面直接 toFixed：確保是數字
   {
     method: 'GET',
@@ -142,6 +151,8 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'POST', path: '/stations/:stationId/bindings/end' },
   { method: 'GET', path: '/binding-options', adapt: unwrapItems },
   { method: 'GET', path: '/landowners', adapt: unwrapItems },
+  { method: 'POST', path: '/landowners' },
+  { method: 'PATCH', path: '/landowners/:landownerId' },
   { method: 'GET', path: '/landowners/:landownerId' },
   { method: 'GET', path: '/landowners/:landownerId/overview' },
 ];

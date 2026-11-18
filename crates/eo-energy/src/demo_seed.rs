@@ -78,6 +78,9 @@ pub struct DemoSeedCounts {
     pub workflow_bindings: usize,
     pub rating_bindings: usize,
     pub executions: usize,
+    // ── 卡 A 擴欄（20261118-0427）──
+    pub meters: usize,
+    pub allocations: usize,
 }
 
 impl DemoSeedCounts {
@@ -98,6 +101,8 @@ impl DemoSeedCounts {
             + self.workflow_bindings
             + self.rating_bindings
             + self.executions
+            + self.meters
+            + self.allocations
     }
 }
 
@@ -218,7 +223,8 @@ struct SeededIds {
     first_installment: i64,
 }
 
-async fn ensure_landowner(tx: &mut Tx<'_>, org: i64, row: [&str; 9], created: &mut DemoSeedCounts) -> ApiResult<i64> {
+/// `party_type`／`code`（卡 A 擴欄）：舊的個人地主一律 `individual`；子公司類才有 code。
+async fn ensure_landowner(tx: &mut Tx<'_>, org: i64, row: [&str; 9], party_type: &str, code: Option<&str>, created: &mut DemoSeedCounts) -> ApiResult<i64> {
     let [name, tax_id, contact_name, contact_phone, contact_email, bank_name, bank_branch, bank_account, bank_account_name] = row;
     if let Some(id) = sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE organization_id = $1 AND name = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1")
         .bind(org)
@@ -232,8 +238,9 @@ async fn ensure_landowner(tx: &mut Tx<'_>, org: i64, row: [&str; 9], created: &m
     let blank = |s: &str| if s.is_empty() { None } else { Some(s.to_string()) };
     Ok(sqlx::query_scalar(
         "INSERT INTO tbl_energy_landowner
-           (organization_id, name, tax_id, contact_name, contact_phone, contact_email, bank_name, bank_branch, bank_account, bank_account_name, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active') RETURNING id",
+           (organization_id, name, tax_id, contact_name, contact_phone, contact_email, bank_name, bank_branch, bank_account, bank_account_name,
+            status, party_type, code)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12) RETURNING id",
     )
     .bind(org)
     .bind(name)
@@ -245,6 +252,58 @@ async fn ensure_landowner(tx: &mut Tx<'_>, org: i64, row: [&str; 9], created: &m
     .bind(blank(bank_branch))
     .bind(blank(bank_account))
     .bind(blank(bank_account_name))
+    .bind(party_type)
+    .bind(code)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// 案場的其中一個電號（躉購或用電）；冪等以 `(station_id, usage)` 判斷是否已有。
+async fn ensure_meter(tx: &mut Tx<'_>, org: i64, station_id: i64, customer_number: &str, usage: &str, created: &mut DemoSeedCounts) -> ApiResult<i64> {
+    if let Some(id) = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM tbl_energy_station_meter WHERE organization_id = $1 AND station_id = $2 AND usage = $3 AND deleted_at IS NULL ORDER BY id LIMIT 1",
+    )
+    .bind(org)
+    .bind(station_id)
+    .bind(usage)
+    .fetch_optional(&mut **tx)
+    .await?
+    {
+        return Ok(id);
+    }
+    created.meters += 1;
+    Ok(sqlx::query_scalar(
+        "INSERT INTO tbl_energy_station_meter (organization_id, station_id, customer_number, usage) VALUES ($1, $2, $3, $4) RETURNING id",
+    )
+    .bind(org)
+    .bind(station_id)
+    .bind(customer_number)
+    .bind(usage)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// 一位地主在一個案場的分配（比例，百分比字串如 `"60"`）；冪等以 `(landowner_id, station_id)` 判斷。
+async fn ensure_allocation(tx: &mut Tx<'_>, org: i64, landowner_id: i64, station_id: i64, ratio: &str, created: &mut DemoSeedCounts) -> ApiResult<i64> {
+    if let Some(id) = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM mn_energy_landowner_station WHERE organization_id = $1 AND landowner_id = $2 AND station_id = $3 AND deleted_at IS NULL ORDER BY id LIMIT 1",
+    )
+    .bind(org)
+    .bind(landowner_id)
+    .bind(station_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    {
+        return Ok(id);
+    }
+    created.allocations += 1;
+    Ok(sqlx::query_scalar(
+        "INSERT INTO mn_energy_landowner_station (organization_id, landowner_id, station_id, method, ratio) VALUES ($1, $2, $3, 'ratio', $4::numeric) RETURNING id",
+    )
+    .bind(org)
+    .bind(landowner_id)
+    .bind(station_id)
+    .bind(ratio)
     .fetch_one(&mut **tx)
     .await?)
 }
@@ -364,6 +423,8 @@ async fn seed_master_data(tx: &mut Tx<'_>, ctx: &Ctx, created: &mut DemoSeedCoun
         tx,
         org,
         ["陳明德", "A123456789", "陳小姐", "0912-345-678", "chen@example.com", "台灣銀行", "屏東分行", "012-345-678901", "陳明德"],
+        "individual",
+        None,
         created,
     )
     .await?;
@@ -371,9 +432,39 @@ async fn seed_master_data(tx: &mut Tx<'_>, ctx: &Ctx, created: &mut DemoSeedCoun
         tx,
         org,
         ["林秀英", "B234567890", "林先生", "0922-111-222", "", "第一銀行", "嘉義分行", "098-765-432100", "林秀英"],
+        "individual",
+        None,
         created,
     )
     .await?;
+
+    // 卡 A（20261118-0427）：受款對象擴類型 —— 2 子公司（假代號 ZA／ZB）、1 台電區處、1 公司、1 機關。
+    // 全部假名、假統編（`00000001` 之類）。
+    let sub_za = ensure_landowner(
+        tx, org,
+        ["示範子公司甲", "", "", "", "", "", "", "", ""],
+        "subsidiary", Some("ZA"), created,
+    ).await?;
+    let sub_zb = ensure_landowner(
+        tx, org,
+        ["示範子公司乙", "", "", "", "", "", "", "", ""],
+        "subsidiary", Some("ZB"), created,
+    ).await?;
+    let _taipower_district = ensure_landowner(
+        tx, org,
+        ["台電屏東區處", "", "", "", "", "", "", "", ""],
+        "taipower_district", None, created,
+    ).await?;
+    let _demo_company = ensure_landowner(
+        tx, org,
+        ["示範能源股份有限公司", "00000001", "", "", "", "", "", "", ""],
+        "company", None, created,
+    ).await?;
+    let _demo_agency = ensure_landowner(
+        tx, org,
+        ["示範鄉公所", "00000002", "", "", "", "", "", "", ""],
+        "agency", None, created,
+    ).await?;
 
     // 電號用四種範本電費單上的真值：上傳那四份 PDF 時才配得到案場。
     // 一座異常、一座建設中，狀態色都看得到；異常不等於停用，照樣收得了單。
@@ -386,6 +477,45 @@ async fn seed_master_data(tx: &mut Tx<'_>, ctx: &Ctx, created: &mut DemoSeedCoun
     let s5 = ensure_station(tx, ctx, chen, "01-2233-4477", "屏東枋寮三號（待定位）", "construction", None, "屏東縣枋寮鄉中山路 100 號", created).await?;
     // 地址是地段地號：推估只到行政區級，那種精度不可以填進座標。這一座刻意不綁流程（「未綁定」也是真實狀態）。
     let s6 = ensure_station(tx, ctx, lin, "02-7788-9922", "台南七股一號（地號）", "construction", None, "台南市七股區大潭段123地號", created).await?;
+
+    // 卡 A（20261118-0427）：這 6 座既有示範案場各補一列主電號（躉購）＋ 100% 分配 ——
+    // migration 0103 的 backfill 只在既有資料庫升級時補，這裡是全新資料庫（migration 先跑、demo seed 後跑），
+    // 所以示範資料要自己建，否則電號區／分配區看起來永遠是空的。
+    for (station_id, owner, cn) in [
+        (s1, chen, "00-60-1600-79-5"), (s2, chen, "11-72-8007-95-8"), (s3, lin, "11-72-0328-95-9"),
+        (s4, lin, "07-42-8560-90-1"), (s5, chen, "01-2233-4477"), (s6, lin, "02-7788-9922"),
+    ] {
+        ensure_meter(tx, org, station_id, cn, "wholesale", created).await?;
+        ensure_allocation(tx, org, owner, station_id, "100", created).await?;
+    }
+
+    // 卡 A 的示範案場「示範案場（雙電號）」：兩個電號（躉購＋用電）、兩位地主 60％／40％，
+    // 專案編號四樣齊全（併網日、型別、SPV 代號 ZB、序號）。電號用假號（`99-` 開頭）。
+    let s7 = ensure_station(
+        tx, ctx, chen, "99-0000-0001-00", "示範案場（雙電號）", "operating",
+        Some(("22.6000000", "120.5500000")), "（展示資料）", created,
+    ).await?;
+    ensure_meter(tx, org, s7, "99-0000-0001-00", "wholesale", created).await?;
+    ensure_meter(tx, org, s7, "99-0000-0002-00", "consumption", created).await?;
+    ensure_allocation(tx, org, chen, s7, "60", created).await?;
+    ensure_allocation(tx, org, lin, s7, "40", created).await?;
+    {
+        let grid_date = date("2024-06-01");
+        let project_code = crate::master_data::project_code(Some(grid_date), Some("rooftop"), Some("ZB"), Some(3));
+        sqlx::query(
+            "UPDATE tbl_energy_station SET grid_date = $2, site_type = 'rooftop', spv_payee_id = $3, serial_no = 3,
+               service_district = '台電屏東區處', capacity_kw = 850.000, project_code = $4
+             WHERE id = $1",
+        )
+        .bind(s7)
+        .bind(grid_date)
+        .bind(sub_zb)
+        .bind(&project_code)
+        .execute(&mut **tx)
+        .await?;
+    }
+    // sub_za 留給使用者在畫面上手動新增案場時選用（Story S1：114BZA0007）。
+    let _ = sub_za;
 
     let c1 = ensure_contract(tx, org, chen, "CT-2026-001", "紙本用印", "2026-01-01", "operating", None, None, created).await?;
     let c2 = ensure_contract(tx, org, lin, "CT-2026-002", "電子簽章", "2026-02-01", "construction", Some(3), None, created).await?;

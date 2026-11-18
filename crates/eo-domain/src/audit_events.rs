@@ -121,6 +121,22 @@ const BINDING: &[Field] = &[
 
 const DEPARTMENT: &[Field] = &[req("departmentKey", STR), opt("departmentName", STR)];
 
+/// 地主↔案場分配（新增／修改／結束同一形狀）。
+const ALLOCATION: &[Field] = &[
+    req("landownerId", INT),
+    opt("landownerName", STR),
+    req("stationId", INT),
+    opt("stationName", STR),
+    req("method", Ty::Enum(&["ratio", "fixed", "land_area"])),
+    opt_nul("ratio", STR),
+    opt_nul("fixedAmount", STR),
+    opt_nul("landArea", STR),
+    opt("validFrom", STR),
+    opt_nul("validTo", STR),
+    opt("changeReason", STR),
+    opt("changes", CHANGES),
+];
+
 const DEPARTMENT_MEMBER: &[Field] = &[
     req("departmentKey", STR),
     opt("departmentName", STR),
@@ -676,6 +692,10 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Critical,
         true,
     ),
+    // ── 地主↔案場分配（卡 A：只存，不算錢）──
+    ev("allocation.created", "energyLandownerStation", ALLOCATION, "audit.type.allocation.created", Info, true),
+    ev("allocation.updated", "energyLandownerStation", ALLOCATION, "audit.type.allocation.updated", Notable, true),
+    ev("allocation.ended", "energyLandownerStation", ALLOCATION, "audit.type.allocation.ended", Notable, true),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

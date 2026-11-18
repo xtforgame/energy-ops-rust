@@ -190,10 +190,26 @@ pub async fn station_by_id(tx: &mut Tx<'_>, org_id: i64, id: i64) -> ApiResult<O
     .await?)
 }
 
-/// 電號 → 案場：比正規化後的值（台電單上印 `00-60-1600-79-5`，主檔可能是 `0060160079 5`）；
-/// 找不到再退回原字串比一次（相容，不是模糊比對）。
+/// 電號 → 案場：先查 `tbl_energy_station_meter`（一對多；有效期涵蓋今天或沒有迄日才算，
+/// 20261118-0427-a 卡起第二個電號的單也對得到），查不到再比案場主電號（正規化值，找不到再退回原字串，
+/// 相容舊資料，不是模糊比對）。
 pub async fn find_station_by_customer_number(tx: &mut Tx<'_>, org_id: i64, customer_number: &str) -> ApiResult<Option<StationLite>> {
     if let Some(key) = normalize_customer_number(Some(customer_number)) {
+        let via_meter: Option<StationLite> = sqlx::query_as(
+            "SELECT s.id, s.name, s.customer_number FROM tbl_energy_station_meter m
+               JOIN tbl_energy_station s ON s.id = m.station_id AND s.deleted_at IS NULL
+              WHERE m.organization_id = $1 AND m.customer_number_key = $2 AND m.deleted_at IS NULL
+                AND (m.valid_to IS NULL OR m.valid_to >= CURRENT_DATE)
+                AND (m.valid_from IS NULL OR m.valid_from <= CURRENT_DATE)
+              ORDER BY m.id LIMIT 1",
+        )
+        .bind(org_id)
+        .bind(&key)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if via_meter.is_some() {
+            return Ok(via_meter);
+        }
         let hit: Option<StationLite> = sqlx::query_as(
             "SELECT id, name, customer_number FROM tbl_energy_station
               WHERE organization_id = $1 AND customer_number_key = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1",

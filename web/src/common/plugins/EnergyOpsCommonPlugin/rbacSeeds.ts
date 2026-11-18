@@ -43,6 +43,8 @@ const ENERGY_SIMPLE_DEFS: EnergySimpleDef[] = [
   { uniqueName: 'energy:member:manage', name: '能源營運：成員與角色指派' },
   { uniqueName: 'energy:department:manage', name: '能源營運：部門管理' },
   { uniqueName: 'energy:delegation:manage', name: '能源營運：代理規則管理' },
+  // ── 主檔 ──
+  { uniqueName: 'energy:master:manage', name: '能源營運：主檔維護' },
   // ── 稽核 ──
   { uniqueName: 'energy:audit:view', name: '能源營運：稽核紀錄檢視' },
   // ── 流程 ──
@@ -147,6 +149,7 @@ export const ENERGY_ROLE_DEFS: EnergyRoleDef[] = [
     permissionUniqueNames: [
       'energy:govern:system', 'energy:govern:org', 'energy:oversight',
       'energy:flow:participate', 'energy:finance:act', 'energy:flow:abort-approve',
+      'energy:master:manage',
     ],
   },
   {

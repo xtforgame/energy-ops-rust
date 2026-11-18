@@ -30,8 +30,8 @@ export const RESOURCE_PERMISSION_MAP: Record<string, string[]> = {
   energyBillConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
   // 路由比選單寬：參與者要能開自己的流程單詳情（選單另見 MENU_PERMISSION_MAP）。
   energyExecutionConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
-  energyLandownerConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
-  energyStationConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
+  energyLandownerConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
+  energyStationConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all', 'energy:master:manage'],
   energyWorkflowConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],
   energyAuditConsole: [RBAC, 'energy:audit:view'],
   energyDashboardConsole: [RBAC, 'energy:flow:view', 'energy:flow:view-all'],

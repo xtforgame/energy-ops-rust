@@ -84,19 +84,19 @@ async fn landowners_and_stations() {
     let f = fixture().await;
     let ctx = f.ctx().await;
     let mut tx = f.app.core.pool.begin().await.unwrap();
-    let rows = master_data::list_landowners(&mut tx, &ctx.access, None, None).await.unwrap();
+    let rows = master_data::list_landowners(&mut tx, &ctx.access, None, None, None).await.unwrap();
     let mine = rows.iter().find(|r| r["id"] == f.landowner).unwrap();
     assert_eq!((mine["stationCount"].clone(), mine["abnormalStationCount"].clone(), mine["contractCount"].clone()), (json!(2), json!(1), json!(1)));
     let other = f.app.ctx(&f.other_owner, f.other_org).await;
-    let rows = master_data::list_landowners(&mut tx, &other.access, None, None).await.unwrap();
+    let rows = master_data::list_landowners(&mut tx, &other.access, None, None, None).await.unwrap();
     assert!(!rows.iter().any(|r| r["id"] == f.landowner));
     assert_eq!(code_of(master_data::get_landowner(&mut tx, &other.access, f.landowner).await), (403, "landowner_not_in_org".into()));
 
-    let st = master_data::list_stations(&mut tx, &ctx.access, None, None, None).await.unwrap();
+    let st = master_data::list_stations(&mut tx, &ctx.access, None, None, None, None, None).await.unwrap();
     let s = st.iter().find(|r| r["id"] == f.station).unwrap();
     assert!(s["latitude"].as_str().unwrap().starts_with("22.678"), "座標回字串");
     assert_eq!(s["landownerName"], "陳地主");
-    let q = master_data::list_stations(&mut tx, &ctx.access, Some("二號"), None, None).await.unwrap();
+    let q = master_data::list_stations(&mut tx, &ctx.access, Some("二號"), None, None, None, None).await.unwrap();
     assert_eq!(q.len(), 1);
 
     let d = master_data::get_landowner(&mut tx, &ctx.access, f.landowner).await.unwrap();
@@ -296,6 +296,100 @@ async fn geocode_suggest_and_apply() {
     assert_eq!(v["code"], "manual_coordinates_protected");
     let lat: String = sqlx::query_scalar("SELECT latitude::text FROM tbl_energy_station WHERE id = $1").bind(manual).fetch_one(&f.app.core.pool).await.unwrap();
     assert_eq!(lat, "22.1111111");
+}
+
+/// 卡 20261118-0427-a：案場 POST/PATCH＋專案編號、電號一對多＋重疊 409、受款對象類型篩選、
+/// 地主分配＋稽核、沒有 `energy:master:manage` 的人寫入回 403（對應 S1～S4，含 DESIGN.md「合理測試」）。
+#[actix_web::test]
+async fn master_data_writes() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("carda-org").await;
+    let viewer = app.member(org, "carda-viewer", Some("energy:viewer")).await;
+    let base = app.e(org, "");
+
+    // S3：受款對象 — 先建一家子公司（代號 ZA）給案場當 SPV，再驗類型篩選。
+    let sub = expect_status!(
+        app.post(&owner, &format!("{base}/landowners"), json!({ "name": "測試子公司甲", "partyType": "subsidiary", "code": "ZA" })).await,
+        200
+    );
+    let sub_id = sub["id"].as_i64().unwrap();
+    let agency = expect_status!(app.post(&owner, &format!("{base}/landowners"), json!({ "name": "測試機關", "partyType": "agency" })).await, 200);
+    let agency_id = agency["id"].as_i64().unwrap();
+    expect_status!(app.post(&viewer, &format!("{base}/landowners"), json!({ "name": "沒權限建的" })).await, 403);
+    let filtered = expect_status!(app.get(&owner, &format!("{base}/landowners?partyType=subsidiary")).await, 200);
+    let items = filtered["items"].as_array().unwrap();
+    assert!(items.iter().any(|i| i["id"] == sub_id));
+    assert!(!items.iter().any(|i| i["id"] == agency_id));
+    let edited = expect_status!(
+        app.patch(&owner, &format!("{base}/landowners/{sub_id}"), json!({ "name": "測試子公司甲", "partyType": "subsidiary", "code": "ZA", "taxId": "12345678" })).await,
+        200
+    );
+    assert_eq!(edited["taxId"], "12345678");
+
+    // S1：案場 — 新增時算出專案編號，改型別後專案編號跟著變；沒有 master:manage 回 403。
+    let lo = expect_status!(app.post(&owner, &format!("{base}/landowners"), json!({ "name": "測試地主" })).await, 200);
+    let landowner_id = lo["id"].as_i64().unwrap();
+    expect_status!(
+        app.post(&viewer, &format!("{base}/stations"), json!({ "name": "x", "customerNumber": "99-1", "landownerId": landowner_id })).await,
+        403
+    );
+    let created = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/stations"),
+            json!({
+                "name": "測試案場", "customerNumber": "99-9000-0001-00", "landownerId": landowner_id,
+                "siteType": "fishery", "spvPayeeId": sub_id, "gridDate": "2025-03-01", "serialNo": 7,
+            }),
+        )
+        .await,
+        200
+    );
+    let station_id = created["id"].as_i64().unwrap();
+    assert_eq!(created["projectCode"], "114BZA0007", "(2025-1911)+B(漁電)+ZA+0007");
+    let updated = expect_status!(
+        app.patch(&owner, &format!("{base}/stations/{station_id}"), json!({
+            "name": "測試案場", "siteType": "rooftop", "spvPayeeId": sub_id, "gridDate": "2025-03-01", "serialNo": 7, "landownerId": landowner_id,
+        })).await,
+        200
+    );
+    assert_eq!(updated["projectCode"], "114RZA0007", "改型別後型別碼跟著變");
+
+    // S2：電號一對多 — 加第二個電號，收件比對找得到；同電號期間重疊回 409。
+    let meters = expect_status!(
+        app.post(&owner, &format!("{base}/stations/{station_id}/meters"), json!({ "customerNumber": "99-9000-0002-00", "usage": "consumption" })).await,
+        200
+    );
+    assert_eq!(meters["items"].as_array().unwrap().len(), 2, "主電號＋新加的");
+    let overlap = expect_status!(
+        app.post(&owner, &format!("{base}/stations/{station_id}/meters"), json!({ "customerNumber": "99-9000-0002-00", "usage": "wholesale" })).await,
+        409
+    );
+    assert_eq!(overlap["code"], "meter_overlap");
+    let mut tx = app.core.pool.begin().await.unwrap();
+    let hit = eo_energy::ingest::bills::find_station_by_customer_number(&mut tx, org, "99-9000-0002-00").await.unwrap();
+    assert_eq!(hit.map(|s| s.id), Some(station_id), "第二個電號的單也對得到案場");
+    drop(tx);
+
+    // S4：地主分配 — 兩位地主 60/40，結束一位要留異動紀錄；每次寫入都有稽核。
+    let lo2 = expect_status!(app.post(&owner, &format!("{base}/landowners"), json!({ "name": "測試地主二" })).await, 200);
+    let landowner2_id = lo2["id"].as_i64().unwrap();
+    let alloc = expect_status!(
+        app.post(&owner, &format!("{base}/stations/{station_id}/allocations"), json!({ "landownerId": landowner2_id, "method": "ratio", "ratio": "40", "validFrom": "2026-01-01" })).await,
+        200
+    );
+    assert_eq!(alloc["items"].as_array().unwrap().len(), 2, "主要受款對象 100%＋新加的 40%");
+    let list = expect_status!(app.get(&owner, &format!("{base}/stations/{station_id}/allocations")).await, 200);
+    let second = list["items"].as_array().unwrap().iter().find(|a| a["landownerId"] == landowner2_id).unwrap();
+    let alloc_id = second["id"].as_i64().unwrap();
+    expect_status!(
+        app.patch(&owner, &format!("{base}/allocations/{alloc_id}"), json!({ "validTo": "2026-06-01", "changeReason": "測試結束" })).await,
+        200
+    );
+    let history = expect_status!(app.get(&owner, &format!("{base}/stations/{station_id}/allocation-history")).await, 200);
+    let types: Vec<&str> = history["items"].as_array().unwrap().iter().map(|h| h["type"].as_str().unwrap()).collect();
+    assert!(types.contains(&"allocation.created"), "{types:?}");
+    assert!(types.contains(&"allocation.ended"), "{types:?}");
 }
 
 /// 來源：masterDataOverview.test.ts「landownerOverview 呼叫得到（這條就是在擋 ReferenceError 型的 500）」

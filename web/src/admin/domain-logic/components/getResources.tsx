@@ -23,6 +23,8 @@ import LandownersPage from './energyOps/LandownersPage';
 // C7b：實體頁。地主整合頁走 **App.tsx 的 CustomRoute**
 // （`#/energyLandowners/:id`），不是 RA resource —— 所以不在這裡 import。
 import StationDetailPage from './energyOps/StationDetailPage';
+// 卡 20261118-0427-a S1：案場清單頁（新增案場、算專案編號）。
+import StationsPage from './energyOps/StationsPage';
 import IngestConsolePage from './energyOps/IngestConsolePage';
 import IngestBatchDetailPage from './energyOps/IngestBatchDetailPage';
 // P9 流程總覽（管理員的家）—— 治理層。
@@ -69,10 +71,10 @@ const getResources = (permissions?: string[] | null) => {
       show={ExecutionDetailPage}
     />,
     <Resource key="energyLandownerConsole" name="energyLandownerConsole" list={LandownersPage} />,
-    // P11 案場詳情（只有 show）；清單沿用地主頁的案場區。
+    // P11 案場詳情；卡 20261118-0427-a 起加 `list`（案場清單頁，進選單）。
     // 這裡是**陣列字面值** —— 不可以用 `{/* */}` 註解，
     // 那會變成一個空物件被塞進 resources（React render 時才炸）。
-    <Resource key="energyStationConsole" name="energyStationConsole" show={StationDetailPage} />,
+    <Resource key="energyStationConsole" name="energyStationConsole" list={StationsPage} show={StationDetailPage} />,
     <Resource key="energyWorkflowConsole" name="energyWorkflowConsole" list={WorkflowOverviewPage} />,
     <Resource key="energyDashboardConsole" name="energyDashboardConsole" list={DashboardPage} />,
     <Resource key="energyCalendarConsole" name="energyCalendarConsole" list={CalendarPage} />,
