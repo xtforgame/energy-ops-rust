@@ -686,7 +686,7 @@ pub fn platform_review_bill() -> WorkflowDefinition {
             .rule(AssignmentRule::department(DEPT_BILL_REVIEW, "all"))
             .layout(220, 120)
             // 使用者 2026-11-18 拍板：這一關開放改欄位、預設要求台電電費通知單＋電號／計費起迄日／
-            // 應付總金額／繳費期限（「預設要求」，不是「待確認」——那組字不准用）。
+            // 應付總金額／繳費期限。
             .subject_edit(true)
             .requires_attachment("taipowerNotice", 1)
             .requires_field("customerNumberRaw", "energy.bills.field.customerNumberRaw")

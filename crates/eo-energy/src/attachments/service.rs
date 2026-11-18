@@ -68,7 +68,7 @@ pub const ATTACHMENT_COLS: &str = "id, storage_key, original_filename, mime_type
 pub const CLASSIFY_TIMEOUT_SECS: i64 = 180;
 
 /// 這份檔上傳那一刻的類別與 classify 狀態。
-/// · `source`（收件原檔）：一律 `taipowerNotice`，用詞上這組「預設要求」不是「待確認」，這裡也不判定——
+/// · `source`（收件原檔）：一律 `taipowerNotice`，這裡也不判定——
 ///   原檔本來就是台電電費通知單，不需要辨識。
 /// · `added`（補件）：PDF 且辨識服務有設定 → `recognizing`（實際送辨識在 `handlers.rs` 的
 ///   `upload_to_execution`，拿到附件 id 之後才背景 spawn，這裡只標狀態）；否則 `needsCategory`。
