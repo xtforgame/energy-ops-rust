@@ -32,4 +32,17 @@ describe('landlord rent cycle preparation',()=>{
     expect((screen.getByRole('button',{name:'儲存試算設定並載入單據'}) as HTMLButtonElement).disabled).toBe(true);
     expect(energyHttp.post).not.toHaveBeenCalled();
   });
+  it('persists monthly floor and operation date while presenting management fee separately',async()=>{
+    const management={...plan,feeKind:'management',monthlyMinimum:'8000',commercialOperationDate:'2026-01-01'};
+    vi.mocked(energyHttp.get).mockResolvedValueOnce(response({plan:management})).mockResolvedValueOnce(response({items:[]}));
+    vi.mocked(energyHttp.post).mockResolvedValue(response({}));
+    render(<RentCycle base="/api/test" contractId={2} stationId={1}/>);
+    fireEvent.click(screen.getByRole('button',{name:'租金週期試算'}));
+    await waitFor(()=>expect((screen.getByLabelText('每月最低金額（無保底留空）') as HTMLInputElement).value).toBe('8000'));
+    expect((screen.getByLabelText('正式併聯發電日（起算條款適用時）') as HTMLInputElement).value).toBe('2026-01-01');
+    fireEvent.change(screen.getByLabelText('每月最低金額（無保底留空）'),{target:{value:'9000'}});
+    fireEvent.click(screen.getByRole('button',{name:'儲存試算設定並載入單據'}));
+    await waitFor(()=>expect(energyHttp.post).toHaveBeenCalledWith('/api/test/contracts/2/rent-cycle',{...management,monthlyMinimum:'9000'}));
+    expect(screen.getByText(/首期不足月、跨月收入拆分/)).toBeTruthy();
+  });
 });

@@ -248,3 +248,7 @@ See [EASYFLOW-APPLICATION-EXPORT.md](EASYFLOW-APPLICATION-EXPORT.md) for schema,
 `POST E/contracts/{contractId}/rent-cycle/preview` checks coverage and computes base rent from confirmed draft inputs.
 Saving requires MASTER_MANAGE; other operations require FLOW_VIEW. No payout record, tax calculation, workflow transition, or EasyFlow submission.
 See [RENT-CYCLE-HANDOFF-20261119.md](RENT-CYCLE-HANDOFF-20261119.md) for schemas, supported rules and integration boundaries.
+
+Optional backward-compatible Plan fields: `feeKind` (rent/management), `monthlyMinimum` (decimal string), `commercialOperationDate` (YYYY-MM-DD).
+Monthly floors require an operation date and within-month receipt amounts; missing coverage is not substituted by the floor. A fully pre-operation cycle has zero base fee; a cycle containing the operation date after its first day requires clarification rather than automatic proration.
+Preview adds `monthlyBreakdown`, `feeKind`, and `chargeStatus`; tax and payable remain pending. Details: [CONTRACT-RULES-20261119.md](CONTRACT-RULES-20261119.md).

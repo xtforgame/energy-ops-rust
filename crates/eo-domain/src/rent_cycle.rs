@@ -20,6 +20,12 @@ pub struct Plan {
     pub unit_price:Option<String>,
     pub unit_period:String,
     pub rounding_places:u32,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub fee_kind:Option<String>,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub monthly_minimum:Option<String>,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub commercial_operation_date:Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -42,6 +48,12 @@ fn number(s:Option<&str>)->Result<Decimal,String> {
     Ok(d)
 }
 pub fn validate(p:&Plan)->Result<(),String> {
+    if p.fee_kind.as_deref().is_some_and(|k| !["rent","management"].contains(&k)) {return Err("費用性質須為租金或管理費".into());}
+    if let Some(date)=&p.commercial_operation_date {day(date)?;}
+    if let Some(floor)=&p.monthly_minimum {
+        if p.kind!="revenueShare" || number(Some(floor))?<Decimal::ZERO {return Err("每月保底僅適用比例計算，且不得為負數".into());}
+        if p.commercial_operation_date.is_none() {return Err("設定每月保底前，請確認正式併聯發電日期".into());}
+    }
     if p.station_id<=0 || !(1..=12).contains(&p.months) || p.rounding_places>2 {return Err("案場、付款週期或小數位數不正確".into());}
     if day(&p.anchor)?.day()!=1 {return Err("週期起點目前支援每月一日；不完整月份需另行確認".into());}
     if !["untaxed","gross"].contains(&p.basis.as_str()) {return Err("請選擇含稅或未稅收入基底".into());}
@@ -69,6 +81,19 @@ pub fn bounds(p:&Plan,start:&str)->Result<(NaiveDate,NaiveDate),String> {
 pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
     let (from,to)=bounds(p,start)?;
     if rows.len()>500 {return Err("單期單據超過 500 張，請縮小範圍".into());}
+    if let Some(date)=&p.commercial_operation_date {
+        let operation=day(date)?;
+        if operation>to {
+            return Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
+                "plan":p,"receipts":rows,"sources":{"taipower":{"status":"notRequired","amount":null,"kwh":null,"billIds":[]},
+                "transfer":{"status":if p.transfer {"notRequired"}else{"notApplicable"},"amount":null,"kwh":null,"billIds":[]}},
+                "issues":[],"baseRent":format!("{:.*}",p.rounding_places as usize,Decimal::ZERO),"monthlyBreakdown":[],
+                "feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"notStarted",
+                "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,"invoiceDirection":"receiveLandlordInvoice",
+                "note":"整期在正式併聯發電日前，不計費；不是零收入單據，也不啟動付款。"}));
+        }
+        if operation>from {return Err("首次併聯落在本期內；首月及不完整週期計費方式待確認，不自動按日分攤或套整月保底".into());}
+    }
     let mut issues=Vec::<String>::new();let mut ids=HashSet::new();
     for r in rows {
         if !ids.insert(r.bill_id) {issues.push(format!("單據 {} 重複選取",r.bill_id));}
@@ -111,15 +136,43 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
             "kwh":if complete {Some(kwh.normalize().to_string())}else{None},"billIds":selected.iter().map(|r|r.bill_id).collect::<Vec<_>>()}));
         if complete && applicable {revenue+=amount;}
     }
+    let mut monthly=Vec::new();let mut floor_total=Decimal::ZERO;
+    if let Some(floor)=&p.monthly_minimum {
+        let floor=number(Some(floor))?;
+        for r in rows {
+            if let (Ok(a),Ok(b))=(day(&r.start),day(&r.end)) {
+                if (a.year(),a.month())!=(b.year(),b.month()) {issues.push(format!("單據 {} 跨月；每月保底需月別收入，不得將整季總額平均分攤",r.bill_id));}
+            }
+        }
+        if issues.is_empty() {
+            for offset in 0..p.months {
+                let month=from.checked_add_months(Months::new(offset)).ok_or("日期超出範圍")?;
+                let mut income=Decimal::ZERO;
+                for r in rows {
+                    let date=day(&r.start)?;
+                    if (date.year(),date.month())==(month.year(),month.month()) {
+                        income+=number(if p.basis=="gross" {r.gross.as_deref()}else{r.untaxed.as_deref()})?;
+                    }
+                }
+                let proportional=income.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100))).ok_or("金額超出範圍")?;
+                let amount=proportional.max(floor);floor_total+=amount;
+                monthly.push(json!({"month":month.format("%Y-%m").to_string(),"income":income.normalize().to_string(),
+                    "proportionalAmount":proportional.normalize().to_string(),"minimum":floor.normalize().to_string(),
+                    "amountAfterFloor":amount.normalize().to_string()}));
+            }
+        }
+    }
     let base=if issues.is_empty() {
         let raw=if p.kind=="fixedArea" {
             number(p.area.as_deref())?.checked_mul(number(p.unit_price.as_deref())?)
                 .and_then(|n|n.checked_mul(Decimal::from(if p.unit_period=="month" {p.months}else{1})))
-        }else{revenue.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100)))}.ok_or("計算金額超出範圍")?;
+        }else if p.monthly_minimum.is_some() {Some(floor_total)}
+        else{revenue.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100)))}.ok_or("計算金額超出範圍")?;
         Some(format!("{:.*}",p.rounding_places as usize,raw.round_dp_with_strategy(p.rounding_places,RoundingStrategy::MidpointAwayFromZero)))
     }else{None};
     Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
         "plan":p,"receipts":rows,"sources":sources,"issues":issues,"baseRent":base,
+        "monthlyBreakdown":monthly,"feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"calculating",
         "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,
         "invoiceDirection":"receiveLandlordInvoice","note":"此為租金基礎試算；稅費、扣繳與正式付款待範例確認，不產生付款或變更審核狀態。"}))
 }

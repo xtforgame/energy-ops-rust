@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { energyHttp } from '@/api/energy';
 
-type Plan = {stationId:number;anchor:string;months:number;transfer:boolean;kind:string;basis:string;sharePercent:string|null;area:string|null;unitPrice:string|null;unitPeriod:string;roundingPlaces:number};
+type Plan = {stationId:number;anchor:string;months:number;transfer:boolean;kind:string;basis:string;sharePercent:string|null;area:string|null;unitPrice:string|null;unitPeriod:string;roundingPlaces:number;feeKind?:string|null;monthlyMinimum?:string|null;commercialOperationDate?:string|null};
 type Row = {billId:number;start:string|null;end:string|null;documentNo:string|null;attachmentId:number|null;source:string;untaxed:string;gross:string;kwh:string;selected:boolean};
 const message=(e:any)=>e?.response?.data?.details?.message || e?.response?.data?.error?.details?.message || '操作失敗：請確認權限、合約效期及輸入資料，修改後重試。';
 const text=(v:unknown)=>v==null?'':String(v);
@@ -53,12 +53,13 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
           <Alert severity="warning">稅費、扣繳與補充保費待實際範例確認，目前只算租金基底。面積與單價必須使用相同單位。轉供案場須收齊台電與轉供單據，零元也須有單據。</Alert>
           {error&&<Alert severity="error">{error}</Alert>}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+            <TextField select label="費用性質" value={plan.feeKind??'rent'} onChange={e=>change('feeKind',e.target.value)}><MenuItem value="rent">租金</MenuItem><MenuItem value="management">管理費</MenuItem></TextField>
             <TextField label="第一期起日（每月一日）" type="date" InputLabelProps={{shrink:true}} value={plan.anchor} onChange={e=>{change('anchor',e.target.value);setStart(e.target.value);}}/>
             <TextField label="每幾個月付款" type="number" value={plan.months} inputProps={{min:1,max:12}} onChange={e=>change('months',Number(e.target.value))}/>
             <TextField select label="此期間是否已轉供" sx={{minWidth:170}} value={transferChoice} onChange={e=>{setTransferChoice(e.target.value);change('transfer',e.target.value==='true');}}>
               <MenuItem value="false">未轉供</MenuItem><MenuItem value="true">已轉供</MenuItem>
             </TextField>
-            <TextField select label="租金方式" value={plan.kind} onChange={e=>change('kind',e.target.value)}><MenuItem value="fixedArea">面積 × 固定單價</MenuItem><MenuItem value="revenueShare">電費收入 × 比例</MenuItem></TextField>
+            <TextField select label="租金方式" value={plan.kind} onChange={e=>{change('kind',e.target.value);if(e.target.value==='fixedArea')change('monthlyMinimum',null);}}><MenuItem value="fixedArea">面積 × 固定單價</MenuItem><MenuItem value="revenueShare">電費收入 × 比例</MenuItem></TextField>
             {plan.kind==='fixedArea'?<>
               <TextField label="面積" value={plan.area??''} onChange={e=>change('area',e.target.value)}/>
               <TextField label="每單位面積租金" value={plan.unitPrice??''} onChange={e=>change('unitPrice',e.target.value)}/>
@@ -66,7 +67,10 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
             </>:<TextField label="租金比例（%）" value={plan.sharePercent??''} onChange={e=>change('sharePercent',e.target.value)}/>}
             <TextField select label="收入金額基底" value={plan.basis} onChange={e=>change('basis',e.target.value)}><MenuItem value="untaxed">未稅電費收入</MenuItem><MenuItem value="gross">含稅電費收入</MenuItem></TextField>
             <TextField select label="四捨五入位數" value={plan.roundingPlaces} onChange={e=>change('roundingPlaces',Number(e.target.value))}><MenuItem value={0}>整元</MenuItem><MenuItem value={1}>1 位</MenuItem><MenuItem value={2}>2 位</MenuItem></TextField>
+            {plan.kind==='revenueShare'&&<TextField label="每月最低金額（無保底留空）" value={plan.monthlyMinimum??''} onChange={e=>change('monthlyMinimum',e.target.value.trim()||null)}/>}
+            <TextField label="正式併聯發電日（起算條款適用時）" type="date" InputLabelProps={{shrink:true}} value={plan.commercialOperationDate??''} onChange={e=>change('commercialOperationDate',e.target.value||null)}/>
           </Stack>
+          {plan.monthlyMinimum!=null&&<Alert severity="warning">每月保底需明確月別收入及正式併聯日期；先逐月取「收入 × 比例」與保底的較大值，再合計並依設定進位。整期併聯前不計費；首期不足月、跨月收入拆分及正式進位方式待確認，不自動推算。</Alert>}
           <Stack direction="row" spacing={2}>
             <TextField label="本次計算起日" type="date" InputLabelProps={{shrink:true}} value={start} onChange={e=>{setStart(e.target.value);setRows([]);setResult(null);}}/>
             <Button disabled={busy||!transferChoice||!start||!plan.anchor||Boolean(error.includes('另一案場'))} onClick={loadBills}>儲存試算設定並載入單據</Button>
@@ -85,9 +89,13 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
           {result&&<>
             {result.issues.map((s:string,i:number)=><Alert key={i} severity="warning">{s}</Alert>)}
             <Table size="small"><TableHead><TableRow><TableCell>來源</TableCell><TableCell>收件狀態</TableCell><TableCell>收入基底合計</TableCell><TableCell>度數合計</TableCell></TableRow></TableHead><TableBody>
-              {['taipower','transfer'].map(s=><TableRow key={s}><TableCell>{s==='taipower'?'台電':'轉供'}</TableCell><TableCell>{{received:'已收齊',missing:'缺單',needsReview:'待確認',notApplicable:'不適用',notRequired:'固定租金不以此計算'}[result.sources[s].status as string]}</TableCell><TableCell>{result.sources[s].amount??'—'}</TableCell><TableCell>{result.sources[s].kwh??'—'}</TableCell></TableRow>)}
+              {['taipower','transfer'].map(s=><TableRow key={s}><TableCell>{s==='taipower'?'台電':'轉供'}</TableCell><TableCell>{{received:'已收齊',missing:'缺單',needsReview:'待確認',notApplicable:'不適用',notRequired:'本期不需單據計算'}[result.sources[s].status as string]}</TableCell><TableCell>{result.sources[s].amount??'—'}</TableCell><TableCell>{result.sources[s].kwh??'—'}</TableCell></TableRow>)}
             </TableBody></Table>
-            <Typography>本期：{result.periodStart}～{result.periodEnd}；租金基礎試算：{result.baseRent??'資料未齊，無法計算'} 元</Typography>
+            {!!result.monthlyBreakdown?.length&&<Table size="small"><TableHead><TableRow>{['月份','收入基底','比例計算','每月保底','保底後金額（未進位）'].map(s=><TableCell key={s}>{s}</TableCell>)}</TableRow></TableHead><TableBody>
+              {result.monthlyBreakdown.map((m:any)=><TableRow key={m.month}>{['month','income','proportionalAmount','minimum','amountAfterFloor'].map(k=><TableCell key={k}>{m[k]}</TableCell>)}</TableRow>)}
+            </TableBody></Table>}
+            {result.chargeStatus==='notStarted'&&<Alert severity="info">整個週期均在正式併聯發電日前，不計費。</Alert>}
+            <Typography>本期：{result.periodStart}～{result.periodEnd}；{result.feeKind==='management'?'管理費':'租金'}基礎試算：{result.baseRent??'資料未齊，無法計算'} 元</Typography>
             <Alert severity="warning">尚非付款金額。稅費與扣繳待確認；正式送審、付款及排程待後續串接。</Alert>
             <Button onClick={download}>匯出試算 JSON（含來源與待確認事項）</Button>
           </>}
