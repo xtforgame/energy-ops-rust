@@ -240,3 +240,11 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 `GET E/bills/{billId}/easyflow-application` (FLOW_VIEW): read-only draft from saved bill/master data.
 Default JSON; `?format=csv` returns UTF-8 CSV. No workflow advancement or EasyFlow submission.
 See [EASYFLOW-APPLICATION-EXPORT.md](EASYFLOW-APPLICATION-EXPORT.md) for schema, field provenance and pending rules.
+
+# Landlord rent cycle drafts (2026-11-19)
+
+`GET/POST E/contracts/{contractId}/rent-cycle` reads/saves cycle draft settings.
+`GET E/contracts/{contractId}/rent-cycle/bills?start=YYYY-MM-DD` lists same-station candidates.
+`POST E/contracts/{contractId}/rent-cycle/preview` checks coverage and computes base rent from confirmed draft inputs.
+Saving requires MASTER_MANAGE; other operations require FLOW_VIEW. No payout record, tax calculation, workflow transition, or EasyFlow submission.
+See [RENT-CYCLE-HANDOFF-20261119.md](RENT-CYCLE-HANDOFF-20261119.md) for schemas, supported rules and integration boundaries.

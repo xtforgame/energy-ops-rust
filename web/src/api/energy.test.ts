@@ -62,7 +62,7 @@ describe('路由表：每個端點都在組織前綴下，回應轉成頁面要�
     const keys = ENERGY_ROUTES.map((r) => `${r.method} ${r.path}`);
     expect(new Set(keys).size).toBe(keys.length);
     // 11/19: master already had 108 routes; application export adds one.
-    expect(keys.length).toBe(109);
+    expect(keys.length).toBe(113);
   });
 
   for (const route of ENERGY_ROUTES) {

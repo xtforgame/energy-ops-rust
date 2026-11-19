@@ -50,6 +50,10 @@ export interface EnergyRoute {
 
 /** 能源 API 的完整清單（契約 docs/API-ENERGY.md）。沒有 adapt 的原樣交給頁面。 */
 export const ENERGY_ROUTES: EnergyRoute[] = [
+  { method: 'GET', path: '/contracts/:contractId/rent-cycle' },
+  { method: 'POST', path: '/contracts/:contractId/rent-cycle' },
+  { method: 'GET', path: '/contracts/:contractId/rent-cycle/bills' },
+  { method: 'POST', path: '/contracts/:contractId/rent-cycle/preview' },
   // 組織治理
   { method: 'GET', path: '/departments', adapt: unwrapItems },
   { method: 'POST', path: '/departments' },

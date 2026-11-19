@@ -24,3 +24,4 @@ mod energy_attachments;
 mod energy_reminders;
 mod energy_step_requirements;
 mod energy_easyflow;
+mod energy_rent_cycle;
