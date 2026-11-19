@@ -247,6 +247,7 @@ async fn import_rows(tx: &mut Tx<'_>, ctx: &Ctx, rows: Vec<Vec<String>>) -> ApiR
         .await?;
         let invoice = json!({
             "contact": invoice_contact, "delivery": invoice_delivery, "email1": email1, "email2": email2, "address": invoice_address,
+            "counterpartyName": taipower_name, "counterpartyTaxId": taipower_tax_id,
         });
 
         if let Some(st) = existing_station {

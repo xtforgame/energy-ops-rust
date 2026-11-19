@@ -235,3 +235,16 @@ GOVERN_ORG＝department:manage ∪ member:manage；ASSIGN_ROLE＝member:manage�
 - `GET E/recognition/status` → `{ configured, available, reason?: tpr_not_configured|tpr_not_ready, batchSize, tickSeconds }`。
 
 辨識驅動：`recognize` 只送第一批（`EO_TPR_BATCH_SIZE`，預設 10、上限 50），其餘留在 `recognizing`；之後每次 tick（批次詳情被讀取時，或背景任務每 `EO_RECOGNITION_TICK_SECS` 秒，預設 60、0 ＝ 不啟動）只問服務一次，完成就寫回並送下一批。同一批同時只有一個 tick（批次 `data.driverLeaseUntil` 的原子租約，3 分鐘）。超過時間預算（每份 120 秒、最少 120 秒）或連不上 → 退回 `uploaded` 並記 `ingest.recognition_failed`；400／413／415 是永久錯誤，直接標 `failed`。停在 `uploading` 超過 10 分鐘的批次由背景任務重送。
+# EasyFlow application preparation (2026-11-19)
+
+`GET E/bills/{billId}/easyflow-application` (FLOW_VIEW): read-only draft from saved bill/master data.
+Default JSON; `?format=csv` returns UTF-8 CSV. No workflow advancement or EasyFlow submission.
+See [EASYFLOW-APPLICATION-EXPORT.md](EASYFLOW-APPLICATION-EXPORT.md) for schema, field provenance and pending rules.
+
+# Landlord rent cycle drafts (2026-11-19)
+
+`GET/POST E/contracts/{contractId}/rent-cycle` reads/saves cycle draft settings.
+`GET E/contracts/{contractId}/rent-cycle/bills?start=YYYY-MM-DD` lists same-station candidates.
+`POST E/contracts/{contractId}/rent-cycle/preview` checks coverage and computes base rent from confirmed draft inputs.
+Saving requires MASTER_MANAGE; other operations require FLOW_VIEW. No payout record, tax calculation, workflow transition, or EasyFlow submission.
+See [RENT-CYCLE-HANDOFF-20261119.md](RENT-CYCLE-HANDOFF-20261119.md) for schemas, supported rules and integration boundaries.

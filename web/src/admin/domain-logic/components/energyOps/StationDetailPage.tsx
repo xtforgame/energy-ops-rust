@@ -18,6 +18,7 @@ import {
 import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './routes';
 // 綁定的三個具名動作（`FRONTEND.md §2.84`）——這一頁是動作的家。
 import BindingActions, { type BindingKind } from './BindingActions';
+import RentCycle from './RentCycle';
 
 /** 卡 20261118-0427-a 時區修正：`toISOString()`／`Date` 的 `.slice()` 都是 UTC，顯示給人看要轉本地時間。
  *  後端存的 UTC 不動（`occurredAt` 原樣送 PATCH／顯示其他地方），這裡只管「轉成人看的字串」這一層。 */
@@ -706,6 +707,7 @@ const StationDetailPage: React.FC = () => {
                         sx={{ background: jvTokens.primary, color: '#fff', fontWeight: 600, height: 20 }}
                       />
                     )}
+                    <RentCycle base={base} contractId={c.id} stationId={Number(id)} />
                   </TableCell>
                 </TableRow>
               )) : <EmptyRow colSpan={6} />}

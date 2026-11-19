@@ -139,6 +139,44 @@ pub async fn get_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: we
     Ok(HttpResponse::Ok().json(bill_detail(&mut tx, &ctx, bill_id).await?))
 }
 
+/// Read-only preparation: same organization/view gate as bill detail. Never advances the workflow.
+pub async fn easyflow_application(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, q: web::Query<Value>) -> ApiResult<HttpResponse> {
+    let (org, bill_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::FLOW_VIEW, &meta).await?;
+    let format = q.get("format").and_then(Value::as_str).unwrap_or("json");
+    if !["json", "csv"].contains(&format) { return Err(err(400, "invalid_export_format")); }
+    let mut tx = core.pool.begin().await?;
+    let bill = bills::bill_in_org(&mut tx, ctx.org_id(), bill_id, false).await?;
+    let mut view = bills::to_view(&bill);
+    view["docType"] = json!(bill.effective_doc_type().as_str());
+    let station: Option<Value> = if let Some(id) = bill.station_id {
+        sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'name',s.name,
+          'projectCode',COALESCE(NULLIF(s.data->>'plantNo',''),s.project_code),
+          'companyName',p.name,'counterpartyName',s.data->'invoice'->>'counterpartyName',
+          'counterpartyTaxId',s.data->'invoice'->>'counterpartyTaxId','easyflowDefaults',s.data->'easyflowDefaults')
+          FROM tbl_energy_station s LEFT JOIN tbl_energy_landowner p
+          ON p.id=s.spv_payee_id AND p.organization_id=s.organization_id AND p.deleted_at IS NULL
+          WHERE s.id=$1 AND s.organization_id=$2 AND s.deleted_at IS NULL")
+          .bind(id).bind(ctx.org_id()).fetch_optional(&mut *tx).await?
+    } else { None };
+    // Only the originating bill attachment; never guess unrelated files from the batch/contract.
+    let mut source = Vec::new();
+    if let Some(id) = bill.source_attachment_id {
+        let row = attachments::attachment_in_org(&mut tx,ctx.org_id(),id).await?;
+        source.push(json!({"id":row.id,"originalFilename":row.original_filename,"mimeType":row.mime_type,
+          "hash":row.hash,"hashAlgorithm":row.hash_algo,"category":row.category,
+          "downloadPath":format!("/api/v1/orgs/{org}/energy/attachments/{id}/download")}));
+    }
+    let mut result = eo_domain::easyflow::build_application(&view,&station.unwrap_or(Value::Null),&json!(source));
+    result["organizationId"] = json!(org);
+    result["generatedAt"] = json!(ctx.now());
+    if format=="csv" {
+        Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store"))
+          .insert_header(("Content-Disposition",format!("attachment; filename=easyflow-bill-{bill_id}.csv")))
+          .content_type("text/csv; charset=utf-8").body(eo_domain::easyflow::application_csv(&result)))
+    } else { Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(result)) }
+}
+
 pub async fn patch_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
     let (org, bill_id) = path.into_inner();
     let ctx = gate(&core, &user, org, gates::FLOW_ACT, &meta).await?;
