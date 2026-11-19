@@ -23,3 +23,4 @@ mod energy_recognition;
 mod energy_attachments;
 mod energy_reminders;
 mod energy_step_requirements;
+mod energy_easyflow;

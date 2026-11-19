@@ -57,6 +57,7 @@ pub mod content_disposition;
 pub mod display_id;
 pub mod document_ingest;
 pub mod energy_rbac;
+pub mod easyflow;
 pub mod geocoder;
 pub mod rating;
 pub mod rbac;
