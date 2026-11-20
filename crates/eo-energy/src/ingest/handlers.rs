@@ -149,7 +149,15 @@ pub async fn easyflow_application(core: Core, user: CurrentUser, meta: RequestMe
     let bill = bills::bill_in_org(&mut tx, ctx.org_id(), bill_id, false).await?;
     let mut view = bills::to_view(&bill);
     view["docType"] = json!(bill.effective_doc_type().as_str());
-    let station: Option<Value> = if let Some(id) = bill.station_id {
+    view["ocrRaw"] = bill.ocr_raw.clone();
+    let station_id = match bill.station_id {
+        Some(id) => Some(id),
+        None => match bill.customer_number_raw.as_deref() {
+            Some(number) => bills::find_station_and_meter(&mut tx, ctx.org_id(), number, bill.business_date(ctx.today())).await?.map(|(s, _)| s.id),
+            None => None,
+        },
+    };
+    let station: Option<Value> = if let Some(id) = station_id {
         sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'name',s.name,
           'projectCode',COALESCE(NULLIF(s.data->>'plantNo',''),s.project_code),
           'companyName',p.name,'counterpartyName',s.data->'invoice'->>'counterpartyName',

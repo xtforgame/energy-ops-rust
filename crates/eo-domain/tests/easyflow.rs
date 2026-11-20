@@ -19,6 +19,7 @@ fn invoice_uses_untaxed_income_not_net_payable_and_preserves_dates() {
     assert_eq!(value(&p,"billingPeriodEnd"), "2026-09-30");
     assert_eq!(value(&p,"currentReadingDate"), "2026-10-01");
     assert_eq!(value(&p,"meterRentalFee"), "-983");
+    assert_eq!(value(&p,"summary"), "測試案場發電收入");
     assert_eq!(p["submissionAllowed"], false);
     assert!(p["pending"].as_array().unwrap().iter().any(|x| x["key"] == "ledgerPeriodConvention"));
 }
@@ -60,4 +61,19 @@ fn payment_line_items_must_reconcile_and_configured_options_have_provenance() {
     let partial = build_application(&json!({"docType":"consumptionDeviceRental","totalAmount":"250",
       "detailFields":{"meterRentalFee":"163"}}), &json!({}), &json!([]));
     assert_eq!(partial["lineItemsReconciled"],false);
+}
+
+#[test]
+fn canonical_rental_subtotal_and_net_payable_keep_their_actual_meaning() {
+    let bill=json!({"docType":"renewableSurplus","totalAmount":"16874",
+      "detailFields":{"purchaseEnergyFee":16874,"payableTotal":16735},
+      "ocrRaw":{"record":{"fields":{"meterRentalSubtotal":{"value":-983,"status":"ocr_extracted"}}}}});
+    let p=build_application(&bill,&json!({}),&json!([]));
+    assert_eq!(value(&p,"meterRentalFee"),"-983");
+    assert_eq!(value(&p,"payableTotal"),"16735");
+    assert_eq!(value(&p,"amount"),"16874");
+    let p=build_application(&json!({"docType":"renewableNoSurplus","totalAmount":0,
+      "detailFields":{"payableTotal":-250,"meterRentalFee":-163,"usageEnergyFee":-87}}),&json!({}),&json!([]));
+    assert_eq!(value(&p,"amount"),"250");
+    assert_eq!(p["lineItemsReconciled"],true);
 }

@@ -20,14 +20,21 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         "renewableNoSurplus" | "consumptionDevice" | "consumptionDeviceRental" | "consumptionBill" => "payment",
         _ => "unconfirmed",
     };
-    let detail = &bill["detailFields"];
+    let mut detail = bill["detailFields"].clone();
+    if !detail.is_object() { detail = json!({}); }
+    // Legacy platform detail omitted this canonical field. Use OCR's explicit subtotal only
+    // when the saved field is absent; an explicitly cleared/corrected field always wins.
+    let subtotal = &bill["ocrRaw"]["record"]["fields"]["meterRentalSubtotal"];
+    let rental_from_subtotal = detail.get("meterRentalFee").is_none()
+        && matches!(subtotal["status"].as_str(), Some("ocr_extracted" | "extracted" | "confirmed"))
+        && amount(&subtotal["value"]).is_some();
+    if rental_from_subtotal { detail["meterRentalFee"] = subtotal["value"].clone(); }
     let mut fields = Vec::new();
     for (key,label,v,source) in [
         ("customerNumber","電號",&bill["customerNumberRaw"],"bill.customerNumberRaw"),
         ("siteCode","案場編號",&station["projectCode"],"station.projectCode / imported plantNo"),
         ("siteName","案場名稱",&station["name"],"station.name"),
         ("companyName","公司名稱",&station["companyName"],"station.spvPayee.name"),
-        ("counterpartyName","收款／付款對象",&station["counterpartyName"],"station.invoice.counterpartyName"),
         ("counterpartyTaxId","對象統一編號",&station["counterpartyTaxId"],"station.invoice.counterpartyTaxId"),
         ("billingPeriodStart","計費期間起日",&bill["billingPeriodStart"],"bill.billingPeriodStart"),
         ("billingPeriodEnd","計費期間迄日（原單）",&bill["billingPeriodEnd"],"bill.billingPeriodEnd"),
@@ -35,24 +42,36 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("nextReadingDate","下期抄表日",&detail["nextReadingDate"],"bill.detailFields.nextReadingDate"),
         ("dueDate","單據繳費期限",&bill["dueDate"],"bill.dueDate"),
     ] { field(&mut fields,key,label,text(v),source); }
+    let counterparty = text(&station["counterpartyName"]);
+    field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| text(&detail["serviceDepartment"])),
+        if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
     for (key,label) in [("purchaseEnergyFee","購電電費（未稅）"),("businessTax","營業稅"),("electricityFeeTotal","電費合計"),
         ("meterRentalFee","電表租費（原始正負號）"),("usageEnergyFee","設備發電使用電費"),("payableTotal","應付總金額（明細）")] {
-        field(&mut fields,key,label,amount(&detail[key]),&format!("bill.detailFields.{key}"));
+        let source = if key == "meterRentalFee" && rental_from_subtotal { "bill.ocrRaw.record.fields.meterRentalSubtotal（原單電表租費小計）".into() }
+            else {format!("bill.detailFields.{key}")};
+        field(&mut fields,key,label,amount(&detail[key]),&source);
     }
-    field(&mut fields,"totalAmount","單據總金額（原始正負號）",amount(&bill["totalAmount"]),"bill.totalAmount");
+    field(&mut fields,"totalAmount","平台計算基準金額",amount(&bill["totalAmount"]),"bill.totalAmount（躉購單可能是未稅收入，非原單應付額）");
+    let payment_total = if detail.get("payableTotal").is_some() { amount(&detail["payableTotal"]) } else {amount(&bill["totalAmount"])};
     // No fallback from net total to invoice revenue. Unknown is never zero.
     let application_amount = match kind {
         "invoice" => amount(&detail["purchaseEnergyFee"]),
-        "payment" => amount(&bill["totalAmount"]).and_then(|s| Decimal::from_str(&s).ok()).map(|d| d.abs().normalize().to_string()),
+        "payment" => payment_total.clone().and_then(|s| Decimal::from_str(&s).ok()).map(|d| d.abs().normalize().to_string()),
         _ => None,
     };
     field(&mut fields,"amount",if kind=="invoice"{"開立金額（未稅）"}else{"付款申請總金額"}, application_amount,
-        if kind=="invoice"{"bill.detailFields.purchaseEnergyFee"}else{"abs(bill.totalAmount); application type must be payment"});
+        if kind=="invoice"{"bill.detailFields.purchaseEnergyFee"}else{"abs(bill.detailFields.payableTotal)，舊資料無此欄才取 bill.totalAmount"});
     field(&mut fields,"currency","幣別",Some("TWD".into()),"Taiwan electricity bill scope");
     for (key,label) in [("companyCode","EasyFlow 公司代碼"),("applicant","申請人"),("department","申請部門"),
         ("applicationDate","申請日期"),("summary","申請摘要／項目說明"),("expectedReceiptDate","預計收款日"),
         ("paymentMethod","付款方式"),("paymentTerms","付款條件"),("voucherStatus","憑證狀態"),("contractOption","有合約／簽呈選項")] {
-        field(&mut fields,key,label,text(&station["easyflowDefaults"][key]),&format!("station.data.easyflowDefaults.{key}（未設定則待確認）"));
+        let configured = text(&station["easyflowDefaults"][key]);
+        let generated = if key == "summary" && kind != "unconfirmed" {
+            text(&station["name"]).map(|name| format!("{name}{}", if kind == "invoice" { "發電收入" } else { "電費付款" }))
+        } else { None };
+        let source = if configured.is_none() && generated.is_some() { "依案場名稱與申請類型產生摘要".into() }
+            else { format!("station.data.easyflowDefaults.{key}（未設定則待確認）") };
+        field(&mut fields,key,label,configured.or(generated),&source);
     }
     let mut line_items = Vec::new();
     if kind=="payment" {
@@ -63,7 +82,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         }
     }
     let line_sum: Decimal = line_items.iter().filter_map(|x|x["amount"].as_str().and_then(|s|Decimal::from_str(s).ok())).sum();
-    let reconciled = kind=="payment" && !line_items.is_empty() && amount(&bill["totalAmount"])
+    let reconciled = kind=="payment" && !line_items.is_empty() && payment_total
         .and_then(|s|Decimal::from_str(&s).ok()).is_some_and(|d|d.abs()==line_sum);
     let mut pending = vec![
         json!({"key":"workflowApproval","message":"這是資料準備草稿，不代表審核通過，不可據此自動送出 EasyFlow。"}),

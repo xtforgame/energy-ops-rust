@@ -14,12 +14,21 @@ async fn easyflow_draft_is_org_scoped_read_only_and_does_not_need_landlord_contr
     sqlx::query("UPDATE tbl_energy_bill SET doc_type='renewableSurplus',review_status='pendingContract',detail_fields=$1 WHERE id=$2")
       .bind(json!({"purchaseEnergyFee":"16874","meterRentalFee":"-983"})).bind(bill).execute(&app.core.pool).await.unwrap();
     let url=app.e(org,&format!("/bills/{bill}/easyflow-application"));
+    sqlx::query("UPDATE tbl_energy_bill SET detail_fields=detail_fields-'meterRentalFee',ocr_raw=$1 WHERE id=$2")
+      .bind(json!({"record":{"fields":{"meterRentalSubtotal":{"value":-983,"status":"ocr_extracted"}}}}))
+      .bind(bill).execute(&app.core.pool).await.unwrap();
     let v=expect_status!(app.get(&admin,&url).await,200);
+    assert!(v["fields"].as_array().unwrap().iter().any(|f| f["key"]=="meterRentalFee" && f["value"]=="-983"));
     assert_eq!(v["applicationType"],"invoice");
     assert_eq!(v["submissionAllowed"],false);
     assert!(v["fields"].as_array().unwrap().iter().any(|f| f["key"]=="siteCode" && f["value"]=="32172"));
     assert!(v["fields"].as_array().unwrap().iter().any(|f| f["key"]=="amount" && f["value"]=="16874"));
     assert!(v["fields"].as_array().unwrap().iter().any(|f| f["key"]=="counterpartyName" && f["value"]=="測試台電"));
+    // Bills received before master data was imported can still be previewed, without mutating workflow.
+    sqlx::query("UPDATE tbl_energy_bill SET station_id=NULL,customer_number_raw='11728007947' WHERE id=$1")
+      .bind(bill).execute(&app.core.pool).await.unwrap();
+    let late=expect_status!(app.get(&admin,&url).await,200);
+    assert!(late["fields"].as_array().unwrap().iter().any(|f| f["key"]=="siteCode" && f["value"]=="32172"));
     let after=expect_status!(app.get(&admin,&app.e(org,&format!("/bills/{bill}"))).await,200);
     assert_eq!(after["reviewStatus"],"pendingContract");
     assert!(after["executions"].as_array().unwrap().is_empty());

@@ -69,11 +69,30 @@ fn cell_to_string(d: &Data) -> String {
 fn read_rows(bytes: &[u8]) -> ApiResult<Vec<Vec<String>>> {
     let cursor = Cursor::new(bytes.to_vec());
     let mut wb = open_workbook_from_rs::<Xlsx<_>, _>(cursor).map_err(|e| err_d(400, "bad_excel", json!({ "message": e.to_string() })))?;
-    let sheet_name = wb.sheet_names().first().cloned().ok_or_else(|| err(400, "bad_excel"))?;
+    // The supplied multi-sheet workbook contains presentation forms before its master-data sheet.
+    let names = wb.sheet_names();
+    let sheet_name = names.iter().find(|n| n.as_str() == "自動化所需欄位")
+        .or_else(|| names.first()).cloned().ok_or_else(|| err(400, "bad_excel"))?;
     let range = wb
         .worksheet_range(&sheet_name)
         .map_err(|e| err_d(400, "bad_excel", json!({ "message": e.to_string() })))?;
-    Ok(range.rows().map(|row| row.iter().map(cell_to_string).collect()).collect())
+    let mut rows: Vec<Vec<String>> = range.rows().map(|row| row.iter().map(cell_to_string).collect()).collect();
+    if sheet_name == "自動化所需欄位" {
+        // These two fields do not exist in that supplied format. Keep unknown values empty,
+        // rather than inventing a Taipower district from the region name.
+        for column in ["電費單上的服務部門", "發票開立單的收款對象"] {
+            if let Some(header) = rows.first() {
+                if !header.iter().any(|v| v.trim() == column) {
+                    let index = header.len();
+                    for (i, row) in rows.iter_mut().enumerate() {
+                        row.resize(index, String::new());
+                        row.push(if i == 0 { column.into() } else { String::new() });
+                    }
+                }
+            }
+        }
+    }
+    Ok(rows)
 }
 
 async fn find_or_create_subsidiary(tx: &mut Tx<'_>, org: i64, name: &str, code: Option<&str>, counts: &mut Counts) -> ApiResult<i64> {
@@ -182,7 +201,7 @@ async fn import_rows(tx: &mut Tx<'_>, ctx: &Ctx, rows: Vec<Vec<String>>) -> ApiR
         let subsidiary_name = get("持有子公司");
         let subsidiary_code = get("子公司簡稱");
         let taipower_name = get("發票開立單的收款對象");
-        let taipower_tax_id = get("統一編號");
+        let taipower_tax_id = get("統一編號").map(|v| if v.chars().all(|c| c.is_ascii_digit()) && v.len() < 8 { format!("{v:0>8}") } else { v });
         let invoice_contact = get("財會對應窗口");
         let invoice_delivery = get("發票寄送方式");
         let email1 = get("email 1");

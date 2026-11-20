@@ -12,7 +12,7 @@ describe('EasyFlow application preparation', () => {
       pending:[{key:'date',message:'日期定義待確認'}], attachments:[],
     }});
     render(<EasyFlowApplication base="/api/test" billId={42} />);
-    fireEvent.click(screen.getByRole('button',{name:'準備 EasyFlow 申請資料'}));
+    fireEvent.click(screen.getByRole('button',{name:'預覽 EasyFlow 申請表'}));
     await screen.findByText('16874');
     expect(energyHttp.get).toHaveBeenCalledWith('/api/test/bills/42/easyflow-application');
     expect(screen.getByText('日期定義待確認')).toBeTruthy();
@@ -21,7 +21,7 @@ describe('EasyFlow application preparation', () => {
   it('shows a failed request without leaving a stale download', async () => {
     vi.mocked(energyHttp.get).mockRejectedValue(new Error('offline'));
     render(<EasyFlowApplication base="/api/test" billId={42} />);
-    fireEvent.click(screen.getByRole('button',{name:'準備 EasyFlow 申請資料'}));
+    fireEvent.click(screen.getByRole('button',{name:'預覽 EasyFlow 申請表'}));
     await waitFor(()=>expect(screen.getByText('無法取得申請資料，請重試。')).toBeTruthy());
     expect(screen.queryByRole('button',{name:'下載 JSON（自動化用）'})).toBeNull();
   });
