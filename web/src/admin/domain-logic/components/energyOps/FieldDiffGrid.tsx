@@ -6,6 +6,7 @@ import { useTranslate } from 'react-admin';
 import { billReviewFieldsFor, extractedValueOf } from 'common/plugins/EnergyOpsCommonPlugin/taipowerExtractor';
 import { jvTokens } from './shared';
 import { colorForField, fieldFill } from './fieldColors';
+import { emptyFieldMessage } from './recognitionDisplay';
 
 /**
  * **「辨識值 vs 最終值」—— 全站唯一一份。**
@@ -100,6 +101,7 @@ export interface FieldDiffGridProps {
   templateId?: string | null;
   /** 後端回的辨識值（`ocrExtracted`）。 */
   ocrExtracted?: Record<string, any> | null;
+  ocrRaw?: unknown;
   /** 後端算好的「被改過的欄位」。**前端不自己算。** */
   changedFields?: string[] | null;
   /** 最終值的草稿。 */
@@ -132,9 +134,9 @@ export interface FieldDiffGridProps {
 
 const FieldDiffGrid: React.FC<FieldDiffGridProps> = ({
   fields, templateId, boxedFields,
-  ocrExtracted, changedFields, draft, onChange, editable,
+  ocrExtracted, ocrRaw, changedFields, draft, onChange, editable,
   rowTestId, inputTestId, ocrTestId,
-  notExtractedLabel, focusedField, onFocusField, extraMark,
+  focusedField, onFocusField, extraMark,
   labelWidth, markWidth = 96,
 }) => {
   const translate = useTranslate();
@@ -217,7 +219,7 @@ const FieldDiffGrid: React.FC<FieldDiffGridProps> = ({
                     sx={{ color: jvTokens.muted, fontVariantNumeric: 'tabular-nums' }}
                   >
                     {extracted === null || extracted === undefined || extracted === ''
-                      ? (notExtractedLabel ?? '—')
+                      ? emptyFieldMessage(ocrRaw, f, templateId)
                       : String(extracted)}
                   </Typography>
                 </TableCell>

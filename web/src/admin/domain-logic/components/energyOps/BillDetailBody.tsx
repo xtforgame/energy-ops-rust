@@ -1251,6 +1251,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
               // 哪些欄位在紙上找得到位置 —— 色點實心／空心靠它。
               boxedFields={boxes.map((b) => b.field)}
               ocrExtracted={bill?.ocrExtracted}
+              ocrRaw={bill?.ocrRaw}
               changedFields={bill?.changedFields}
               draft={draft}
               onChange={(f, v) => setDraft({ ...draft, [f]: v })}
@@ -1291,6 +1292,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
             <FieldDiffGrid
               fields={BILL_DETAIL_FIELD_KEYS}
               ocrExtracted={bill?.ocrExtracted}
+              ocrRaw={bill?.ocrRaw}
               changedFields={bill?.detailChangedFields}
               draft={detailDraft as any}
               onChange={(f, v) => setDetailDraft({ ...detailDraft, [f]: v })}
