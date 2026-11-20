@@ -4,6 +4,7 @@
 pub mod bills;
 pub mod handlers;
 pub mod recognition;
+pub mod rent_payment;
 pub mod route;
 pub mod service;
 
@@ -52,6 +53,8 @@ impl AppPlugin for IngestPlugin {
         cfg.get(&path("/bills/{billId}/branch-preview"), web::get().to(h::branch_preview));
         cfg.get(&path("/bills/{billId}/payouts"), web::get().to(h::bill_payouts));
         cfg.get(&path("/bills/{billId}/easyflow-application"), web::get().to(h::easyflow_application));
+        cfg.get(&path("/bills/{billId}/rent-payment"), web::get().to(rent_payment::get));
+        cfg.post(&path("/bills/{billId}/rent-payment"), web::post().to(rent_payment::save));
         cfg.post(&path("/bills/{billId}/submit"), web::post().to(h::submit_bill));
         cfg.post(&path("/bills/{billId}/match"), web::post().to(h::match_bill));
         cfg.post(&path("/bills/{billId}/rematch"), web::post().to(h::rematch_bill));

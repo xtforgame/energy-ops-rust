@@ -61,6 +61,7 @@ pub mod easyflow;
 pub mod geocoder;
 pub mod rating;
 pub mod rent_cycle;
+pub mod rent_payment;
 pub mod rbac;
 pub mod resolve_mode;
 pub mod resource_identifier;
