@@ -53,3 +53,5 @@ python test_sql.py
 抽取需 Python openpyxl；已產出的資料包匯入只需 psql，不需 Python。test_sql.py 使用本地已存在 postgres:15-alpine，在獨立容器驗證去重、rollback、衝突跳過與組織隔離，不碰正式平台資料庫。驗證完自動移除測試容器。
 
 2026-11-22：本地平台 WSL 連線失敗，依使用者指示不重啟。資料包已產出，但本地平台匯入及電費單端到端實跑尚未執行；獨立 SQL 測試不代表平台驗收。
+
+同日後續：另建隔離 Docker 測試平台（未重啟原服務），已實際匯入 98 個案場及 98 筆電號，並以六份既有 PDF 驗證電號對應與 EasyFlow 待審表產出。這是本地測試資料庫，不代表客戶遠端已匯入；詳見 `docs/2026-11-22-pdf-to-easyflow-review.md`。

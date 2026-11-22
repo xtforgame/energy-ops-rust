@@ -27,6 +27,7 @@ import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode, apiErrorPayload } from '../../../dataProvider/apiError';
 import { EnergyPageFrame, Money, jvTokens, SourcePreviewFrame } from './shared';
 import RecognitionNote from './RecognitionNote';
+import EasyFlowApplication from './EasyFlowApplication';
 import { intakeStageMessage } from './recognitionDisplay';
 import { billRoute, executionRoute, ingestListRoute } from './routes';
 
@@ -503,6 +504,7 @@ const IngestBatchDetailPage: React.FC = () => {
       <Box>
         {item.billId != null ? (
           <>
+            <Box sx={{mb:2}}><EasyFlowApplication base={base} billId={item.billId}/></Box>
             {/* 「辨識值 vs 最終值」是**全站唯一一份**（`FieldDiffGrid`）——
                 單據詳情頁 render 的是同一個元件。
                 這一頁與那一頁**不合併**（送件的 item 沒有 execution／流程圖／

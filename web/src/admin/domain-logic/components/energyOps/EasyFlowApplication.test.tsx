@@ -1,10 +1,33 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect } from 'vitest';
 import EasyFlowApplication from './EasyFlowApplication';
 import { energyHttp } from '@/api/energy';
-vi.mock('@/api/energy', () => ({ energyHttp: { get: vi.fn() } }));
+vi.mock('@/api/energy', () => ({ energyHttp: { get: vi.fn(), post:vi.fn() } }));
 
 describe('EasyFlow application preparation', () => {
+  it('locks editing while a save is pending so later input cannot be discarded',async()=>{
+    const data={applicationType:'invoice',canReview:true,sourceRevision:'s',draftRevision:'d',fields:[{key:'applicant',label:'申請人',value:null,status:'pending',source:'master'}],pending:[],attachments:[]};
+    vi.mocked(energyHttp.get).mockResolvedValue({data} as any);
+    let finish!:(value:any)=>void;
+    vi.mocked(energyHttp.post).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+    render(<EasyFlowApplication base="/api/test" billId={44} autoOpen/>);
+    const input=await screen.findByLabelText('申請人');
+    fireEvent.click(screen.getByRole('button',{name:'儲存申請草稿'}));
+    expect((input as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button',{name:'關閉'}) as HTMLButtonElement).disabled).toBe(true);
+    await act(async()=>finish({data}));
+    expect((input as HTMLInputElement).disabled).toBe(false);
+  });
+  it('opens from intake and saves application fields for review without submitting to EF',async()=>{
+    const data={applicationType:'invoice',canReview:true,sourceRevision:'source-1',draftRevision:'draft-1',applicationReview:{state:'draft'},fields:[{key:'applicant',label:'申請人',value:null,status:'pending',source:'master'}],pending:[],attachments:[]};
+    vi.mocked(energyHttp.get).mockResolvedValue({data} as any);
+    vi.mocked(energyHttp.post).mockResolvedValue({data:{...data,applicationReview:{state:'prepared',stale:false}}} as any);
+    render(<EasyFlowApplication base="/api/test" billId={43} autoOpen />);
+    fireEvent.change(await screen.findByLabelText('申請人'),{target:{value:'承辦甲'}});
+    fireEvent.click(screen.getByRole('button',{name:'儲存申請草稿'}));
+    await waitFor(()=>expect(energyHttp.post).toHaveBeenCalledWith('/api/test/bills/43/easyflow-application',expect.objectContaining({sourceRevision:'source-1',draftRevision:'draft-1',action:'save',values:expect.objectContaining({applicant:'承辦甲'})})));
+    expect(screen.queryByRole('button',{name:'送出 EasyFlow'})).toBeNull();
+  });
   it('loads saved server values, shows pending rules and never offers submit', async () => {
     vi.mocked(energyHttp.get).mockResolvedValue({ status:200,statusText:'OK',headers:{},config:{headers:{} as any}, data: {
       applicationType:'invoice', submissionAllowed:false,

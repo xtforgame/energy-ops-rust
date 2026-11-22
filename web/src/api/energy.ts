@@ -116,6 +116,7 @@ export const ENERGY_ROUTES: EnergyRoute[] = [
   { method: 'GET', path: '/bills/:billId/branch-preview', intake: true },
   { method: 'GET', path: '/bills/:billId/payouts', adapt: unwrapItems, intake: true },
   { method: 'GET', path: '/bills/:billId/easyflow-application', intake: true },
+  { method: 'POST', path: '/bills/:billId/easyflow-application', intake: true },
   { method: 'POST', path: '/bills/:billId/submit', intake: true },
   { method: 'POST', path: '/bills/:billId/match', intake: true },
   { method: 'POST', path: '/ingest-batches', intake: true },
