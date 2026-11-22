@@ -258,6 +258,8 @@ pub const BILL_DETAIL_FIELDS: &[DetailField] = &[
     DetailField { camel: "flowEnergyFee", snake: "flow_energy_fee", canonical_key: "flowEnergyFee", kind: DetailFieldKind::Num },
     DetailField { camel: "powerFactorAdjustmentFee", snake: "power_factor_adjustment_fee", canonical_key: "powerFactorAdjustmentFee", kind: DetailFieldKind::Num },
     DetailField { camel: "electricityAdjustmentAmount", snake: "electricity_adjustment_amount", canonical_key: "electricityAdjustmentAmount", kind: DetailFieldKind::Num },
+    DetailField { camel: "meterReadingDiscount", snake: "meter_reading_discount", canonical_key: "meterReadingDiscount", kind: DetailFieldKind::Num },
+    DetailField { camel: "taxBeforeAmount", snake: "tax_before_amount", canonical_key: "taxBeforeAmount", kind: DetailFieldKind::Num },
     DetailField { camel: "payableTotal", snake: "payable_total", canonical_key: "payableTotal", kind: DetailFieldKind::Num },
     DetailField { camel: "carrierNumber", snake: "carrier_number", canonical_key: "carrierIdentity", kind: DetailFieldKind::Text },
     DetailField { camel: "invoiceNumber", snake: "invoice_number", canonical_key: "rentalInvoiceNumber", kind: DetailFieldKind::Text },

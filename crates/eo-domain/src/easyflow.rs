@@ -29,6 +29,15 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         && matches!(subtotal["status"].as_str(), Some("ocr_extracted" | "extracted" | "confirmed"))
         && amount(&subtotal["value"]).is_some();
     if rental_from_subtotal { detail["meterRentalFee"] = subtotal["value"].clone(); }
+    // Old bills predate these detail mappings. Preserve explicit corrections, including null.
+    let mut canonical_sources = Vec::new();
+    for key in ["meterReadingDiscount", "taxBeforeAmount"] {
+        let original=&bill["ocrRaw"]["record"]["fields"][key];
+        if detail.get(key).is_none() && matches!(original["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")) && amount(&original["value"]).is_some() {
+            detail[key]=original["value"].clone();canonical_sources.push(key);
+        }
+    }
+    let high_voltage = bill["templateId"]=="high_voltage" || bill["ocrRaw"]["record"]["fields"]["templateId"]["value"]=="high_voltage";
     let mut fields = Vec::new();
     for (key,label,v,source) in [
         ("customerNumber","電號",&bill["customerNumberRaw"],"bill.customerNumberRaw"),
@@ -46,8 +55,11 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| text(&detail["serviceDepartment"])),
         if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
     for (key,label) in [("purchaseEnergyFee","購電電費（未稅）"),("businessTax","營業稅"),("electricityFeeTotal","電費合計"),
-        ("meterRentalFee","電表租費（原始正負號）"),("usageEnergyFee","設備發電使用電費"),("payableTotal","應付總金額（明細）")] {
+        ("meterRentalFee","電表租費（原始正負號）"),("usageEnergyFee","設備發電使用電費"),("payableTotal","應付總金額（明細）"),
+        ("baseEnergyFee","基本電費（約定）"),("flowEnergyFee","流動電費"),("powerFactorAdjustmentFee","功率因數調整費"),
+        ("meterReadingDiscount","電子帳單優惠減收金額"),("electricityAdjustmentAmount","電價調整金額"),("taxBeforeAmount","稅前應繳總金額")] {
         let source = if key == "meterRentalFee" && rental_from_subtotal { "bill.ocrRaw.record.fields.meterRentalSubtotal（原單電表租費小計）".into() }
+            else if canonical_sources.contains(&key) {format!("bill.ocrRaw.record.fields.{key}（舊單據原始辨識值）")}
             else {format!("bill.detailFields.{key}")};
         field(&mut fields,key,label,amount(&detail[key]),&source);
     }
@@ -74,7 +86,15 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         field(&mut fields,key,label,configured.or(generated),&source);
     }
     let mut line_items = Vec::new();
-    if kind=="payment" {
+    if kind=="payment" && high_voltage {
+        for (key,label) in [("baseEnergyFee","基本電費（約定）"),("flowEnergyFee","流動電費"),("powerFactorAdjustmentFee","功率因數調整費"),
+            ("meterReadingDiscount","電子帳單優惠減收金額"),("meterRentalFee","電器租費"),("electricityAdjustmentAmount","電價調整金額")] {
+            if let Some(d)=amount(&detail[key]) {
+                let source=if canonical_sources.contains(&key){format!("bill.ocrRaw.record.fields.{key}")}else{format!("bill.detailFields.{key}")};
+                line_items.push(json!({"key":key,"description":label,"amount":d,"source":source}));
+            }
+        }
+    } else if kind=="payment" {
         for (key,label) in [("meterRentalFee","電表租費"),("usageEnergyFee","設備發電使用電費")] {
             if let Some(d)=amount(&detail[key]).and_then(|s|Decimal::from_str(&s).ok()) {
                 line_items.push(json!({"key":key,"description":label,"amount":d.abs().normalize().to_string(),"source":format!("abs(bill.detailFields.{key})")}));
@@ -82,8 +102,20 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         }
     }
     let line_sum: Decimal = line_items.iter().filter_map(|x|x["amount"].as_str().and_then(|s|Decimal::from_str(s).ok())).sum();
-    let reconciled = kind=="payment" && !line_items.is_empty() && payment_total
-        .and_then(|s|Decimal::from_str(&s).ok()).is_some_and(|d|d.abs()==line_sum);
+    let total=payment_total.as_deref().and_then(|s|Decimal::from_str(s).ok());
+    let rounded_sum=line_sum.round_dp_with_strategy(0,rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+    let tax_reconciled=amount(&detail["taxBeforeAmount"]).and_then(|s|Decimal::from_str(&s).ok())
+        .zip(amount(&detail["businessTax"]).and_then(|s|Decimal::from_str(&s).ok())).zip(total)
+        .is_some_and(|((net,tax),gross)|net+tax==gross);
+    let required_present=["baseEnergyFee","flowEnergyFee"].iter().all(|k|amount(&detail[*k]).is_some());
+    let explicit_missing=["powerFactorAdjustmentFee","meterReadingDiscount","meterRentalFee","electricityAdjustmentAmount"].iter()
+        .any(|k|detail.get(*k).is_some()&&amount(&detail[*k]).is_none());
+    let reconciled = kind=="payment" && !line_items.is_empty() && if high_voltage {
+        required_present && !explicit_missing && tax_reconciled && total.is_some_and(|d|d==rounded_sum)
+    } else {total.is_some_and(|d|d.abs()==line_sum)};
+    let reconciliation=if high_voltage {json!({"basis":"signed_bill_charges_including_tax","lineSum":line_sum.normalize().to_string(),
+       "roundedLineSum":rounded_sum.normalize().to_string(),"roundingDifference":(rounded_sum-line_sum).normalize().to_string(),
+       "taxBreakdownReconciled":tax_reconciled,"message":"依原單計費項目保留正負號加總，按整元核對總額；稅前總額＋營業稅另行驗算，營業稅不重複加入明細。"})}else{Value::Null};
     let mut pending = vec![
         json!({"key":"workflowApproval","message":"這是資料準備草稿，不代表審核通過，不可據此自動送出 EasyFlow。"}),
         json!({"key":"ledgerPeriodConvention","message":"紀錄表計費迄日採原單計費日或本次抄表日待確認；兩個日期分別保留。"}),
@@ -99,7 +131,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     if attachments.as_array().is_none_or(|a| a.is_empty()) { pending.push(json!({"key":"sourceAttachment","message":"尚未取得來源附件，請補上原始單據。"})); }
     json!({"schemaVersion":"easyflow.application.v1","state":"draft","submissionAllowed":false,
         "billId":bill["id"],"reviewStatus":bill["reviewStatus"],"approvalState":bill["approvalState"],
-        "applicationType":kind,"fields":fields,"lineItems":line_items,"lineItemsReconciled":reconciled,
+        "applicationType":kind,"fields":fields,"lineItems":line_items,"lineItemsReconciled":reconciled,"reconciliation":reconciliation,
         "attachments":attachments,"pending":pending})
 }
 
@@ -121,7 +153,7 @@ pub fn application_csv(p: &Value) -> String {
         let row=[key.to_string(),label.to_string(),text(&p[key]).unwrap_or_default(),"草稿，未送出".into(),"platform".into()];
         out.push_str(&row.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","));out.push_str("\r\n");
     }
-    for (section,label) in [("pending","待確認事項"),("attachments","來源附件清單"),("lineItems","費用明細")] {
+    for (section,label) in [("pending","待確認事項"),("attachments","來源附件清單"),("lineItems","費用明細"),("reconciliation","明細對帳與整元差額")] {
         let row=[section.to_string(),label.to_string(),p[section].to_string(),"草稿，未送出".into(),"platform".into()];
         out.push_str(&row.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","));out.push_str("\r\n");
     }

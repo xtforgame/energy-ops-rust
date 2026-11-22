@@ -77,3 +77,31 @@ fn canonical_rental_subtotal_and_net_payable_keep_their_actual_meaning() {
     assert_eq!(value(&p,"amount"),"250");
     assert_eq!(p["lineItemsReconciled"],true);
 }
+
+#[test]
+fn high_voltage_preserves_discounts_and_reconciles_display_precision_without_double_tax() {
+    for (detail,discount,net,total,sum,rounding) in [
+        (json!({"baseEnergyFee":1285.7,"flowEnergyFee":3720,"powerFactorAdjustmentFee":-45.8,"electricityAdjustmentAmount":85,"businessTax":240}),-10,4795,5035,"5034.9","0.1"),
+        (json!({"baseEnergyFee":514.2,"flowEnergyFee":2711.2,"powerFactorAdjustmentFee":-49.2,"electricityAdjustmentAmount":54.8,"meterRentalFee":1549,"businessTax":227}),-10,4543,4770,"4770","0"),
+    ] {
+        let mut bill=json!({"docType":"consumptionDeviceRental","templateId":"high_voltage","detailFields":detail,
+          "ocrRaw":{"record":{"fields":{"meterReadingDiscount":{"value":discount,"status":"extracted"},"taxBeforeAmount":{"value":net,"status":"extracted"}}}}});
+        bill["detailFields"]["payableTotal"]=json!(total);
+        let p=build_application(&bill,&json!({}),&json!([]));
+        assert_eq!(p["lineItemsReconciled"],true);
+        assert_eq!(p["reconciliation"]["lineSum"],sum);
+        assert_eq!(p["reconciliation"]["roundingDifference"],rounding);
+        assert_eq!(p["reconciliation"]["taxBreakdownReconciled"],true);
+        assert_eq!(value(&p,"meterReadingDiscount"),"-10");
+        assert!(!p["lineItems"].as_array().unwrap().iter().any(|x|x["key"]=="businessTax"));
+        assert!(p["lineItems"].as_array().unwrap().iter().any(|x|x["key"]=="meterReadingDiscount"&&x["amount"]=="-10"));
+        // Explicit corrections/clears win over old canonical data and do not silently reconcile.
+        bill["detailFields"]["meterReadingDiscount"]=Value::Null;
+        let cleared=build_application(&bill,&json!({}),&json!([]));
+        assert_eq!(value(&cleared,"meterReadingDiscount"),Value::Null);
+        assert_eq!(cleared["lineItemsReconciled"],false);
+        bill["detailFields"]["meterReadingDiscount"]=json!(-10);
+        bill["detailFields"]["businessTax"]=json!(999);
+        assert_eq!(build_application(&bill,&json!({}),&json!([]))["lineItemsReconciled"],false);
+    }
+}

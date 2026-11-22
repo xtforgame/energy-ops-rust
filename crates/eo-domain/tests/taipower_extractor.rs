@@ -30,6 +30,17 @@ fn one_bill(doc: &Value) -> ExtractedBill {
     bills.into_iter().next().unwrap()
 }
 
+#[test]
+fn high_voltage_discount_and_pre_tax_total_are_mapped_to_platform_details() {
+    let mut doc=high_voltage();
+    doc["record"]["fields"]["meterReadingDiscount"]=json!({"value":-10,"status":"extracted"});
+    doc["record"]["fields"]["taxBeforeAmount"]=json!({"value":4795,"status":"extracted"});
+    let b=one_bill(&doc);
+    let v=serde_json::to_value(b).unwrap();
+    assert_eq!(v["meterReadingDiscount"].as_f64(),Some(-10.0));
+    assert_eq!(v["taxBeforeAmount"].as_f64(),Some(4795.0));
+}
+
 /// 來源：taipowerExtractor.test.ts「躉購·有餘電 → renewableSurplus → bill-approval」
 #[test]
 fn renewable_surplus_goes_to_bill_approval() {

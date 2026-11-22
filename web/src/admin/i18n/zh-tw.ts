@@ -808,6 +808,8 @@ const customChineseTWMessages: TranslationMessages = {
         flowEnergyFee: '流動電費',
         powerFactorAdjustmentFee: '功率因數調整費',
         electricityAdjustmentAmount: '電價調整金額',
+        meterReadingDiscount: '電子帳單優惠減收金額',
+        taxBeforeAmount: '稅前應繳總金額',
         carrierNumber: '載具號碼',
         invoiceNumber: '發票號碼',
         contractNumberRaw: '契約編號',

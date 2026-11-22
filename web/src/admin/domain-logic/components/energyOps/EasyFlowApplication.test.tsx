@@ -5,6 +5,12 @@ import { energyHttp } from '@/api/energy';
 vi.mock('@/api/energy', () => ({ energyHttp: { get: vi.fn(), post:vi.fn() } }));
 
 describe('EasyFlow application preparation', () => {
+  it('shows signed inverter charges and the explicit rounding explanation',async()=>{
+    vi.mocked(energyHttp.get).mockResolvedValue({data:{applicationType:'payment',fields:[],pending:[],attachments:[],lineItems:[{key:'discount',description:'電子帳單優惠減收金額',amount:'-10'}],lineItemsReconciled:true,reconciliation:{lineSum:'5034.9',roundedLineSum:'5035',roundingDifference:'0.1',taxBreakdownReconciled:true,message:'營業稅不重複加入明細。'}}} as any);
+    render(<EasyFlowApplication base="/api/test" billId={45} autoOpen/>);
+    await screen.findByText('-10 TWD');
+    expect(screen.getByText(/明細合計 5034.9 元/)).toBeTruthy();
+  });
   it('locks editing while a save is pending so later input cannot be discarded',async()=>{
     const data={applicationType:'invoice',canReview:true,sourceRevision:'s',draftRevision:'d',fields:[{key:'applicant',label:'申請人',value:null,status:'pending',source:'master'}],pending:[],attachments:[]};
     vi.mocked(energyHttp.get).mockResolvedValue({data} as any);
