@@ -141,11 +141,11 @@ const RecognitionNote: React.FC<{
             </Typography>
           ))}
         </Stack>
-      ) : (
+      ) : summary.templateId ? (
         <Typography variant="caption" sx={{ color: jvTokens.muted }} data-testid="recognition-clean">
           {translate('energy.recognition.noIssues')}
         </Typography>
-      )}
+      ) : null}
     </Box>
   );
 };

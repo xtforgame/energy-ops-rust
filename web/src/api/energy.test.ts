@@ -61,7 +61,8 @@ describe('路由表：每個端點都在組織前綴下，回應轉成頁面要�
   it('清單共有契約上的全部端點（無重複）', () => {
     const keys = ENERGY_ROUTES.map((r) => `${r.method} ${r.path}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBe(80);
+    // 11/19: master already had 108 routes; application export adds one.
+    expect(keys.length).toBe(114);
   });
 
   for (const route of ENERGY_ROUTES) {

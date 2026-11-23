@@ -315,6 +315,8 @@ export const BILL_DETAIL_FIELDS: ReadonlyArray<{ key: string; kind: 'text' | 'da
   { key: 'flowEnergyFee', kind: 'num' },
   { key: 'powerFactorAdjustmentFee', kind: 'num' },
   { key: 'electricityAdjustmentAmount', kind: 'num' },
+  { key: 'meterReadingDiscount', kind: 'num' },
+  { key: 'taxBeforeAmount', kind: 'num' },
   { key: 'payableTotal', kind: 'num' },
   { key: 'carrierNumber', kind: 'text' },
   { key: 'invoiceNumber', kind: 'text' },

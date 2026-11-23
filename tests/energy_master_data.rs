@@ -554,6 +554,10 @@ async fn station_import() {
         .await
         .unwrap();
     assert_eq!(after_real, before + 8, "真的新增了 8 個案場");
+    let invoice_sources: Vec<serde_json::Value> = sqlx::query_scalar("SELECT data->'invoice' FROM tbl_energy_station WHERE organization_id=$1 AND data ? 'plantNo'")
+        .bind(org).fetch_all(&app.core.pool).await.unwrap();
+    assert!(!invoice_sources.is_empty());
+    assert!(invoice_sources.iter().all(|v| v.get("counterpartyName").is_some() && v.get("counterpartyTaxId").is_some()), "匯入時必須保留開票對象及統編來源");
 
     let payees = expect_status!(app.get(&owner, &format!("{base}/landowners")).await, 200);
     let names: Vec<&str> = payees["items"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();

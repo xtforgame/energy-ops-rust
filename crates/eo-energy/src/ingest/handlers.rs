@@ -139,6 +139,113 @@ pub async fn get_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: we
     Ok(HttpResponse::Ok().json(bill_detail(&mut tx, &ctx, bill_id).await?))
 }
 
+/// Read-only preparation: same organization/view gate as bill detail. Never advances the workflow.
+pub async fn easyflow_application(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, q: web::Query<Value>) -> ApiResult<HttpResponse> {
+    let (org, bill_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::FLOW_VIEW, &meta).await?;
+    let format = q.get("format").and_then(Value::as_str).unwrap_or("json");
+    if !["json", "csv"].contains(&format) { return Err(err(400, "invalid_export_format")); }
+    let mut tx = core.pool.begin().await?;
+    let result=application_snapshot(&mut tx,&ctx,bill_id).await?;
+    if format=="csv" {
+        Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store"))
+          .insert_header(("Content-Disposition",format!("attachment; filename=easyflow-bill-{bill_id}.csv")))
+          .content_type("text/csv; charset=utf-8").body(eo_domain::easyflow::application_csv(&result)))
+    } else { Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(result)) }
+}
+
+async fn application_snapshot(tx: &mut Tx<'_>,ctx:&Ctx,bill_id:i64)->ApiResult<Value>{
+    let org=ctx.org_id();
+    let bill = bills::bill_in_org(tx, ctx.org_id(), bill_id, false).await?;
+    let mut view = bills::to_view(&bill);
+    view["docType"] = json!(bill.effective_doc_type().as_str());
+    view["ocrRaw"] = bill.ocr_raw.clone();
+    let station_id = match bill.station_id {
+        Some(id) => Some(id),
+        None => match bill.customer_number_raw.as_deref() {
+            Some(number) => bills::find_station_and_meter(tx, ctx.org_id(), number, bill.business_date(ctx.today())).await?.map(|(s, _)| s.id),
+            None => None,
+        },
+    };
+    let station: Option<Value> = if let Some(id) = station_id {
+        sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'name',s.name,
+          'projectCode',COALESCE(NULLIF(s.data->>'plantNo',''),s.project_code),
+          'companyName',p.name,'counterpartyName',s.data->'invoice'->>'counterpartyName',
+          'counterpartyTaxId',s.data->'invoice'->>'counterpartyTaxId','easyflowDefaults',s.data->'easyflowDefaults')
+          FROM tbl_energy_station s LEFT JOIN tbl_energy_landowner p
+          ON p.id=s.spv_payee_id AND p.organization_id=s.organization_id AND p.deleted_at IS NULL
+          WHERE s.id=$1 AND s.organization_id=$2 AND s.deleted_at IS NULL")
+          .bind(id).bind(ctx.org_id()).fetch_optional(&mut **tx).await?
+    } else { None };
+    // Only the originating bill attachment; never guess unrelated files from the batch/contract.
+    let mut source = Vec::new();
+    if let Some(id) = bill.source_attachment_id {
+        let row = attachments::attachment_in_org(tx,ctx.org_id(),id).await?;
+        source.push(json!({"id":row.id,"originalFilename":row.original_filename,"mimeType":row.mime_type,
+          "hash":row.hash,"hashAlgorithm":row.hash_algo,"category":row.category,
+          "downloadPath":format!("/api/v1/orgs/{org}/energy/attachments/{id}/download")}));
+    }
+    let mut result = eo_domain::easyflow::build_application(&view,&station.unwrap_or(Value::Null),&json!(source));
+    result["organizationId"] = json!(org);
+
+
+    use sha2::{Digest, Sha256};
+    let revision = format!("{:x}", Sha256::digest(serde_json::to_vec(&result).unwrap()));
+    let saved = &bill.data["easyflowApplication"];
+    result["draftRevision"] = json!(format!("{:x}", Sha256::digest(serde_json::to_vec(saved).unwrap())));
+    let stale = saved.is_object() && saved["sourceRevision"] != revision;
+    if let Some(fields) = result["fields"].as_array_mut() {
+        for f in fields {
+            if let Some(value) = saved["values"].get(f["key"].as_str().unwrap_or("")) {
+                f["value"] = if value.as_str().is_some_and(|s| !s.trim().is_empty()) { value.clone() } else { Value::Null };
+                f["status"] = json!(if f["value"].is_null() { "pending" } else { "available" });
+                f["source"] = json!("承辦人填寫（申請草稿）");
+            }
+        }
+    }
+    result["sourceRevision"] = json!(revision);
+    result["canReview"] = json!(ctx.has("energy:flow:act").await? && mode_for(tx,ctx,"energyBill",bill_id).await?.verdict.can_edit_subject);
+    result["applicationReview"] = json!({"state":if stale {"needs_recheck"} else {saved["state"].as_str().unwrap_or("draft")},
+       "stale":stale,"reviewedAt":saved["reviewedAt"],"reviewedBy":saved["reviewedBy"]});
+    result["generatedAt"] = json!(ctx.now());
+    Ok(result)
+}
+
+/// Saves application preparation only. Does not approve a workflow or submit to EasyFlow.
+pub async fn save_easyflow_application(core: Core,user: CurrentUser,meta: RequestMeta,path:web::Path<(i64,i64)>,body:web::Json<Value>)->ApiResult<HttpResponse>{
+    let(org,bill_id)=path.into_inner();
+    let ctx=gate(&core,&user,org,gates::FLOW_ACT,&meta).await?;
+    let action=body["action"].as_str().unwrap_or("");
+    if !["save","confirm"].contains(&action){return Err(err(400,"invalid_application_action"));}
+    let allowed=["companyCode","applicant","department","applicationDate","summary","expectedReceiptDate","paymentMethod","paymentTerms","voucherStatus","contractOption"];
+    let values=body["values"].as_object().ok_or_else(||err(400,"invalid_application_values"))?;
+    if values.iter().any(|(k,v)|!allowed.contains(&k.as_str())||!v.is_string()||v.as_str().unwrap().len()>4000){return Err(err(400,"invalid_application_values"));}
+    let mut tx=core.pool.begin().await?;
+    let bill=bills::bill_in_org(&mut tx,org,bill_id,true).await?;
+    let current=application_snapshot(&mut tx,&ctx,bill_id).await?;
+    if current["canReview"]!=true{return Err(err(403,"subject_not_editable"));}
+    if body["sourceRevision"]!=current["sourceRevision"]{return Err(err(409,"application_source_changed"));}
+    if body["draftRevision"]!=current["draftRevision"]{return Err(err(409,"application_draft_changed"));}
+    if action=="confirm" {
+        let fields=current["fields"].as_array().unwrap();
+        if current["applicationType"]=="unconfirmed" || ["siteName","companyName","amount"].iter().any(|k|!fields.iter().any(|f|f["key"]==*k&&!f["value"].is_null())) || current["attachments"].as_array().is_none_or(|a|a.is_empty()) {
+            return Err(err(422,"application_source_incomplete"));
+        }
+    }
+    let before=bill.data["easyflowApplication"].clone();
+    let mut merged=before["values"].as_object().cloned().unwrap_or_default();
+    merged.extend(values.clone());
+    let next=json!({"values":merged,"sourceRevision":current["sourceRevision"],"state":if action=="confirm"{"confirmed_for_handoff"}else{"prepared"},
+       "reviewedBy":if action=="confirm"{json!(ctx.user_id())}else{Value::Null},"reviewedAt":if action=="confirm"{json!(ctx.now())}else{Value::Null},"updatedBy":ctx.user_id(),"updatedAt":ctx.now()});
+    sqlx::query("UPDATE tbl_energy_bill SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{easyflowApplication}',$1,true),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3")
+      .bind(&next).bind(bill_id).bind(org).execute(&mut *tx).await?;
+    crate::audit::record(&mut tx,&ctx,crate::audit::AuditInput::new("bill.corrected",bill_id,if action=="confirm"{"確認 EasyFlow 申請草稿（未送出）"}else{"儲存 EasyFlow 申請草稿"})
+      .payload(json!({"changes":{"easyflowApplication":{"from":before,"to":next}},"markReviewed":false}))).await?;
+    let result=application_snapshot(&mut tx,&ctx,bill_id).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(result))
+}
+
 pub async fn patch_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
     let (org, bill_id) = path.into_inner();
     let ctx = gate(&core, &user, org, gates::FLOW_ACT, &meta).await?;

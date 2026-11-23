@@ -6,6 +6,7 @@
 
 mod allocations;
 mod contracts;
+mod rent_cycle;
 mod meters;
 mod overview;
 mod station_import;
@@ -68,6 +69,10 @@ impl AppPlugin for MasterDataPlugin {
         cfg.post(&path("/contracts"), web::post().to(contracts::create_handler));
         cfg.get(&path("/contracts/{contractId}"), web::get().to(contracts::get_handler));
         cfg.patch(&path("/contracts/{contractId}"), web::patch().to(contracts::update_handler));
+        cfg.get(&path("/contracts/{contractId}/rent-cycle"), web::get().to(rent_cycle::get));
+        cfg.post(&path("/contracts/{contractId}/rent-cycle"), web::post().to(rent_cycle::save));
+        cfg.get(&path("/contracts/{contractId}/rent-cycle/bills"), web::get().to(rent_cycle::bills));
+        cfg.post(&path("/contracts/{contractId}/rent-cycle/preview"), web::post().to(rent_cycle::preview));
         cfg.post(&path("/imports/stations"), web::post().to(station_import::import_handler));
     }
 }

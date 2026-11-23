@@ -740,6 +740,8 @@ const customEnglishMessages: TranslationMessages = {
           flowEnergyFee: 'Flow energy fee',
           powerFactorAdjustmentFee: 'Power factor adjustment fee',
           electricityAdjustmentAmount: 'Electricity adjustment amount',
+          meterReadingDiscount: 'Electronic bill discount',
+          taxBeforeAmount: 'Pre-tax total',
           carrierNumber: 'Carrier number',
           invoiceNumber: 'Invoice number',
           contractNumberRaw: 'Contract no. (as printed)',

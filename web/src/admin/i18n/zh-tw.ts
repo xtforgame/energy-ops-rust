@@ -461,7 +461,7 @@ const customChineseTWMessages: TranslationMessages = {
       // 高壓用電單（我們付台電）—— 與躉購單是**兩種單**，不是同一種的變體。
       consumptionBill: '用電電費單',
       depositRequest: '保證金請款',
-      unclassified: '無法判定',
+      unclassified: '待分類／補對應規則',
       // 綁定用：這一段不分單別。
       anyDocType: '不分單別',
     },
@@ -476,12 +476,12 @@ const customChineseTWMessages: TranslationMessages = {
     },
     itemStatus: {
       classified: '已分類',
-      unclassified: '待指定單別',
+      unclassified: '待分類／補對應規則',
       extracted: '待校對',
-      unmatched: '對不上來源',
+      unmatched: '尚未對應案場',
       submitted: '已送審',
       discarded: '已捨棄',
-      failed: '辨識失敗',
+      failed: '文件解析未完成',
       // 先上傳、後辨識（RECOGNITION.md §6.2）多出來的兩個狀態。
       // 「已上傳」不等於「待校對」——後者代表已經有辨識結果可以對。
       uploaded: '已上傳（待辨識）',
@@ -808,6 +808,8 @@ const customChineseTWMessages: TranslationMessages = {
         flowEnergyFee: '流動電費',
         powerFactorAdjustmentFee: '功率因數調整費',
         electricityAdjustmentAmount: '電價調整金額',
+        meterReadingDiscount: '電子帳單優惠減收金額',
+        taxBeforeAmount: '稅前應繳總金額',
         carrierNumber: '載具號碼',
         invoiceNumber: '發票號碼',
         contractNumberRaw: '契約編號',

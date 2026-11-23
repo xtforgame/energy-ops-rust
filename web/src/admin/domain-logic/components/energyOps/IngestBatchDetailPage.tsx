@@ -27,6 +27,8 @@ import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode, apiErrorPayload } from '../../../dataProvider/apiError';
 import { EnergyPageFrame, Money, jvTokens, SourcePreviewFrame } from './shared';
 import RecognitionNote from './RecognitionNote';
+import EasyFlowApplication from './EasyFlowApplication';
+import { intakeStageMessage } from './recognitionDisplay';
 import { billRoute, executionRoute, ingestListRoute } from './routes';
 
 /** 校對要並排的五個欄位 —— 與 P3 校對台**同一組**（`BillIngestService.changedFields`）。 */
@@ -502,6 +504,7 @@ const IngestBatchDetailPage: React.FC = () => {
       <Box>
         {item.billId != null ? (
           <>
+            <Box sx={{mb:2}}><EasyFlowApplication base={base} billId={item.billId}/></Box>
             {/* 「辨識值 vs 最終值」是**全站唯一一份**（`FieldDiffGrid`）——
                 單據詳情頁 render 的是同一個元件。
                 這一頁與那一頁**不合併**（送件的 item 沒有 execution／流程圖／
@@ -534,6 +537,7 @@ const IngestBatchDetailPage: React.FC = () => {
               focusedField={focusField as any}
               onFocusField={(f) => setFocusField(f)}
               ocrExtracted={bill?.ocrExtracted}
+              ocrRaw={bill?.ocrRaw}
               changedFields={bill?.changedFields}
               draft={draft}
               onChange={(f, v) => setDraft((prev) => ({ ...prev, [f]: v }))}
@@ -705,9 +709,9 @@ const IngestBatchDetailPage: React.FC = () => {
                           {i.extracted.amount ? <>　<Money value={i.extracted.amount} /></> : null}
                         </Typography>
                       )}
-                      {i.classifyReason && (
+                      {(intakeStageMessage(i) || i.classifyReason) && (
                         <Typography variant="caption" color="text.secondary" display="block">
-                          {i.classifyReason}
+                          {intakeStageMessage(i) || i.classifyReason}
                         </Typography>
                       )}
                     </TableCell>
@@ -760,7 +764,7 @@ const IngestBatchDetailPage: React.FC = () => {
                         )}
                         {/* 辨識自己說「核心欄位有問題」時，在列上就要看得到 ——
                             不然承辦會先把整份校對完，才在展開後發現它本來就不可信。 */}
-                        <RecognitionNote summary={i.recognition} dense />
+                        <RecognitionNote summary={i.recognition} dense={i.status !== 'unclassified'} />
                         {/* 同批重複**辨識完就標**，不等到按了送審才說 ——
                             送審才報等於讓人先做完校對的工，再告訴他這份是多餘的。 */}
                         {i.duplicateOfItemId != null && (

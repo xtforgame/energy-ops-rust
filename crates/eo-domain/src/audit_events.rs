@@ -655,6 +655,12 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
     ),
     // ── 案場座標：要記從哪來，換 geocoder 時才知道哪些該重跑 ──
     ev(
+        "station.rent_sources_updated", "energyStation",
+        &[req("billId", INT), req("periodStart", STR1), req("periodEnd", STR1),
+          req("inputMethod", STR1), req("before", Ty::Unknown), req("input", Ty::Unknown)],
+        "audit.type.station.rentSourcesUpdated", Notable, true,
+    ),
+    ev(
         "station.geocoded",
         "energyStation",
         &[

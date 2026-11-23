@@ -24,6 +24,8 @@ import FlowGraph from './FlowGraph';
 import ActionBar, { type TaskAction, type ActionBlocked } from './ActionBar';
 import FieldDiffGrid, { billFieldLabelKey, type ReviewField } from './FieldDiffGrid';
 import BillDocTypeField from './BillDocTypeField';
+import EasyFlowApplication from './EasyFlowApplication';
+import RentPaymentPreview from './RentPaymentPreview';
 // 第四個「接縫」：欄位在原檔上的位置。mock 也是介面 —— 真 OCR 接上時這頁不用改。
 import {
   sourceFieldBoxes,
@@ -848,6 +850,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
 
   return (
     <EnergyPageFrame orgId={orgId} denied={denied} loading={loading}>
+      {bill && !denied && <Box sx={{ mb: 2 }}><EasyFlowApplication key={`${orgId}-${billId}`} base={base} billId={billId} /><RentPaymentPreview key={`rent-${orgId}-${billId}`} base={base} billId={billId} /></Box>}
       {/* 這一頁綁在哪一條流程上 —— 看不見，但驗收指名得到。
           多流程之後這裡是會出錯的地方（`TASKS.md #76`），而錯了的畫面
           看起來完全正常：只是動作變少了。 */}
@@ -1248,6 +1251,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
               // 哪些欄位在紙上找得到位置 —— 色點實心／空心靠它。
               boxedFields={boxes.map((b) => b.field)}
               ocrExtracted={bill?.ocrExtracted}
+              ocrRaw={bill?.ocrRaw}
               changedFields={bill?.changedFields}
               draft={draft}
               onChange={(f, v) => setDraft({ ...draft, [f]: v })}
@@ -1288,6 +1292,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
             <FieldDiffGrid
               fields={BILL_DETAIL_FIELD_KEYS}
               ocrExtracted={bill?.ocrExtracted}
+              ocrRaw={bill?.ocrRaw}
               changedFields={bill?.detailChangedFields}
               draft={detailDraft as any}
               onChange={(f, v) => setDetailDraft({ ...detailDraft, [f]: v })}
