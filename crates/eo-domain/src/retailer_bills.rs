@@ -447,8 +447,16 @@ fn parse_inventec(pages: &PageTokens) -> ParsedFields {
         if row.text.contains("統一編號") && !row.text.contains("用電戶名稱") {
             if let Some(id) = first_tax_id(&row.text) {
                 f.company_tax_id = Some(id);
-                break;
             }
+            // 這張版型左右兩欄（匯款資訊／計費資訊）剛好同一條視覺列，迄日常常跟賣方統編
+            // 黏在同一列、統編後面（實測）；起日已經從「計費期間」那一列抽到，這裡只補迄日。
+            if f.billing_end.is_none() {
+                if let Some(tid) = TAX_ID_RE.find(&row.text) {
+                    let after = &row.text[tid.end()..];
+                    f.billing_end = DATE_TOKEN_RE.find(after).and_then(|m| parse_date_token(m.as_str()));
+                }
+            }
+            break;
         }
     }
     f
