@@ -708,6 +708,23 @@ pub fn platform_review_bill() -> WorkflowDefinition {
     d
 }
 
+/// 電費資料審核與地主租金分離；同一位承辦可收件及確認，仍須屬於審核群組。
+pub fn bill_data_review() -> WorkflowDefinition {
+    let mut d = platform_review_bill();
+    d.key = "bill-data-review".into();
+    d.description = Some("電費單獨立審核；不要求地主租約，不計算租金，不送出 EasyFlow。".into());
+    d.nodes.retain(|n| n.node_key != "calc");
+    for n in &mut d.nodes {
+        if n.node_key == "platform-review" {
+            n.allow_self_approval = true;
+            // 原單不一定有繳費期限（有餘電為收款），不列為所有單別必填。
+            n.requirements.fields.retain(|f| f.path != "dueDate");
+        }
+    }
+    d.transitions = vec![TransitionDef::new("start", "platform-review", 0), TransitionDef::new("platform-review", "end", 0)];
+    d
+}
+
 pub fn platform_review_bill_binding() -> SeedBinding {
     binding(&platform_review_bill(), Some(EnergyDocType::ElectricityBill), "Q-04 平台資料審核")
 }

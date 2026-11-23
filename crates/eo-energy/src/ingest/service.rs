@@ -671,6 +671,10 @@ async fn resolve_flows(
     business_date: NaiveDate,
     base: &Value,
 ) -> ApiResult<Vec<FlowToStart>> {
+    if is_bill_doc_type(doc_type.as_str()) {
+        let definition = workflow::definition::ensure_bill_data_review(tx, ctx).await?;
+        return Ok(vec![FlowToStart { workflow_key: definition.key.clone(), definition: Some(definition), attributes: base.clone() }]);
+    }
     let flows = workflow::resolve_flow_rows(tx, &ctx.access, station_key, station_id, doc_type, business_date).await?;
     Ok(flows
         .into_iter()
@@ -723,7 +727,7 @@ async fn start_flows(
 async fn mark_item_submitted(tx: &mut Tx<'_>, item: &ItemRow, executions: &[ExecutionRow]) -> ApiResult<()> {
     let ids: Vec<i64> = executions.iter().map(|e| e.id).collect();
     // `execution_id` 是主要那一筆（第一條）；全部的 id 記在 `data.executionIds`。
-    sqlx::query("UPDATE tbl_energy_ingest_item SET execution_id = $2, data = $3, status = 'submitted' WHERE id = $1")
+    sqlx::query("UPDATE tbl_energy_ingest_item SET execution_id = $2, data = $3, status = 'submitted', workflow_key = COALESCE((SELECT workflow_key FROM tbl_energy_workflow_execution WHERE id=$2),workflow_key) WHERE id = $1")
         .bind(item.id)
         .bind(ids.first().copied())
         .bind(merge(&item.data, json!({ "executionIds": ids })))
@@ -747,13 +751,13 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
     let (subject_type, subject_id, station_key, station_id, doc_type, base, business_key) = if is_bill_doc_type(&item_doc_type) {
         let bill_id = item.bill_id.ok_or_else(|| err(409, "item_has_no_bill"))?;
         let bill: BillRow = bills::bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
+        if bill.approval_state == "approved" { return Err(err(409, "bill_already_approved")); }
+        if bills::live_execution(tx, ctx.org_id(), bill_id).await?.is_some() { return Err(err(409, "bill_already_submitted")); }
         // 單別的真相在單上（人校對過的那一個），不在 item 上。
         let doc_type = bill.effective_doc_type();
         let station_id = bill.station_id.ok_or_else(|| err(409, "bill_needs_station"))?;
-        // S2：找不到案場擋在上面那一行；找不到生效合約是另一種例外，各自的 409。
-        if bill.review_status == "pendingContract" {
-            return Err(err(409, "bill_needs_contract"));
-        }
+        // 電費只要求對應案場；地主租約由獨立租金作業檢查。
+
         let station = bills::station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(409, "bill_needs_station"))?;
         ("energyBill", bill_id, station.customer_number, Some(station.id), doc_type, bill.attributes(), bill.business_key.clone())
     } else if item_doc_type == "depositRequest" {
@@ -788,9 +792,9 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
     assert_no_batch_duplicate(tx, item.batch_id, item.id, business_key.as_deref()).await?;
 
     let business_date = business_date.unwrap_or_else(|| ctx.today());
-    // 人在收件台手動指定過流程，就以他指定的為準（明確的人為決定不可被自動解析蓋掉）。
+    // 電費單固定走獨立資料審核；其他業務仍尊重人工指定流程。
     let pinned = item.data.get("workflowPinned").and_then(Value::as_bool).unwrap_or(false);
-    let flows = match item.workflow_key.as_deref().filter(|k| pinned && !k.is_empty()) {
+    let flows = match item.workflow_key.as_deref().filter(|k| !is_bill_doc_type(doc_type.as_str()) && pinned && !k.is_empty()) {
         Some(k) => vec![FlowToStart { workflow_key: k.to_string(), definition: None, attributes: base.clone() }],
         None => resolve_flows(tx, ctx, &station_key, station_id, doc_type, business_date, &base).await?,
     };
@@ -806,10 +810,9 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
 /// 從電費單直接送審 —— 與 `submit_item` 同一套去重與流程解析（兩條送審路徑不可以有兩種規則）。
 pub async fn submit_bill(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, business_date: Option<NaiveDate>) -> ApiResult<Vec<ExecutionRow>> {
     let bill = bills::bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
+    if bill.approval_state == "approved" { return Err(err(409, "bill_already_approved")); }
     let station_id = bill.station_id.ok_or_else(|| err(409, "bill_needs_station"))?;
-    if bill.review_status == "pendingContract" {
-        return Err(err(409, "bill_needs_contract"));
-    }
+
     // 同一張單同時只能有一個在跑。
     if let Some(e) = bills::live_execution(tx, ctx.org_id(), bill_id).await? {
         return Err(err_d(409, "bill_already_submitted", json!({ "executionId": e })));
@@ -860,7 +863,7 @@ pub fn item_view(i: &ItemRow) -> Value {
         "batchId": i.batch_id,
         "originalFilename": i.original_filename,
         "docType": i.doc_type,
-        "workflowKey": i.workflow_key,
+        "workflowKey": if is_bill_doc_type(i.doc_type.as_deref().unwrap_or_default()) && i.status != "submitted" { Some("bill-data-review") } else { i.workflow_key.as_deref() },
         // 只為了顯示，前端也不可以拿它當門檻。
         "classifyConfidence": i.classify_confidence.map(|c| c.to_string()),
         "classifyReason": d.get("classifyReason").cloned().unwrap_or(Value::Null),

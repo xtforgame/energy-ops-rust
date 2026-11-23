@@ -398,6 +398,20 @@ pub async fn insert_station_binding(
     .await?)
 }
 
+/// 首次送審時建立組織共用電費審核版本，不改既有租金／歷史流程。
+pub async fn ensure_bill_data_review(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<DefinitionRow> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(-ctx.org_id()).execute(&mut **tx).await?;
+    let key = eo_domain::workflow_defs::DEPT_BILL_REVIEW;
+    if crate::org::departments::by_key(tx, &ctx.access, key).await?.is_none() {
+        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: "電費單平台資料審核人員".into(), sort_order: None, parent_id: None };
+        crate::org::departments::create_department(tx, ctx, &input).await?;
+    }
+    let row = sqlx::query_as::<_, DefinitionRow>(&format!("SELECT {DEF_COLS} FROM tbl_energy_workflow_definition WHERE organization_id=$1 AND key='bill-data-review' AND status='published' AND deleted_at IS NULL ORDER BY version DESC LIMIT 1"))
+        .bind(ctx.org_id()).fetch_optional(&mut **tx).await?;
+    if let Some(row) = row { return Ok(row); }
+    install_definition(tx, &ctx.access, &eo_domain::workflow_defs::bill_data_review(), None, ctx.now()).await
+}
+
 /// 內建流程的部門（定義的指派規則用這幾個 key）。
 const BUILTIN_DEPARTMENTS: [(&str, &str); 5] = [
     (eo_domain::workflow_defs::DEPT_SALES, "業務部"),
@@ -421,6 +435,7 @@ pub struct InstallReport {
 pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<InstallReport> {
     let mut report = InstallReport::default();
     let defs = [
+        eo_domain::workflow_defs::bill_data_review(),
         eo_domain::workflow_defs::platform_review_bill(),
         eo_domain::workflow_defs::deposit_request(),
         eo_domain::workflow_defs::utility_bill(),

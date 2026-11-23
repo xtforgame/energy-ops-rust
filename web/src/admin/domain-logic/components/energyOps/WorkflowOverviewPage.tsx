@@ -209,7 +209,7 @@ const WorkflowOverviewPage: React.FC = () => {
                           <Chip
                             size="small" variant="outlined"
                             label={translate('energy.workflows.missingWorkflow')}
-                            sx={{ color: jvTokens.warn, borderColor: jvTokens.warn, fontWeight: 600 }}
+                            color="info"
                           />
                         )}
                         {s.missingRating && (

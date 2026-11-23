@@ -281,7 +281,7 @@ impl MatchOutcome {
         match self {
             MatchOutcome::Matched { .. } => "pendingReview",
             MatchOutcome::NoStation => "pendingMatch",
-            MatchOutcome::NoContract { .. } => "pendingContract",
+            MatchOutcome::NoContract { .. } => "pendingReview",
         }
     }
     pub fn station_id(&self) -> Option<i64> {
@@ -438,9 +438,8 @@ pub async fn ingest(
             MatchOutcome::NoContract { station } => AuditInput::new(
                 "bill.no_contract",
                 id,
-                format!("案場「{}」在這段計費期間沒有生效中的合約，轉為例外件待補合約", station.name),
-            )
-            .outcome("failed"),
+                format!("案場「{}」在這段計費期間尚未設定租約；電費單可獨立審核，租金計算待設定", station.name),
+            ),
         };
         audit::record(
             tx,
@@ -1015,19 +1014,11 @@ pub async fn binding_status(tx: &mut Tx<'_>, access: &OrgAccess, bill: &BillRow,
         return Ok(json!({ "bound": false, "reason": "no_station", "docType": doc_type, "flows": [] }));
     };
     let business_date = bill.business_date(today);
-    // S2：找不到案場跟找不到生效合約是兩種各自的例外提示，不要都塞進 `no_binding`。
-    if bill.review_status == "pendingContract" {
-        return Ok(json!({
-            "bound": false,
-            "reason": "no_contract",
-            "docType": doc_type,
-            "flows": [],
-            "stationName": station.name,
-            "customerNumber": station.customer_number,
-            "businessDate": day(business_date),
-            "billingPeriodStart": day_opt(bill.billing_period_start),
-            "billingPeriodEnd": day_opt(bill.billing_period_end),
-        }));
+    if eo_domain::document_ingest::is_bill_doc_type(bill.effective_doc_type().as_str()) {
+        return Ok(json!({"bound": true, "reason": null, "docType": doc_type, "stationName": station.name,
+            "workflowName": "電費單平台資料審核", "defaultWorkflow": true,
+            "flows": [{"workflowKey": "bill-data-review", "workflowName": "電費單平台資料審核"}],
+            "rentNotice": "地主租金另依租約與付款週期處理，不影響電費資料審核。"}));
     }
     match workflow::resolve_flow_rows(tx, access, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date).await {
         Ok(flows) => Ok(json!({

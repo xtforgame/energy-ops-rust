@@ -120,6 +120,10 @@ async fn mark_subject_approved(tx: &mut Tx<'_>, ctx: &Ctx, exec: &ExecutionRow) 
     .execute(&mut **tx)
     .await
     .map_err(|e| map_unique(e.into()))?;
+    if exec.subject_type == "energyBill" && exec.workflow_key.as_deref() == Some("bill-data-review") {
+        sqlx::query("UPDATE tbl_energy_bill SET review_status='reviewed' WHERE id=$1 AND organization_id=$2")
+            .bind(id).bind(exec.organization_id).execute(&mut **tx).await?;
+    }
     Ok(())
 }
 

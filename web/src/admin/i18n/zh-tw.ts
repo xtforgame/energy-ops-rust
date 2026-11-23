@@ -294,7 +294,7 @@ const customChineseTWMessages: TranslationMessages = {
       boxesOn: '標註：開',
       boxesOff: '標註：關',
       needsMatch: '尚未指認案場，這張單不會進入審批。',
-      noContractWarn: '案場「%{station}」在 %{from}～%{to} 沒有生效中的合約，這張單不會進入審批。合約後補之後，按「重新比對」。',
+      noContractWarn: '案場「%{station}」在 %{from}～%{to} 尚未設定租約；只影響地主租金計算，電費單可繼續審核。',
       rematch: '重新比對',
       rematched: '已重新比對。',
       compare: '辨識值 vs 最終值',
@@ -366,7 +366,7 @@ const customChineseTWMessages: TranslationMessages = {
       releasedUnpaidHint: '財務已放行、會計還沒付款的單。',
       unmatched: '待指認案場',
       unmatchedHint: '這些單不會進審批（點開處理）',
-      noContract: '找不到生效合約',
+      noContract: '租約待設定（不影響電費審核）',
       noContractHint: '案場在這段計費期間沒有生效中的合約（點開處理）',
       stations: '案場',
       coords: '座標',
@@ -466,6 +466,7 @@ const customChineseTWMessages: TranslationMessages = {
       anyDocType: '不分單別',
     },
     workflowName: {
+      'bill-data-review': '電費單資料審核',
       'bill-approval': '電費單審批',
       'deposit-request': '保證金請款',
       // 錢的方向相反：這一條是**我們付台電**（RECOGNITION.md §9-1）。
@@ -598,10 +599,10 @@ const customChineseTWMessages: TranslationMessages = {
     },
     workflows: {
       title: '流程總覽',
-      unbound: '尚未綁定的案場（%{count}）',
-      unboundHint: '這些案場現在收不了單／算不出錢。漏綁不會報錯 —— 它只會在幾週後變成一張退回的單。點一列去綁。',
-      missingWorkflow: '未綁流程 · 收不了單',
-      missingRating: '未綁策略 · 算不出錢',
+      unbound: '案場後續設定提醒（%{count}）',
+      unboundHint: '電費單可直接收件、辨識、預覽及送至電費審核群組。下列租金設定不影響電費作業；需要計算地主租金時再補齊。',
+      missingWorkflow: '電費單使用共用審核流程',
+      missingRating: '租金計算規則待確認',
       hint: '每個流程版本綁了哪些案場、現在有幾張單在跑。就算一張單都還沒送過，流程圖照樣看得到。',
       flow: '流程',
       version: '版本',
@@ -756,7 +757,7 @@ const customChineseTWMessages: TranslationMessages = {
       unmatchedTag: '未指認',
       tabAll: '全部',
       tabPendingMatch: '待指認（%{count}）',
-      tabPendingContract: '找不到生效合約（%{count}）',
+      tabPendingContract: '租約待設定（不影響電費審核）（%{count}）',
       contractNo: '合約編號',
       detailTitle: '明細',
       // P2 唯一的流程出口。
@@ -822,7 +823,7 @@ const customChineseTWMessages: TranslationMessages = {
     unmatched: {
       title: '例外件（待指認案場）',
       blockingNote: '這些單據的電號對不上主檔，會停在這裡不進審批。指認案場後才會繼續往下走。',
-      noContractBlockingNote: '這些單據的案場在計費期間沒有生效中的合約，會停在這裡不進審批。合約後補之後，在詳情頁按「重新比對」。',
+      noContractBlockingNote: '這些舊單據尚未設定租約，但電費資料仍可送審。地主租金請另外確認租約、計算規則及付款週期。',
       match: '指認案場',
       matchTitle: '指認案場',
       rawIs: '單據上的電號：%{value}',
@@ -875,8 +876,8 @@ const customChineseTWMessages: TranslationMessages = {
       notFound: '找不到這個案場。',
       workflowAxis: '流程綁定（效期）',
       strategyAxis: '策略綁定（效期）',
-      unboundShort: '未綁定流程 · 收不了單',
-      noBindingHint: '這個案場尚未綁定流程，送進來的單會被退回。',
+      unboundShort: '電費單使用共用審核流程',
+      noBindingHint: '電費單使用共用審核群組，不需逐一綁定電號；租金與其他業務另行設定。',
       gotoWorkflows: '到流程總覽綁定 →',
       activeNow: '生效中',
       openEnded: '現行',
@@ -987,7 +988,7 @@ const customChineseTWMessages: TranslationMessages = {
     // ---- 狀態字典（畫面上一律走這裡，不印 enum 值）----
     reviewStatus: {
       pendingMatch: '待指認案場',
-      pendingContract: '找不到生效合約',
+      pendingContract: '租約待設定（不影響電費審核）',
       pendingReview: '待校對',
       reviewed: '已校對',
     },
