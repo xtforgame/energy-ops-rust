@@ -358,6 +358,12 @@ async function run() {
     check('財務〔審核通過〕得動', approved, finSections);
     await shot(page, '3-finance-workbench');
 
+    // G4：通過不再算應付 —— 這張單的應付應該是 0 筆（platform-review → end，沒有 calc 節點了）。
+    const payoutsAfterApprove = await eapi(page, 'GET', `/bills/${mainBillId}/payouts`)
+      .then((r) => (r.status === 200 ? r.data : { error: r.status }));
+    check('G4：財務通過後這張單的應付是 0 筆（不再逐張算應付）',
+      Array.isArray(payoutsAfterApprove?.items) && payoutsAfterApprove.items.length === 0, payoutsAfterApprove);
+
     // ── ④ 會計：落點仍是「我的工作」，但這一筆已經不在佇列裡 ──────
     /**
      * 單一審核：任一位 bill-reviewers 通過即完成，不是四眼依序簽核，
@@ -942,15 +948,7 @@ async function run() {
     check('每個 KPI 都可點', kpis.length > 0 && kpis.every((k) => k.clickable), kpis);
     await shot(page, '10-dashboard-kpis');
 
-    const kpiJump = await page.evaluate(async () => {
-      const card = Array.from(document.querySelectorAll('[data-testid="kpi-card"]'))
-        .find((e) => (e as HTMLElement).dataset.kpi === 'energy.dashboard.payable');
-      (card as HTMLElement | null)?.click();
-      await new Promise((res) => { setTimeout(res, 2500); });
-      return location.hash;
-    });
-    // 「本月應付」要**帶著篩選**過去（不是一張沒篩選的清單）。
-    check('本月應付點下去帶著月份篩選', /energyBillConsole\?month=\d{4}-\d{2}/.test(kpiJump), kpiJump);
+    // G4：首頁拿掉「本月應付」那一格（通過不再逐張算應付），這裡不再驗它的篩選跳轉。
 
     // 案場 → P11（`§2 P7` 那張表的第三列）
     await goto(page, 'energyDashboardConsole', '[data-testid="station-row"]');
@@ -1238,32 +1236,31 @@ async function run() {
     check('矩陣格③：P6 稽核列 → 反跳實體',
       /#\/energy/.test((cell3 as any)?.hash ?? ''), cell3);
 
-    // ── ⑭ 一條動線走到底：稽核事件 → 單 → 案場 → 策略 → 應付 ──────
+    // ── ⑭ 一條動線走到底：稽核事件 → 單 → 案場 → 策略 → 應付頁籤 ──────
     //
     // **全程不回選單**（`journeys-entities.html` 最後一條，4 次點擊）。
     // 這條就是「八座孤島」有沒有被接起來的最終判準：
     // 中間只要斷一段，使用者就得回選單重找 —— 那正是孤島的定義。
-    hr('⑭ 動線：稽核 → 單 → 案場 → 策略 → 應付（全程不回選單）');
+    // G4：通過不再算應付，動線走到底不會再有「應付資料」那一步，改成走到
+    // mainBillId（③ 那張、剛通過的單）自己的應付頁籤，斷言是「應付（0）」。
+    hr('⑭ 動線：稽核 → 單（mainBillId）→ 案場 → 策略 → 應付頁籤 0 筆（全程不回選單）');
     // 同上：起點是稽核頁 → 身分必須有 `energy:audit:view`。
     await loginAs(page, demoEmail('cxo'));
     await selectOrg(page);
     await goto(page, 'energyAuditConsole', 'table');
     await waitIdle(page);
-    const journey = await page.evaluate(async () => {
+    const journey = await page.evaluate(async (billId: number) => {
       const wait = (ms: number) => new Promise((res) => { setTimeout(res, ms); });
-      const menuVisits: string[] = [];
       const startHash = location.hash;
 
-      // **卡 A 之後案場變多（6→7），不假設第一顆稽核連結指向的那個案場
-      // 就有應付紀錄** —— 逐一試過 `[data-target-type="energyBill"]` 的
-      // 稽核列，直到某一條走到底真的有應付資料。
+      // 稽核頁的連結不帶單號當 DOM 屬性，只能點進去看跳到哪一張單 ——
+      // 逐一試過 `[data-target-type="energyBill"]` 的稽核列，直到跳到的是
+      // mainBillId 那一張（不是隨便一張，不然驗到的是別人的單）。
       const auditLinks = Array.from(document.querySelectorAll(
         '[data-target-type="energyBill"] [data-testid="audit-open"]',
       ));
       if (!auditLinks.length) return { fail: 'no bill-targeted audit link', startHash };
-      // 卡 A 之後稽核事件變多，不要每一條都花 8～15 秒試過去——只試前 3 條，
-      // 每一條縮短等待（1200/1000/800ms），demo seed 的主線單通常排在前面。
-      const MAX_TRY = Math.min(3, auditLinks.length);
+      const MAX_TRY = Math.min(20, auditLinks.length);
 
       for (let li = 0; li < MAX_TRY; li += 1) {
         const steps: any[] = [];
@@ -1273,7 +1270,8 @@ async function run() {
         if (!a) continue;
         a.click(); await wait(1500);
         steps.push({ step: 'bill', hash: location.hash });
-        if (!/energyBillConsole\/\d+\/show/.test(location.hash)) continue;
+        const m = location.hash.match(/energyBillConsole\/(\d+)\/show/);
+        if (!m || Number(m[1]) !== billId) continue;
 
         // ② 單 → 案場
         const st = document.querySelector('[data-testid="review-open-station"]') as HTMLElement | null;
@@ -1287,43 +1285,28 @@ async function run() {
         steps.push({ step: 'strategy', seen: !!strategySeg, text: strategySeg?.innerText.replace(/\n/g, ' ') ?? '' });
         if (!strategySeg) continue;
 
-        // ④ 案場 → 最近的單 → **應付頁籤**（最多試前 20 筆，跟產品 RECENT_BILL_LIMIT 對齊）
-        const stationHash = location.hash;
-        const billCount = Math.min(20, document.querySelectorAll('[data-testid="station-bill"]').length);
-        if (!billCount) continue;
-        let found = false;
-        for (let bi = 0; bi < billCount; bi += 1) {
-          if (location.hash !== stationHash) {
-            location.hash = stationHash.replace('#', '');
-            await wait(1000);
-          }
-          const rowsEls = document.querySelectorAll('[data-testid="station-bill"]');
-          (rowsEls[bi] as HTMLElement)?.click();
-          await wait(1200);
-          const tabs = Array.from(document.querySelectorAll('button[role="tab"]'));
-          const payoutTab = tabs.find((t) => /應付|Payout/i.test((t as HTMLElement).innerText));
-          if (!payoutTab) continue;
-          (payoutTab as HTMLElement).click(); await wait(800);
-          const rows = document.querySelectorAll('[data-testid="payout-row"]').length;
-          if (rows > 0) {
-            const formula = (document.querySelector('[data-testid="payout-formula"]') as HTMLElement)?.innerText ?? '';
-            steps.push({ step: 'bill2', hash: location.hash });
-            steps.push({ step: 'payout', rows, formula: formula.slice(0, 160) });
-            found = true;
-            return { ok: true, steps, menuVisits, startHash };
-          }
-        }
-        if (!found) continue;
+        // ④ 回到 mainBillId 這張單的詳情（直接切 hash，跟上面切回案場同一種
+        // 「輸入網址」而非「回選單」的導航）→ 應付頁籤。
+        location.hash = `/energyBillConsole/${billId}/show`;
+        await wait(1200);
+        const tabs = Array.from(document.querySelectorAll('button[role="tab"]'));
+        const payoutTab = tabs.find((t) => /應付|Payout/i.test((t as HTMLElement).innerText));
+        if (!payoutTab) continue;
+        const tabTitle = (payoutTab as HTMLElement).innerText;
+        (payoutTab as HTMLElement).click(); await wait(800);
+        const rows = document.querySelectorAll('[data-testid="payout-row"]').length;
+        steps.push({ step: 'bill2', hash: location.hash });
+        steps.push({ step: 'payout', rows, tabTitle });
+        return { ok: true, steps, startHash };
       }
-      return { fail: 'no bill-targeted audit link leads to a station with payout', tried: MAX_TRY };
-    });
+      return { fail: 'no audit link leads to mainBillId', tried: MAX_TRY };
+    }, mainBillId);
     log(`  動線：${JSON.stringify(journey)}`);
-    check('稽核 → 單 → 案場 → 策略 → 應付，全程不回選單',
+    check('稽核 → 單（mainBillId）→ 案場 → 策略 → 應付頁籤，全程不回選單',
       (journey as any)?.ok === true, journey);
-    // 應付要看得到**算式**（參數快照 ← 輸入快照），不只是一個金額。
-    check('應付紀錄看得到策略版本與參數快照',
-      /\{.*\}/.test(((journey as any)?.steps ?? []).find((x: any) => x.step === 'payout')?.formula ?? ''),
-      ((journey as any)?.steps ?? []).find((x: any) => x.step === 'payout'));
+    const payoutStep = ((journey as any)?.steps ?? []).find((x: any) => x.step === 'payout');
+    check('G4：mainBillId 的應付頁籤是「應付（0）」（通過不再算應付）',
+      payoutStep?.rows === 0 && /（0）/.test(payoutStep?.tabTitle ?? ''), payoutStep);
     await shot(page, '14-journey-payout');
 
     /**

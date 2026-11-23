@@ -185,23 +185,17 @@ async fn task_rows_survive_non_numeric_subjects() {
     assert!(rows[0]["waitingDays"].is_number());
 }
 
-/// 來源：masterData.test.ts「dashboard 只加總**現行**的應付，不把被取代的算進去」
 /// 來源：masterData.test.ts「dashboard 的月份是「業務日期」的月份，不是計算時間」
 /// 來源：masterData.test.ts「卡關門檻是參數（不必改 schema 就能調）」
 /// 來源：masterData.test.ts「案場狀態分布數得出來」
 /// 來源：masterData.test.ts「稽核的時間區間：`to` 要含**當天整天**（不是 <= 當天 00:00）」
+/// G4：拿掉「dashboard 只加總現行應付、不把被取代的算進去」—— 首頁不再查應付，這段斷言跟著拿掉
+/// （`payout_provenance_and_immutability`／`energy_rating_bindings.rs` 還驗應付紀錄本身的現行判定）。
 #[actix_web::test]
 async fn dashboard_and_audit_day_range() {
     let f = fixture().await;
-    f.payout("superseded", "4000.00").await;
-    f.payout("active", "5000.00").await;
     let ctx = f.ctx().await;
     let mut tx = f.app.core.pool.begin().await.unwrap();
-    let d = workbench::dashboard(&mut tx, &ctx, Some("2026-03"), 3).await.unwrap();
-    assert_eq!(d["payableThisMonth"], "5000.00", "被取代的不算");
-    assert_eq!(d["payoutCount"], 1);
-    let d = workbench::dashboard(&mut tx, &ctx, Some("2026-01"), 3).await.unwrap();
-    assert_eq!((d["payableThisMonth"].clone(), d["payoutCount"].clone()), (json!("0.00"), json!(0)));
     let strict = workbench::dashboard(&mut tx, &ctx, Some("2026-03"), 0).await.unwrap();
     let loose = workbench::dashboard(&mut tx, &ctx, Some("2026-03"), 3650).await.unwrap();
     assert_eq!((strict["stuckDays"].clone(), loose["stuckDays"].clone()), (json!(0), json!(3650)));

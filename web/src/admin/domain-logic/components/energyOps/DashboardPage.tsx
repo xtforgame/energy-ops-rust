@@ -12,15 +12,13 @@ import { useNavigate } from 'react-router-dom';
 import { useSelection } from '@/platform/selection/store';
 import { apiErrorCode } from '../../../dataProvider/apiError';
 import {
-  EnergyPageFrame, EmptyRow, StatusChip, Money, jvTokens,
+  EnergyPageFrame, EmptyRow, StatusChip, jvTokens,
 } from './shared';
 import { billListRoute, executionListRoute, myWorkRoute, stationRoute } from './routes';
 import StationMap from './StationMap';
 
 interface Dashboard {
   month: string;
-  payableThisMonth: string;
-  payoutCount: number;
   runningCount: number;
   stuckDays: number;
   stuckCount: number;
@@ -57,7 +55,7 @@ const thisMonth = () => {
 
 /**
  * P7 Dashboard（`FRONTEND.md §2-P7`、`REQUIREMENTS.md §五-1`）：
- * 本月應付、**幾件卡關**、案場狀態。
+ * **幾件卡關**、案場狀態（G4 起不再有「本月應付」——通過不再逐張算應付，租金改走週期試算）。
  *
  * 「卡關」的判定在**後端**（`buildDashboard`）：還在跑、而且最舊的待辦已經等超過
  * `stuckDays` 天。前端不自己重算一套 —— 兩邊算法遲早會不一樣。
@@ -173,14 +171,6 @@ const DashboardPage: React.FC = () => {
       <Stack direction="row" gap={2} flexWrap="wrap" mb={2}>
         {/* **每一個數字都要有目的地**（`FRONTEND.md §2 P7`）——
             不能點的數字等於一張海報：使用者看到「3 件卡關」卻得自己回選單再篩一次。 */}
-        {kpi(
-          'energy.dashboard.payable',
-          <Money value={data?.payableThisMonth} currency="TWD" />,
-          translate('energy.dashboard.payableHint', { count: data?.payoutCount ?? 0 }),
-          false,
-          // 帶著**本月**這個篩選導過去（不是導到一張沒篩選的清單）。
-          () => navigate(billListRoute({ month })),
-        )}
         {kpi(
           'energy.dashboard.running',
           data?.runningCount ?? 0,
