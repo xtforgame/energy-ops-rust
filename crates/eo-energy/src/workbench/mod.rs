@@ -10,7 +10,6 @@ use eo_platform::auth::CurrentUser;
 use eo_platform::core::CoreRef;
 use eo_platform::error::ApiResult;
 use eo_platform::plugin::{AppPlugin, RouteRegistrar};
-use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -54,19 +53,12 @@ pub async fn dashboard(tx: &mut Tx<'_>, ctx: &Ctx, month: Option<&str>, stuck_da
         .filter(|m| month_bounds(m).is_some())
         .map(String::from)
         .unwrap_or_else(|| format!("{:04}-{:02}", today.year(), today.month()));
-    let (start, end) = month_bounds(&month).ok_or_else(|| err(400, "invalid_month"))?;
+    // G4：通過不再逐張算應付，首頁不再查 tbl_energy_payout_record／不回 payableThisMonth、payoutCount；
+    // 租金改走週期試算（rent_cycle），不是這張表。month_bounds 只留著驗 ?month= 的格式。
+    if month_bounds(&month).is_none() {
+        return Err(err(400, "invalid_month"));
+    }
     let org = ctx.org_id();
-    // 金額用定點加總（不用浮點：這是錢）。
-    let payouts: Vec<Decimal> = sqlx::query_scalar(
-        "SELECT amount FROM tbl_energy_payout_record
-          WHERE organization_id = $1 AND status = 'active' AND business_date >= $2 AND business_date < $3 AND deleted_at IS NULL ORDER BY id",
-    )
-    .bind(org)
-    .bind(start)
-    .bind(end)
-    .fetch_all(&mut **tx)
-    .await?;
-    let total: Decimal = payouts.iter().copied().sum();
     let stations: Vec<String> =
         sqlx::query_scalar("SELECT status FROM tbl_energy_station WHERE organization_id = $1 AND deleted_at IS NULL ORDER BY id")
             .bind(org)
@@ -118,8 +110,6 @@ pub async fn dashboard(tx: &mut Tx<'_>, ctx: &Ctx, month: Option<&str>, stuck_da
     }
     Ok(json!({
         "month": month,
-        "payableThisMonth": format!("{:.2}", total),
-        "payoutCount": payouts.len(),
         "runningCount": running,
         "stuckDays": stuck_days,
         "stuckCount": stuck.len(),
