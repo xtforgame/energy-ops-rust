@@ -195,7 +195,9 @@ pub async fn recognize_batch(ctx: &Ctx, batch_id: i64, passwords: &HashMap<i64, 
     }
     let first: Vec<Candidate> = pending.into_iter().take(size).collect();
     match send_chunk(ctx, &tpr, batch_id, &first).await {
-        Ok(job_id) => Ok(RecognizeOutcome { job_id: Some(job_id), item_count: total, chunks: Some(chunks), skipped: None }),
+        // 整批都在本機（售電單）處理完，沒有東西要送服務，但不是出錯——不是 no_readable_files。
+        Ok(None) => Ok(RecognizeOutcome { job_id: None, item_count: total, chunks: Some(chunks), skipped: None }),
+        Ok(Some(job_id)) => Ok(RecognizeOutcome { job_id: Some(job_id), item_count: total, chunks: Some(chunks), skipped: None }),
         Err(e) => {
             // 第一批就送不出去：退回 `uploaded` 讓對帳再送；但永久錯誤標 failed（否則畫面永遠停在「辨識中」）。
             let permanent = is_permanent(&e);
@@ -206,19 +208,54 @@ pub async fn recognize_batch(ctx: &Ctx, batch_id: i64, passwords: &HashMap<i64, 
 }
 
 /// 送一批出去：讀原檔、建 job、把 jobId 記在批次上、留一筆稽核。不動 item 狀態（已一次標好）。
-async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidate]) -> Result<String, TprError> {
+///
+/// PDF 命中售電版型（陽光伏特家／阿波羅／英業達）的，在本機組 canonical 直接寫回，不送外部服務
+/// （`eo_domain::retailer_bills::recognize_retailer_pdf`，DESIGN.md「設計（乙）」2）。`Ok(None)` 表示
+/// 整批都在本機處理完，沒有東西要送服務。
+async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidate]) -> Result<Option<String>, TprError> {
     let internal = |e: ApiError| TprError::new("tpr_error", 500, e.to_string());
     let mut files = Vec::new();
+    let mut local_hits = 0usize;
     for c in chunk {
         match attachments::read_bytes(ctx, c.attachment_id).await {
-            Ok((row, bytes)) => files.push(TprUploadFile {
-                // 來歷直接穿透：sourceFileId ＝ 我們的 item id。
-                source_file_id: c.item_id.to_string(),
-                file_name: c.file_name.clone(),
-                bytes,
-                content_type: row.mime_type,
-                password: c.password.clone().filter(|p| !p.is_empty()),
-            }),
+            Ok((row, bytes)) => {
+                let local = (row.mime_type == "application/pdf")
+                    .then(|| eo_domain::retailer_bills::recognize_retailer_pdf(&bytes, &c.item_id.to_string(), &c.file_name))
+                    .flatten();
+                if let Some(canonical) = local {
+                    let mut tx = ctx.core.pool.begin().await.map_err(|e| internal(e.into()))?;
+                    let item = service::apply_recognition_to_item(&mut tx, ctx, c.item_id, &canonical).await.map_err(internal)?;
+                    // 用既有的「外部管線直接灌一份辨識結果」事件型別：信任來源跟服務回來的不同，
+                    // 本來就該分開記；稽核看得到是本機辨識（跟 ingest.recognition_requested／
+                    // completed 那組是兩回事），engine 用 templateId 的 retailer_ 前綴分辨。
+                    audit::record(
+                        &mut tx,
+                        ctx,
+                        AuditInput::new("ingest.recognition_supplied", c.item_id, format!("本機辨識出售電業單據「{}」", c.file_name))
+                            .label(c.file_name.clone())
+                            .payload(json!({
+                                "itemId": c.item_id,
+                                "batchId": batch_id,
+                                "docType": item.doc_type.as_deref().unwrap_or("unclassified"),
+                                "billId": item.bill_id,
+                                "status": item.status,
+                            })),
+                    )
+                    .await
+                    .map_err(internal)?;
+                    tx.commit().await.map_err(|e| internal(e.into()))?;
+                    local_hits += 1;
+                    continue;
+                }
+                files.push(TprUploadFile {
+                    // 來歷直接穿透：sourceFileId ＝ 我們的 item id。
+                    source_file_id: c.item_id.to_string(),
+                    file_name: c.file_name.clone(),
+                    bytes,
+                    content_type: row.mime_type,
+                    password: c.password.clone().filter(|p| !p.is_empty()),
+                });
+            }
             Err(_) => {
                 // 讀不回原檔就標在那一份上，不讓整批倒。
                 let mut tx = ctx.core.pool.begin().await.map_err(|e| internal(e.into()))?;
@@ -230,6 +267,10 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
         }
     }
     if files.is_empty() {
+        if local_hits > 0 {
+            // 整批都在本機處理完：不是「讀不到原始檔」，不要回 no_readable_files。
+            return Ok(None);
+        }
         return Err(TprError::new("no_readable_files", 502, "這一批的原始檔都讀不回來"));
     }
     let with_password = files.iter().filter(|f| f.password.is_some()).count();
@@ -269,7 +310,7 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
         Ok::<(), ApiError>(())
     };
     record.await.map_err(internal)?;
-    Ok(job_id)
+    Ok(Some(job_id))
 }
 
 /// 取結果 → 逐份寫回 → 刪掉服務那一側的副本。

@@ -441,6 +441,7 @@ const customEnglishMessages: TranslationMessages = {
         electricityBill: 'Electricity bill (feed-in)',
         consumptionBill: 'Utility bill (we pay)',
         depositRequest: 'Deposit request',
+        retailerSale: 'Retailer power sale bill (invoice needed)',
         unclassified: 'Unclassified',
         anyDocType: 'Any document type',
       },

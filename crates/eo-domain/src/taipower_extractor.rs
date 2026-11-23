@@ -10,22 +10,32 @@ use serde_json::{json, Map, Value};
 
 use crate::bill_extractor::{mock_bill_extractor, ExtractedBill};
 use crate::document_ingest::{doc_type_to_workflow, mock_classifier, ClassifyResult, EnergyDocType};
+use crate::retailer_bills::{TEMPLATE_RETAILER_APOLLO, TEMPLATE_RETAILER_INVENTEC, TEMPLATE_RETAILER_SUNSHINE_VOLT};
 use crate::taipower_canonical::{
     blocking_issues, date_of, number_of, text_of, CanonicalDocument, CanonicalRecord, TEMPLATE_HIGH_VOLTAGE,
     TEMPLATE_UNKNOWN,
 };
 
-/// 版型 → 粗分單別。細分要看欄位（`doc_type_from_record`）。
+/// 版型 → 粗分單別。細分要看欄位（`doc_type_from_record`）。三家售電版型一律是 `RetailerSale`，
+/// 不像台電躉購單要看度數／費用才能分有餘電／無餘電。
 pub fn template_doc_type(template_id: &str) -> Option<EnergyDocType> {
     match template_id {
         "renewable_purchase" | "legacy_renewable_purchase" => Some(EnergyDocType::ElectricityBill),
         "high_voltage" => Some(EnergyDocType::ConsumptionBill),
+        TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC => Some(EnergyDocType::RetailerSale),
         _ => None,
     }
 }
 
 /// 所有認得的版型（測試與畫面用）。
-pub const KNOWN_TEMPLATES: [&str; 3] = ["renewable_purchase", "legacy_renewable_purchase", "high_voltage"];
+pub const KNOWN_TEMPLATES: [&str; 6] = [
+    "renewable_purchase",
+    "legacy_renewable_purchase",
+    "high_voltage",
+    TEMPLATE_RETAILER_SUNSHINE_VOLT,
+    TEMPLATE_RETAILER_APOLLO,
+    TEMPLATE_RETAILER_INVENTEC,
+];
 
 /// 單別的中文名 —— 畫面與稽核都不可以出現 raw docType。
 pub fn doc_type_label(t: EnergyDocType) -> &'static str {
@@ -37,6 +47,7 @@ pub fn doc_type_label(t: EnergyDocType) -> &'static str {
         EnergyDocType::ElectricityBill => "電費單（躉購）",
         EnergyDocType::ConsumptionBill => "用電電費單",
         EnergyDocType::DepositRequest => "保證金請款單",
+        EnergyDocType::RetailerSale => "售電業購售電單（需開發票）",
         EnergyDocType::Unclassified => "未判定",
     }
 }
@@ -46,6 +57,9 @@ pub fn template_label(template_id: &str) -> Option<&'static str> {
         "renewable_purchase" => Some("再生能源購售電通知單"),
         "legacy_renewable_purchase" => Some("再生能源電能躉購電費通知單（舊版）"),
         "high_voltage" => Some("繳費通知單（高壓電力用戶）"),
+        TEMPLATE_RETAILER_SUNSHINE_VOLT => Some("陽光伏特家電廠電費單"),
+        TEMPLATE_RETAILER_APOLLO => Some("阿波羅發票申請單"),
+        TEMPLATE_RETAILER_INVENTEC => Some("英業達電能使用電費通知單"),
         _ => None,
     }
 }
@@ -97,6 +111,12 @@ pub fn template_id_of(record: &CanonicalRecord) -> Option<String> {
 /// | `high_voltage` | 電器租費 ≠ 0 | `consumptionDeviceRental` |
 pub fn doc_type_from_record(record: &CanonicalRecord) -> Option<EnergyDocType> {
     let template_id = template_id_of(record)?;
+
+    // 三家售電版型一律是 RetailerSale，不要落進下面「有沒有賣出去的電」那段判成躉購單——
+    // 這三個版型的 purchaseEnergyFee／purchaseKwh 通常是正數，會被誤判成 RenewableSurplus。
+    if matches!(template_id.as_str(), TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC) {
+        return Some(EnergyDocType::RetailerSale);
+    }
 
     if template_id == TEMPLATE_HIGH_VOLTAGE {
         // 抽不到就是沒有那一列（另一張範本連欄位都不存在）。

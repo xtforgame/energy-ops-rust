@@ -28,12 +28,15 @@ pub enum EnergyDocType {
     /// 舊的粗分：用電電費單（我們付台電），走的流程沒有計算節點。
     ConsumptionBill,
     DepositRequest,
+    /// 售電業（陽光伏特家／阿波羅／英業達）賣綠電給我們的購售電單——我們要開發票。
+    /// 不併進 `RenewableSurplus`：那是台電躉購單，RentCycle 會把它當台電躉購單處理。
+    RetailerSale,
     /// 判不出來 —— 合法答案，不是錯誤。
     Unclassified,
 }
 
 impl EnergyDocType {
-    pub const ALL: [EnergyDocType; 8] = [
+    pub const ALL: [EnergyDocType; 9] = [
         EnergyDocType::RenewableSurplus,
         EnergyDocType::RenewableNoSurplus,
         EnergyDocType::ConsumptionDevice,
@@ -41,6 +44,7 @@ impl EnergyDocType {
         EnergyDocType::ElectricityBill,
         EnergyDocType::ConsumptionBill,
         EnergyDocType::DepositRequest,
+        EnergyDocType::RetailerSale,
         EnergyDocType::Unclassified,
     ];
 
@@ -53,6 +57,7 @@ impl EnergyDocType {
             EnergyDocType::ElectricityBill => "electricityBill",
             EnergyDocType::ConsumptionBill => "consumptionBill",
             EnergyDocType::DepositRequest => "depositRequest",
+            EnergyDocType::RetailerSale => "retailerSale",
             EnergyDocType::Unclassified => "unclassified",
         }
     }
@@ -70,17 +75,18 @@ pub fn is_recognizable_mime(mime_type: &str) -> bool {
 }
 
 /// 人可以在校對台上指定的單別。順序＝下拉的順序。
-pub const BILL_DOC_TYPES: [EnergyDocType; 4] = [
+pub const BILL_DOC_TYPES: [EnergyDocType; 5] = [
     EnergyDocType::RenewableSurplus,
     EnergyDocType::RenewableNoSurplus,
     EnergyDocType::ConsumptionDevice,
     EnergyDocType::ConsumptionDeviceRental,
+    EnergyDocType::RetailerSale,
 ];
 
 /// 細分 → 粗分（錢的方向）。綁定解析要用它回退，否則既有綁定在細分第一天全部失效。
 pub fn doc_type_family(t: EnergyDocType) -> Option<EnergyDocType> {
     match t {
-        EnergyDocType::RenewableSurplus => Some(EnergyDocType::ElectricityBill),
+        EnergyDocType::RenewableSurplus | EnergyDocType::RetailerSale => Some(EnergyDocType::ElectricityBill),
         EnergyDocType::RenewableNoSurplus
         | EnergyDocType::ConsumptionDevice
         | EnergyDocType::ConsumptionDeviceRental => Some(EnergyDocType::ConsumptionBill),
@@ -91,7 +97,7 @@ pub fn doc_type_family(t: EnergyDocType) -> Option<EnergyDocType> {
 /// 錢的方向：`Some(true)` ＝ 我們要付出去（不該算分潤）；保證金與未判定沒有這個屬性。
 pub fn doc_type_is_payable(t: EnergyDocType) -> Option<bool> {
     match t {
-        EnergyDocType::RenewableSurplus | EnergyDocType::ElectricityBill => Some(false),
+        EnergyDocType::RenewableSurplus | EnergyDocType::ElectricityBill | EnergyDocType::RetailerSale => Some(false),
         EnergyDocType::RenewableNoSurplus
         | EnergyDocType::ConsumptionDevice
         | EnergyDocType::ConsumptionDeviceRental
@@ -116,7 +122,7 @@ pub fn doc_type_lookup_chain(t: EnergyDocType) -> Vec<EnergyDocType> {
 /// 單別 → 預設流程 key。這是預設值不是答案：送審一律以綁定為準。
 pub fn doc_type_to_workflow(t: EnergyDocType) -> Option<&'static str> {
     match t {
-        EnergyDocType::RenewableSurplus | EnergyDocType::ElectricityBill => Some("bill-approval"),
+        EnergyDocType::RenewableSurplus | EnergyDocType::ElectricityBill | EnergyDocType::RetailerSale => Some("bill-approval"),
         // 無餘電那張是我們付台電 —— 走付款流程，不是躉購核可流程。
         EnergyDocType::RenewableNoSurplus
         | EnergyDocType::ConsumptionDevice

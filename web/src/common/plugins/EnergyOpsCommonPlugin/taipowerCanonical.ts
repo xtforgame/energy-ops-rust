@@ -81,6 +81,10 @@ export type CanonicalTemplateId =
   | 'legacy_renewable_purchase'
   | 'renewable_purchase'
   | 'high_voltage'
+  // 三家售電業的購售電單：平台本機認出來的（不是外部服務回的），不送外部辨識服務。
+  | 'retailer_sunshine_volt'
+  | 'retailer_apollo'
+  | 'retailer_inventec'
   | 'unknown'
   | null;
 

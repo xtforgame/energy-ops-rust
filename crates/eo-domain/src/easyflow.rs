@@ -16,7 +16,7 @@ fn field(fields: &mut Vec<Value>, key: &str, label: &str, value: Option<String>,
 
 pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> Value {
     let kind = match bill["docType"].as_str().unwrap_or("") {
-        "renewableSurplus" => "invoice",
+        "renewableSurplus" | "retailerSale" => "invoice",
         "renewableNoSurplus" | "consumptionDevice" | "consumptionDeviceRental" | "consumptionBill" => "payment",
         _ => "unconfirmed",
     };
@@ -45,6 +45,8 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("siteName","案場名稱",&station["name"],"station.name"),
         ("companyName","公司名稱",&station["companyName"],"station.spvPayee.name"),
         ("counterpartyTaxId","對象統一編號",&station["counterpartyTaxId"],"station.invoice.counterpartyTaxId"),
+        // 售電業購售電單：買方統編是我們自己（跟 station 設定無關），直接從辨識結果取；取不到就標待確認。
+        ("buyerTaxId","買方統一編號",&bill["ocrRaw"]["record"]["fields"]["buyerTaxId"]["value"],"bill.ocrRaw.record.fields.buyerTaxId"),
         ("billingPeriodStart","計費期間起日",&bill["billingPeriodStart"],"bill.billingPeriodStart"),
         ("billingPeriodEnd","計費期間迄日（原單）",&bill["billingPeriodEnd"],"bill.billingPeriodEnd"),
         ("currentReadingDate","本次抄表日",&detail["currentReadingDate"],"bill.detailFields.currentReadingDate"),

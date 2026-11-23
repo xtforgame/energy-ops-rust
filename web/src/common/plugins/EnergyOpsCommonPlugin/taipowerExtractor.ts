@@ -35,6 +35,10 @@ export const TEMPLATE_DOC_TYPE: Record<string, EnergyDocType> = {
   renewable_purchase: 'electricityBill',
   legacy_renewable_purchase: 'electricityBill',
   high_voltage: 'consumptionBill',
+  // 三家售電版型一律是 retailerSale，不像台電躉購單要看度數／費用才能分有餘電／無餘電。
+  retailer_sunshine_volt: 'retailerSale',
+  retailer_apollo: 'retailerSale',
+  retailer_inventec: 'retailerSale',
 };
 
 /** 單別的中文名 —— 畫面與稽核都不可以出現 raw docType。 */
@@ -46,6 +50,7 @@ export const DOC_TYPE_LABEL: Record<string, string> = {
   electricityBill: '電費單（躉購）',
   consumptionBill: '用電電費單',
   depositRequest: '保證金請款單',
+  retailerSale: '售電業購售電單（需開發票）',
   unclassified: '未判定',
 };
 
@@ -53,6 +58,9 @@ const TEMPLATE_LABEL: Record<string, string> = {
   renewable_purchase: '再生能源購售電通知單',
   legacy_renewable_purchase: '再生能源電能躉購電費通知單（舊版）',
   high_voltage: '繳費通知單（高壓電力用戶）',
+  retailer_sunshine_volt: '陽光伏特家電廠電費單',
+  retailer_apollo: '阿波羅發票申請單',
+  retailer_inventec: '英業達電能使用電費通知單',
 };
 
 /** 從我們存下來的 `ocrRaw` 取回 canonical document（存的時候整包存，形狀不 pin）。 */
@@ -111,6 +119,12 @@ const templateIdOf = (record: CanonicalRecord): CanonicalTemplateId => {
 export function docTypeFromRecord(record: CanonicalRecord): EnergyDocType | null {
   const templateId = templateIdOf(record);
   if (!templateId) return null;
+
+  // 三家售電版型一律是 retailerSale，不要落進下面「有沒有賣出去的電」那段判成躉購單——
+  // 這三個版型的 purchaseEnergyFee／purchaseKwh 通常是正數，會被誤判成 renewableSurplus。
+  if (templateId === 'retailer_sunshine_volt' || templateId === 'retailer_apollo' || templateId === 'retailer_inventec') {
+    return 'retailerSale';
+  }
 
   if (templateId === 'high_voltage') {
     // 「有沒有電器租費那一列」——抽不到就是沒有那一列（另一張範本連欄位都不存在）。
