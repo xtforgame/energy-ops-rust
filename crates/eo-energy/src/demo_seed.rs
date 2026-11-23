@@ -720,17 +720,19 @@ struct Binding<'a> {
 }
 
 async fn ensure_wf_binding(tx: &mut Tx<'_>, org: i64, b: Binding<'_>, created: &mut DemoSeedCounts) -> ApiResult<()> {
+    // G4：存在判斷不比 definition_id —— migration 0108 把已安裝庫的綁定換到新版後，重跑 seed 不能
+    // 因為 definition_id 跟新版不同而又插一段指回舊版（v1／v2）的綁定，不然 id 較大的舊綁定會贏，
+    // calc 復活。(org, station_key, contract_id, doc_type, workflow_key, valid_from) 已經是這一段的鍵。
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM tbl_energy_workflow_binding
            WHERE organization_id = $1 AND station_key IS NOT DISTINCT FROM $2 AND contract_id IS NOT DISTINCT FROM $3
-             AND doc_type = $4 AND workflow_key = $5 AND definition_id = $6 AND valid_from = $7 AND deleted_at IS NULL)",
+             AND doc_type = $4 AND workflow_key = $5 AND valid_from = $6 AND deleted_at IS NULL)",
     )
     .bind(org)
     .bind(b.station_key)
     .bind(b.contract_id)
     .bind(b.doc_type)
     .bind(b.workflow_key)
-    .bind(b.definition_id)
     .bind(date(b.valid_from))
     .fetch_one(&mut **tx)
     .await?;
@@ -863,10 +865,10 @@ async fn seed_flows(
         // 用電電費單：一份定義綁兩座高壓案場（不要各發一版內容相同的定義）。
         (chiayi1, "consumptionBill", utility_key.as_str(), utility, OPEN_FROM, None, "RECOGNITION.md §9-1 用電電費單付款流程"),
         (chiayi2, "consumptionBill", utility_key.as_str(), utility, OPEN_FROM, None, "RECOGNITION.md §9-1 用電電費單付款流程"),
-        // G1（20261118-1149，HANDOFF 7 設計缺陷補）：屏東枋寮二號（s2，Plain 單電號）綁 v2，
-        // OPEN_FROM 起不設迄日 —— v1／v2 都是 platform_review_bill 的複製，兩版都含計算應付節點，
-        // Plain 單的 business_date 不管落在換版日前後都拿得到同一版，不必再管換版日。
-        ("11-72-8007-95-8", "electricityBill", bill.key.as_str(), v2, OPEN_FROM, None, "G1：示範單一審核後產生應付"),
+        // G4（20261123-0938）：屏東枋寮二號（s2，Plain 單電號）綁 v2，OPEN_FROM 起不設迄日 —— v1／v2
+        // 都是 platform_review_bill 的複製，G4 起都沒有計算應付節點；Plain 單通過平台資料審核就成功、
+        // 不產生應付（就是 S1 要證明的「沒綁計費策略的案場也能通過」）。
+        ("11-72-8007-95-8", "electricityBill", bill.key.as_str(), v2, OPEN_FROM, None, "G4：示範單通過審核、不產生應付"),
     ];
     for (key, doc_type, workflow_key, def_id, from, to, note) in station_bindings {
         let b = Binding {
@@ -937,12 +939,10 @@ async fn seed_flows(
     };
     let s1 = seeded.stations[pingtung];
     let s3 = seeded.stations[chiayi1];
-    // G1（20261118-1149）：屏東枋寮二號（11-72-8007-95-8＝Plain 範本電號）綁一組 share 策略，
-    // 讓示範資料的「無餘電需付款」那張單通過平台資料審核後，計算節點算得出應付（只是補示範資料，
-    // 不是放寬「沒綁策略就通過不了」這道擋）。
-    let s2 = seeded.stations["11-72-8007-95-8"];
-    for (station, strategy_id, from, to) in
-        [(s1, share, OPEN_FROM, Some(SWITCH_DAY)), (s1, unit, SWITCH_DAY, None), (s3, share, OPEN_FROM, None), (s2, share, OPEN_FROM, None)]
+    // G4（20261123-0938）：屏東枋寮二號（11-72-8007-95-8＝Plain 範本電號）G1 起綁過一組 share 策略
+    // 讓計算節點算應付；G4 拿掉計算節點，計費策略沒意義了，不再綁——它就是 S1 要的「沒綁計費策略的
+    // 案場，通過平台資料審核一樣要成功」那個案場。
+    for (station, strategy_id, from, to) in [(s1, share, OPEN_FROM, Some(SWITCH_DAY)), (s1, unit, SWITCH_DAY, None), (s3, share, OPEN_FROM, None)]
     {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM tbl_energy_rating_strategy_binding
@@ -1169,7 +1169,7 @@ pub struct SampleBillsReport {
     pub main_execution_id: Option<i64>,
     /// 候選池情境那張的執行（manager 認領並推完、operator 只在候選池）。
     pub candidate_execution_id: Option<i64>,
-    /// G1：無餘電需付款那張的執行（finance 直接通過，計算節點自然寫出應付）。
+    /// G4：無餘電需付款那張的執行（停在平台資料審核，讓人按〔審核通過〕；不再自動通過、不產生應付）。
     pub plain_execution_id: Option<i64>,
     /// 這一次真的灌了（已存在而略過時為 false）。
     pub created: bool,
@@ -1312,9 +1312,9 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
         out.main_execution_id = Some(exec.id);
     }
 
-    // G1（20261118-1149）：無餘電需付款那張配到屏東枋寮二號（s2，11-72-8007-95-8，已在 seed_flows 綁
-    // revenueShare 策略）。finance 一步到位通過平台資料審核，讓計算節點自然寫出一筆應付（示範資料，
-    // 不是放寬「沒綁策略就通過不了」這道擋）。platform_review_bill 沒有條件分支，attributes 不影響走向。
+    // G4（20261123-0938）：無餘電需付款那張配到屏東枋寮二號（s2，11-72-8007-95-8，G4 起沒綁計費策略，
+    // 也沒有計算節點）。這張單只開到停在平台資料審核，讓使用者自己按〔審核通過〕——就是 S1 的實地證明：
+    // 沒綁計費策略的案場照樣能通過平台資料審核，通過後不產生應付。
     if let Some(bill_id) = plain_bill {
         let mut tx = core.pool.begin().await?;
         let exec = start_execution(
@@ -1337,7 +1337,7 @@ pub async fn run_sample_bills(core: &CoreRef, report: &DemoSeedReport, dir: &std
         if let Some(a) = plain_attachment_id {
             attachments::link_to_execution(&mut tx, &admin, a, exec.id, "source").await?;
         }
-        step(&mut tx, &finance, exec.id, "platform-review", &["pass"]).await?;
+        // G4：不再自動通過，停在平台資料審核讓使用者自己按（S1 的實地證明）。
         tx.commit().await?;
         out.plain_execution_id = Some(exec.id);
     }

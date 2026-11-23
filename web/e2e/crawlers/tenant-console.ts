@@ -850,17 +850,18 @@ async function run() {
       };
     });
     /**
-     * 六張（不是四張）：本月應付／進行中的流程／卡關／已放行未付／**待指認案場**／
-     * **找不到生效合約**。最後那兩張是後來加的 —— 而這條斷言從那時起就一直紅著沒人看到。
+     * 五張（不是六張）：進行中的流程／卡關／已放行未付／**待指認案場**／**找不到生效合約**。
      *
      * 卡 G3：卡 B commit 6b3c5aa 加了「找不到生效合約」那一格（workbench/mod.rs:91-97，
      * count review_status='pendingContract'）→ 原本五張變六張。
+     * 卡 G4：通過不再逐張算應付，拿掉「本月應付」那一格 → 六張變回五張。
      */
-    check('六張 KPI 卡都在', dash.cards.length === 6, dash.cards);
-    // 卡 G3：順便核 6 個標題都在（不是只看張數）。
-    check('六張 KPI 卡的標題都在（含「找不到生效合約」）',
-      ['本月應付', '進行中的流程', '卡關', '已放行未付', '待指認案場', '找不到生效合約']
-        .every((title) => dash.cards.some((c) => c.includes(title))), dash.cards);
+    check('五張 KPI 卡都在', dash.cards.length === 5, dash.cards);
+    // 卡 G4：順便核 5 個標題都在（不是只看張數）。
+    check('五張 KPI 卡的標題都在（含「找不到生效合約」，不含「本月應付」）',
+      ['進行中的流程', '卡關', '已放行未付', '待指認案場', '找不到生效合約']
+        .every((title) => dash.cards.some((c) => c.includes(title)))
+        && !dash.cards.some((c) => c.includes('本月應付')), dash.cards);
     // demo seed 有 7 座案場（卡 A 20261118-0427-a 加了 s7 示範雙電號案場；
     // demo_seed.rs s1-s7：1 座異常、3 座建設中，其中 2 座（s5/s6）還沒有座標），
     // 加卡 G3：卡 D 第 1 輪審查修正 c1f3f57 加的專屬假案場「示範案場（本關要求）」

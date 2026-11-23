@@ -417,7 +417,9 @@ pub struct InstallReport {
 }
 
 /// 冪等地安裝內建流程定義（現行四份：Q-04 平台資料審核、保證金請款、用電電費單、開立發票）、
-/// 預設計算策略與定義引用到的部門。同 key 已有任何版本就不再裝（新版本要走換版，不是重裝）。
+/// 預設計算策略與定義引用到的部門。同 key 已有任何版本就不再裝（新版本要走換版，不是重裝）；
+/// 已安裝的 G1 版（platform-review + rating.computePayout）由 migration 0108 在啟動時自動換版拿掉計算節點，
+/// 不靠這支安裝。
 pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<InstallReport> {
     let mut report = InstallReport::default();
     let defs = [

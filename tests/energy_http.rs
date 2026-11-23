@@ -243,7 +243,9 @@ async fn installed_defaults_run_end_to_end_with_workbench() {
     let pay = wb["sections"].as_array().unwrap().iter().find(|s| s["key"] == "toPay").expect("等我付款");
     assert_eq!(pay["overdueDays"], 5);
     let d = expect_status!(app.get(&f.admin, &f.u("/dashboard?month=2026-01")).await, 200);
-    assert_eq!((d["releasedUnpaidCount"].clone(), d["payableThisMonth"].clone()), (json!(1), json!("5000.00")));
+    // G4：首頁不再查應付、不回 payableThisMonth（只保留卡關／已放行未付那幾格）。
+    assert_eq!(d["releasedUnpaidCount"], json!(1));
+    assert!(d.get("payableThisMonth").is_none(), "G4：dashboard 不該再回 payableThisMonth");
     f.step(&f.accountant, exec, json!({ "actionKey": "markPaid", "note": "TX-1" })).await;
     let v = expect_status!(app.get(&f.admin, &f.u(&format!("/executions/{exec}/revertable?nodeKey=manager-approve"))).await, 200);
     assert_eq!((v["allowed"].clone(), v["reason"].clone()), (json!(false), json!("side_effect_lock")));
