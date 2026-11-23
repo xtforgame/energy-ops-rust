@@ -437,7 +437,6 @@ pub struct InstallReport {
 pub async fn install_builtin_definitions(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<InstallReport> {
     let mut report = InstallReport::default();
     let defs = [
-        eo_domain::workflow_defs::bill_data_review(),
         eo_domain::workflow_defs::platform_review_bill(),
         eo_domain::workflow_defs::deposit_request(),
         eo_domain::workflow_defs::utility_bill(),
