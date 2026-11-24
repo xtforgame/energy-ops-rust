@@ -45,6 +45,7 @@ impl eo_platform::azldi::Plugin for IngestPlugin {
 impl AppPlugin for IngestPlugin {
     fn configure_routes(&self, cfg: &mut RouteRegistrar<'_>, _self_arc: &Arc<dyn AppPlugin>) {
         cfg.post(&path("/bills/ingest"), web::post().to(h::ingest_bill));
+        cfg.get(&path("/stations/{stationId}/rent-payment"), web::get().to(rent_payment::get_station));
         cfg.get(&path("/bills"), web::get().to(h::list_bills));
         // 要排在 /bills/{billId} 之前，否則 'unmatched' 會被當成 id。
         cfg.get(&path("/bills/unmatched"), web::get().to(h::list_unmatched));

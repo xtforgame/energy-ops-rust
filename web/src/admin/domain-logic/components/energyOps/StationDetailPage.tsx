@@ -1,3 +1,4 @@
+import RentPaymentPreview from './RentPaymentPreview';
 import * as React from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableHead, TableBody, TableRow, TableCell,
@@ -668,6 +669,7 @@ const StationDetailPage: React.FC = () => {
       </Card>
 
       {/* 卡 20261118-0427-a S2／S4：電號區、地主分配區（各自抓自己的資料，不擋其他區塊）。 */}
+      {id && <RentPaymentPreview base={base} stationId={Number(id)} />}
       {id && <MetersSection orgId={orgId} stationId={Number(id)} />}
       {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
 

@@ -4,6 +4,16 @@ use eo_platform::{auth::CurrentUser,core::CoreRef,error::ApiResult};
 use crate::{gates,common::{err,err_d,Ctx,RequestMeta},audit::{self,AuditInput}};
 use serde_json::{Value,json};
 type Core=web::Data<CoreRef>;
+/// Rental cycles are independent of bill approval; inspect evidence without inventing a bill.
+pub async fn get_station(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse>{
+ let(org,id)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
+ let s:Value=sqlx::query_scalar("SELECT jsonb_build_object('name',name,'data',data) FROM tbl_energy_station WHERE id=$1 AND organization_id=$2 AND deleted_at IS NULL").bind(id).bind(org).fetch_optional(&core.pool).await?.ok_or_else(||err(404,"station_not_found"))?;
+ let mut items=Vec::new();if let Some(drafts)=s["data"]["rentPaymentDrafts"].as_array(){for d in drafts{
+  let mut result=eo_domain::rent_payment::calculate(d).map_err(|m|err_d(422,"rent_payment_invalid",json!({"message":m})))?;
+  result["stationName"]=s["name"].clone();result["customerNumber"]=d["customerNumber"].clone();items.push(result);
+ }}
+ Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(json!({"items":items,"stationId":id,"paymentAllowed":false})))
+}
 pub async fn get(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse>{
  let(org,id)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
  let mut tx=core.pool.begin().await?;let bill=bills::bill_in_org(&mut tx,org,id,false).await?;
