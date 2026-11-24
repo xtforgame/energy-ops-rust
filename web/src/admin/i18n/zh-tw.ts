@@ -461,6 +461,8 @@ const customChineseTWMessages: TranslationMessages = {
       // 高壓用電單（我們付台電）—— 與躉購單是**兩種單**，不是同一種的變體。
       consumptionBill: '用電電費單',
       depositRequest: '保證金請款',
+      // 售電業（陽光伏特家／阿波羅／英業達）賣綠電給我們的購售電單——我們要開發票。
+      retailerSale: '售電業購售電單（需開發票）',
       unclassified: '待分類／補對應規則',
       // 綁定用：這一段不分單別。
       anyDocType: '不分單別',

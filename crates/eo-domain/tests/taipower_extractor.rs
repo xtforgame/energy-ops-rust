@@ -93,13 +93,15 @@ fn every_known_template_maps_to_a_flow() {
     }
 }
 
-/// 來源：taipowerExtractor.test.ts「四種細分單別**都**有預設流程（新增一種就要回來補）」
+/// 來源：taipowerExtractor.test.ts「細分單別**都**有預設流程（新增一種就要回來補）」。
+/// 2026-11-23 加 `RetailerSale`（三家售電業的購售電單）：4 → 5，`doc_type_to_workflow` 回
+/// `Some("bill-approval")`，這裡就是回來補的那一筆。
 #[test]
 fn every_fine_doc_type_has_a_default_flow() {
     for t in BILL_DOC_TYPES {
         assert!(doc_type_to_workflow(t).is_some(), "{t:?}");
     }
-    assert_eq!(BILL_DOC_TYPES.len(), 4);
+    assert_eq!(BILL_DOC_TYPES.len(), 5);
 }
 
 /// 來源：taipowerExtractor.test.ts「認不出版型 → unclassified，不 fallback 成電費單」

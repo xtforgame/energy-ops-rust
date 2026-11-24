@@ -60,6 +60,9 @@ export type EnergyDocType =
   | 'consumptionBill'
   /** 保證金請款 → `deposit-request` */
   | 'depositRequest'
+  /** 售電業（陽光伏特家／阿波羅／英業達）賣綠電給我們的購售電單——我們要開發票。
+   * 不併進 `renewableSurplus`：那是台電躉購單，RentCycle 會把它當台電躉購單處理。 */
+  | 'retailerSale'
   /** 判不出來 —— 這是一個**合法答案**，不是錯誤 */
   | 'unclassified';
 
@@ -82,7 +85,7 @@ export const isRecognizableMime = (mimeType: string): boolean => (
 
 /** 人可以在校對台上指定的單別（不含 `unclassified` 與保證金）。順序＝下拉的順序。 */
 export const BILL_DOC_TYPES: readonly EnergyDocType[] = [
-  'renewableSurplus', 'renewableNoSurplus', 'consumptionDevice', 'consumptionDeviceRental',
+  'renewableSurplus', 'renewableNoSurplus', 'consumptionDevice', 'consumptionDeviceRental', 'retailerSale',
 ];
 
 /**
@@ -97,6 +100,7 @@ export const DOC_TYPE_FAMILY: Partial<Record<EnergyDocType, EnergyDocType>> = {
   renewableNoSurplus: 'consumptionBill',
   consumptionDevice: 'consumptionBill',
   consumptionDeviceRental: 'consumptionBill',
+  retailerSale: 'electricityBill',
 };
 
 /** 這種單**錢的方向**：true ＝ 我們要付出去（不該算分潤）。 */
@@ -107,6 +111,7 @@ export const DOC_TYPE_IS_PAYABLE: Partial<Record<EnergyDocType, boolean>> = {
   consumptionDeviceRental: true,
   electricityBill: false,
   consumptionBill: true,
+  retailerSale: false,
 };
 
 /**
@@ -206,6 +211,7 @@ export const DOC_TYPE_WORKFLOW: Record<EnergyDocType, string | null> = {
   electricityBill: 'bill-approval',
   consumptionBill: 'utility-bill',
   depositRequest: 'deposit-request',
+  retailerSale: 'bill-approval',
   unclassified: null,
 };
 

@@ -11,3 +11,6 @@ chrono.workspace = true
 rust_decimal.workspace = true
 thiserror.workspace = true
 regex.workspace = true
+# 三家售電業的單：本機抽 PDF 文字層（含座標），不送外部辨識服務。DESIGN.md「設計（乙）」1。
+pdf-extract = "0.9"
+unicode-normalization = "0.1"

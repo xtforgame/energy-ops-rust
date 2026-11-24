@@ -63,6 +63,7 @@ pub mod rating;
 pub mod rent_cycle;
 pub mod rent_payment;
 pub mod rbac;
+pub mod retailer_bills;
 pub mod resolve_mode;
 pub mod resource_identifier;
 pub mod route_preview;
