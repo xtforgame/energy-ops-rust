@@ -1,0 +1,8 @@
+{
+  "note": "複製成 sources.json（不進 repo），把下面的路徑換成真實來源檔的絕對路徑。換新版來源時只改這一份。",
+  "rawRoot": "/path/to/原始資料",
+  "assetList": "/path/to/原始資料/資產管理清單2026.xlsx",
+  "stationList": "/path/to/原始資料/電費單作業/2.電費單作業/1.發電案場清單.xlsx",
+  "billRecord": "/path/to/原始資料/單一案場/【電費單紀錄】.xlsx",
+  "specExport": "/path/to/energy-ops-rust/docs/spec/online/spec-online-最新日期.json"
+}
