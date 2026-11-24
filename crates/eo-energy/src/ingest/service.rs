@@ -795,7 +795,7 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
         // 電費只要求對應案場；地主租約由獨立租金作業檢查。
 
         let station = bills::station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(409, "bill_needs_station"))?;
-        ("energyBill", bill_id, station.customer_number, Some(station.id), doc_type, bill.attributes(), bill.business_key.clone())
+        ("energyBill", bill_id, station.customer_number.unwrap_or_default(), Some(station.id), doc_type, bill.attributes(), bill.business_key.clone())
     } else if item_doc_type == "depositRequest" {
         let inst_id = item.installment_id.ok_or_else(|| err(409, "item_needs_source_match"))?;
         let inst: Option<(i64, Decimal, Option<String>)> = sqlx::query_as(
@@ -807,7 +807,7 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
         .await?;
         let (contract_id, amount, key) = inst.ok_or_else(|| err(409, "item_needs_source_match"))?;
         // 保證金綁在契約涵蓋的案場上：取第一座（流程本身由契約決定，案場只是 execution 上要記的位置）。
-        let station: Option<(i64, String)> = sqlx::query_as(
+        let station: Option<(i64, Option<String>)> = sqlx::query_as(
             "SELECT s.id, s.customer_number FROM mn_energy_contract_station cs
                JOIN tbl_energy_station s ON s.id = cs.station_id AND s.deleted_at IS NULL
               WHERE cs.contract_id = $1 AND cs.deleted_at IS NULL ORDER BY cs.id ASC LIMIT 1",
@@ -815,7 +815,7 @@ pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date
         .bind(contract_id)
         .fetch_optional(&mut **tx)
         .await?;
-        let (sid, skey) = station.map(|s| (Some(s.0), s.1)).unwrap_or((None, String::new()));
+        let (sid, skey) = station.map(|s| (Some(s.0), s.1.unwrap_or_default())).unwrap_or((None, String::new()));
         // 金額取合約的，不取掃描件抽出來的。
         let base = json!({ "installment": { "amount": amount.to_f64().unwrap_or(0.0) } });
         ("energyInstallment", inst_id, skey, sid, EnergyDocType::DepositRequest, base, key)
@@ -857,8 +857,9 @@ pub async fn submit_bill(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, business_date
     // 業務日期優先取計費期間結束日：回頭補送的舊單要綁到它自己那個時點的流程版本。
     let business_date = business_date.unwrap_or_else(|| bill.business_date(ctx.today()));
     assert_not_duplicate(tx, ctx.org_id(), "energyBill", bill.business_key.as_deref(), bill_id).await?;
+    let station_key = station.customer_number.clone().unwrap_or_default();
     let flows =
-        resolve_flows(tx, ctx, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date, &bill.attributes()).await?;
+        resolve_flows(tx, ctx, &station_key, Some(station.id), bill.effective_doc_type(), business_date, &bill.attributes()).await?;
     let item: Option<ItemRow> = sqlx::query_as(&format!(
         "SELECT {ITEM_COLS} FROM tbl_energy_ingest_item WHERE organization_id = $1 AND bill_id = $2 AND deleted_at IS NULL ORDER BY id LIMIT 1"
     ))
@@ -875,7 +876,7 @@ pub async fn submit_bill(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, business_date
         tx,
         ctx,
         flows,
-        &station.customer_number,
+        &station_key,
         Some(station.id),
         "energyBill",
         bill_id,

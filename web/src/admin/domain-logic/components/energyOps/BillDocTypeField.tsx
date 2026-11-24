@@ -152,9 +152,13 @@ const BillDocTypeField: React.FC<{
                 data-workflow={f.workflowKey}
                 // 契約發動的流程要說得出**是哪一份契約** ——
                 // 一張單的兩條流程可能來自不同契約。
-                label={f.contractNo
-                  ? `${f.workflowName ?? f.workflowKey} v${f.version} · ${f.contractNo}`
-                  : `${f.workflowName ?? f.workflowKey} v${f.version}`}
+                // 電費單平台資料審核那個分支沒有版本號（它不是一份具版號的工作流定義）——
+                // 沒有就不印「 v…」，不要印出「vundefined」（使用者拍板「A」只修前端顯示）。
+                label={(() => {
+                  const name = f.workflowName ?? f.workflowKey;
+                  const versioned = (f.version ?? null) != null ? `${name} v${f.version}` : name;
+                  return f.contractNo ? `${versioned} · ${f.contractNo}` : versioned;
+                })()}
                 sx={{ borderColor: color, color: jvTokens.caption }}
                 variant="outlined"
               />

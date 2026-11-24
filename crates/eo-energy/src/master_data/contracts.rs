@@ -22,7 +22,8 @@ const PAYMENT_FREQUENCIES: &[&str] = &["monthly", "bimonthly", "quarterly", "sem
 pub struct ContractRow {
     pub id: i64,
     pub organization_id: i64,
-    pub landowner_id: i64,
+    /// 「第一位地主」—— 給舊碼讀（提醒、租金週期稽核）；完整名單在 `mn_energy_contract_landowner`。
+    pub landowner_id: Option<i64>,
     pub contract_no: String,
     pub sign_method: Option<String>,
     pub valid_from: NaiveDate,
@@ -101,6 +102,49 @@ pub async fn sync_contract_stations(tx: &mut Tx<'_>, ctx: &Ctx, contract_id: i64
     Ok(())
 }
 
+/// 把送上來的 `landownerIds` 跟目前有效列對齊（照 `sync_contract_stations` 的只增不刪精神）。
+pub async fn sync_contract_landowners(tx: &mut Tx<'_>, ctx: &Ctx, contract_id: i64, landowner_ids: &[i64]) -> ApiResult<()> {
+    let org = ctx.org_id();
+    for &lid in landowner_ids {
+        landowner_in_org(tx, org, lid).await?;
+    }
+    let existing: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT id, landowner_id FROM mn_energy_contract_landowner WHERE contract_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(contract_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    for (row_id, lid) in &existing {
+        if !landowner_ids.contains(lid) {
+            sqlx::query("UPDATE mn_energy_contract_landowner SET deleted_at = $2 WHERE id = $1 AND deleted_at IS NULL")
+                .bind(row_id)
+                .bind(ctx.now())
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
+    for &lid in landowner_ids {
+        if !existing.iter().any(|(_, l)| *l == lid) {
+            sqlx::query("INSERT INTO mn_energy_contract_landowner (contract_id, landowner_id) VALUES ($1, $2)")
+                .bind(contract_id)
+                .bind(lid)
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// `landownerIds`（新）優先；沒帶就退回相容舊的單一 `landownerId`。至少要有一位，空清單回 400。
+fn landowner_ids_of(b: &Value) -> ApiResult<Vec<i64>> {
+    let arr = vi64_array(b, "landownerIds");
+    let ids = if !arr.is_empty() { uniq(arr.into_iter()) } else { vi64(b, "landownerId").into_iter().collect() };
+    if ids.is_empty() {
+        return Err(err(400, "landowner_id_required"));
+    }
+    Ok(ids)
+}
+
 fn check_payment_frequency(v: &Option<String>) -> ApiResult<()> {
     if let Some(pf) = v {
         if !PAYMENT_FREQUENCIES.contains(&pf.as_str()) {
@@ -124,7 +168,7 @@ async fn landowner_in_org(tx: &mut Tx<'_>, org: i64, id: i64) -> ApiResult<()> {
 pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<i64> {
     let org = ctx.org_id();
     let contract_no = vstr(b, "contractNo").ok_or_else(|| err(400, "contract_no_required"))?;
-    let landowner_id = vi64(b, "landownerId").ok_or_else(|| err(400, "landowner_id_required"))?;
+    let landowner_ids = landowner_ids_of(b)?;
     let valid_from = vday(b, "validFrom")?.ok_or_else(|| err(400, "valid_from_required"))?;
     let valid_to = vday(b, "validTo")?;
     if valid_to.is_some_and(|vt| vt < valid_from) {
@@ -132,7 +176,10 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     }
     let payment_frequency = vstr(b, "paymentFrequency");
     check_payment_frequency(&payment_frequency)?;
-    landowner_in_org(tx, org, landowner_id).await?;
+    for &lid in &landowner_ids {
+        landowner_in_org(tx, org, lid).await?;
+    }
+    let primary_landowner_id = landowner_ids[0];
 
     let sign_method = vstr(b, "signMethod");
     let stage = vstr(b, "stage").unwrap_or_else(|| "operating".into());
@@ -151,7 +198,7 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id",
     )
     .bind(org)
-    .bind(landowner_id)
+    .bind(primary_landowner_id)
     .bind(&contract_no)
     .bind(&sign_method)
     .bind(valid_from)
@@ -169,15 +216,16 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     .await?;
 
     sync_contract_stations(tx, ctx, id, &vi64_array(b, "stationIds")).await?;
+    sync_contract_landowners(tx, ctx, id, &landowner_ids).await?;
 
     let landowner_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM tbl_energy_landowner WHERE id = $1").bind(landowner_id).fetch_optional(&mut **tx).await?;
+        sqlx::query_scalar("SELECT name FROM tbl_energy_landowner WHERE id = $1").bind(primary_landowner_id).fetch_optional(&mut **tx).await?;
     audit::record(
         tx,
         ctx,
         AuditInput::new("contract.created", id, format!("建立合約「{contract_no}」"))
             .label(contract_no.clone())
-            .payload(json!({ "contractNo": contract_no, "landownerId": landowner_id, "landownerName": landowner_name })),
+            .payload(json!({ "contractNo": contract_no, "landownerId": primary_landowner_id, "landownerIds": landowner_ids, "landownerName": landowner_name })),
     )
     .await?;
     Ok(id)
@@ -188,7 +236,7 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     let org = ctx.org_id();
     let existing = contract_in_org(tx, org, id).await?;
     let contract_no = vstr(b, "contractNo").ok_or_else(|| err(400, "contract_no_required"))?;
-    let landowner_id = vi64(b, "landownerId").ok_or_else(|| err(400, "landowner_id_required"))?;
+    let landowner_ids = landowner_ids_of(b)?;
     let valid_from = vday(b, "validFrom")?.ok_or_else(|| err(400, "valid_from_required"))?;
     let valid_to = vday(b, "validTo")?;
     if valid_to.is_some_and(|vt| vt < valid_from) {
@@ -196,7 +244,10 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     }
     let payment_frequency = vstr(b, "paymentFrequency");
     check_payment_frequency(&payment_frequency)?;
-    landowner_in_org(tx, org, landowner_id).await?;
+    for &lid in &landowner_ids {
+        landowner_in_org(tx, org, lid).await?;
+    }
+    let primary_landowner_id = landowner_ids[0];
 
     let sign_method = vstr(b, "signMethod");
     let stage = vstr(b, "stage").unwrap_or_else(|| existing.stage.clone());
@@ -216,7 +267,7 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
          WHERE id = $1 AND organization_id = $16 AND deleted_at IS NULL",
     )
     .bind(id)
-    .bind(landowner_id)
+    .bind(primary_landowner_id)
     .bind(&contract_no)
     .bind(&sign_method)
     .bind(valid_from)
@@ -235,16 +286,17 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     .await?;
 
     sync_contract_stations(tx, ctx, id, &vi64_array(b, "stationIds")).await?;
+    sync_contract_landowners(tx, ctx, id, &landowner_ids).await?;
 
     let landowner_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM tbl_energy_landowner WHERE id = $1").bind(landowner_id).fetch_optional(&mut **tx).await?;
+        sqlx::query_scalar("SELECT name FROM tbl_energy_landowner WHERE id = $1").bind(primary_landowner_id).fetch_optional(&mut **tx).await?;
     audit::record(
         tx,
         ctx,
         AuditInput::new("contract.updated", id, format!("修改合約「{contract_no}」"))
             .label(contract_no.clone())
             .payload(json!({
-                "contractNo": contract_no, "landownerId": landowner_id, "landownerName": landowner_name,
+                "contractNo": contract_no, "landownerId": primary_landowner_id, "landownerIds": landowner_ids, "landownerName": landowner_name,
                 "changes": { "validTo": { "from": day_opt(existing.valid_to), "to": day_opt(valid_to) } },
             })),
     )
@@ -258,7 +310,13 @@ async fn contract_views(tx: &mut Tx<'_>, org: i64, rows: Vec<ContractRow>) -> Ap
         return Ok(vec![]);
     }
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let owner_ids = uniq(rows.iter().map(|r| r.landowner_id));
+    let owner_links: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT contract_id, landowner_id FROM mn_energy_contract_landowner WHERE contract_id = ANY($1) AND deleted_at IS NULL ORDER BY id ASC",
+    )
+    .bind(&ids)
+    .fetch_all(&mut **tx)
+    .await?;
+    let owner_ids = uniq(owner_links.iter().map(|l| l.1).chain(rows.iter().filter_map(|r| r.landowner_id)));
     let owners: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, name FROM tbl_energy_landowner WHERE id = ANY($1) AND organization_id = $2 AND deleted_at IS NULL")
             .bind(&owner_ids)
@@ -281,13 +339,18 @@ async fn contract_views(tx: &mut Tx<'_>, org: i64, rows: Vec<ContractRow>) -> Ap
     Ok(rows
         .iter()
         .map(|r| {
-            let landowner_name = owners.iter().find(|o| o.0 == r.landowner_id).map(|o| o.1.clone());
+            let landowners: Vec<Value> = owner_links
+                .iter()
+                .filter(|l| l.0 == r.id)
+                .map(|l| json!({ "id": l.1, "name": owners.iter().find(|o| o.0 == l.1).map(|o| o.1.clone()) }))
+                .collect();
+            let landowner_name = r.landowner_id.and_then(|lid| owners.iter().find(|o| o.0 == lid)).map(|o| o.1.clone());
             let stations: Vec<Value> =
                 station_links.iter().filter(|l| l.0 == r.id).map(|l| json!({ "id": l.1, "name": l.2 })).collect();
             let attachment_count = att_counts.iter().find(|a| a.0 == r.id).map(|a| a.1).unwrap_or(0);
             json!({
                 "id": r.id, "contractNo": r.contract_no, "contractType": r.contract_type,
-                "landownerId": r.landowner_id, "landownerName": landowner_name, "stations": stations,
+                "landownerId": r.landowner_id, "landownerName": landowner_name, "landowners": landowners, "stations": stations,
                 "signedOn": day_opt(r.signed_on), "validFrom": day(r.valid_from), "validTo": day_opt(r.valid_to),
                 "renewalRemindOn": day_opt(r.renewal_remind_on), "termsVersion": r.terms_version,
                 "paymentFrequency": r.payment_frequency, "paymentTerms": r.payment_terms, "stage": r.stage,
@@ -311,8 +374,10 @@ pub async fn list_contracts(
         "SELECT {CONTRACT_COLS} FROM tbl_energy_contract c
           WHERE c.organization_id = $1 AND c.deleted_at IS NULL
             AND ($2::text IS NULL OR c.contract_no ILIKE $2
-                 OR EXISTS (SELECT 1 FROM tbl_energy_landowner lo WHERE lo.id = c.landowner_id AND lo.name ILIKE $2))
-            AND ($3::bigint IS NULL OR c.landowner_id = $3)
+                 OR EXISTS (SELECT 1 FROM mn_energy_contract_landowner cl JOIN tbl_energy_landowner lo ON lo.id = cl.landowner_id
+                             WHERE cl.contract_id = c.id AND cl.deleted_at IS NULL AND lo.name ILIKE $2))
+            AND ($3::bigint IS NULL OR EXISTS (
+                  SELECT 1 FROM mn_energy_contract_landowner cl WHERE cl.contract_id = c.id AND cl.landowner_id = $3 AND cl.deleted_at IS NULL))
             AND ($4::bigint IS NULL OR EXISTS (
                   SELECT 1 FROM mn_energy_contract_station cs WHERE cs.contract_id = c.id AND cs.station_id = $4 AND cs.deleted_at IS NULL))
           ORDER BY c.valid_from DESC, c.id DESC LIMIT $5"

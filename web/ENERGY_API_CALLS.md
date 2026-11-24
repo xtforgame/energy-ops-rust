@@ -112,13 +112,21 @@
 
 | 方法 | 新路徑 | 回應轉換 | 呼叫端 |
 |---|---|---|---|
-| GET | `E/contracts`（可篩 `q`） | `{items}` → 陣列 | `ContractsPage.tsx` |
-| POST | `E/contracts` | — | `ContractsPage.tsx` |
+| GET | `E/contracts`（可篩 `q`、`landownerId`、`stationId`；`q` 也比對任一位地主的名字） | `{items}` → 陣列 | `ContractsPage.tsx` |
+| POST | `E/contracts`（卡 20261124-2316 起收 `landownerIds: number[]`，相容舊的單一 `landownerId`；回應多一個 `landowners: [{id,name}]`） | — | `ContractsPage.tsx` |
 | GET | `E/contracts/{contractId}` | — | （目前前端沿用清單那一列，端點保留給之後要單筆重讀的頁面） |
-| PATCH | `E/contracts/{contractId}` | — | `ContractsPage.tsx` |
+| PATCH | `E/contracts/{contractId}`（同上，收 `landownerIds`） | — | `ContractsPage.tsx` |
 | GET | `E/contracts/{contractId}/attachments` | `{items}` → 陣列 | `ContractsPage.tsx` |
 | POST | `E/contracts/{contractId}/attachments`（multipart） | — | `ContractsPage.tsx` |
 | POST | `E/imports/stations`（multipart `file`＋`dryRun`） | — | `StationsPage.tsx`（匯入 Excel 對話框） |
+
+## 卡 20261124-2316 新增（案場／地主／合約各自獨立、沒有電號建檔、陌生電號繫結）
+
+| 方法 | 新路徑 | 回應轉換 | 呼叫端 |
+|---|---|---|---|
+| POST | `E/onboard`（同一交易依序建地主→案場→分配→合約；`landowners: [{id?, name?, ratio}]`、`station: {name, customerNumber?}`、`contract: {contractNo, validFrom, validTo?}`，`station.customerNumber` 不填就建成沒有電號的案場） | — | `OnboardDialog.tsx`（`StationsPage.tsx` 的「一次建案場、地主、合約」按鈕開） |
+| GET | `E/bills/{billId}/match-candidates`（可篩 `q`；回 `{id,name,customerNumber,noMeter,hasContract}`，`hasContract` 依這張單的業務日期算） | `{items}` → 陣列 | `BillDetailBody.tsx`（指認對話框，取代原本打 `E/stations?q=` 的搜尋） |
+| POST | `E/bills/{billId}/match`（卡 20261124-2316 起：這段期間沒有生效合約回 409 `station_has_no_contract`；成功時把這張單的電號寫進 `E/stations/{stationId}/meters`、沒有主電號的案場補上） | — | `BillDetailBody.tsx` |
 
 ## 新後端另有、頁面目前沒有呼叫的端點
 

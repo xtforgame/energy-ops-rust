@@ -26,7 +26,8 @@ function localDateTime(iso: string): string {
 }
 
 interface ContractRow {
-  id: number; contractNo: string; contractType: string | null; landownerId: number; landownerName: string | null;
+  id: number; contractNo: string; contractType: string | null; landownerId: number | null; landownerName: string | null;
+  landowners: Array<{ id: number; name: string | null }>;
   stations: Array<{ id: number; name: string }>; signedOn: string | null; validFrom: string; validTo: string | null;
   renewalRemindOn: string | null; termsVersion: string | null; paymentFrequency: string | null; paymentTerms: string | null;
   stage: string; attachmentCount: number;
@@ -41,13 +42,13 @@ const PAYMENT_FREQUENCIES = ['monthly', 'bimonthly', 'quarterly', 'semiannual', 
 
 interface FormState {
   id?: number;
-  contractNo: string; contractType: string; landownerId: string; stationIds: number[];
+  contractNo: string; contractType: string; landownerIds: number[]; stationIds: number[];
   signedOn: string; validFrom: string; validTo: string; renewalRemindOn: string;
   termsVersion: string; paymentFrequency: string; paymentTerms: string;
 }
 
 const emptyForm: FormState = {
-  contractNo: '', contractType: '', landownerId: '', stationIds: [],
+  contractNo: '', contractType: '', landownerIds: [], stationIds: [],
   signedOn: '', validFrom: '', validTo: '', renewalRemindOn: '', termsVersion: '', paymentFrequency: '', paymentTerms: '',
 };
 
@@ -116,7 +117,8 @@ const ContractsPage: React.FC = () => {
   const openCreate = () => { setForm(emptyForm); setAttachments([]); setOpen(true); };
   const openEdit = (r: ContractRow) => {
     setForm({
-      id: r.id, contractNo: r.contractNo, contractType: r.contractType ?? '', landownerId: String(r.landownerId),
+      id: r.id, contractNo: r.contractNo, contractType: r.contractType ?? '',
+      landownerIds: r.landowners?.length ? r.landowners.map((l) => l.id) : (r.landownerId ? [r.landownerId] : []),
       stationIds: r.stations.map((s) => s.id), signedOn: r.signedOn ?? '', validFrom: r.validFrom, validTo: r.validTo ?? '',
       renewalRemindOn: r.renewalRemindOn ?? '', termsVersion: r.termsVersion ?? '',
       paymentFrequency: r.paymentFrequency ?? '', paymentTerms: r.paymentTerms ?? '',
@@ -131,7 +133,7 @@ const ContractsPage: React.FC = () => {
     try {
       const body: Record<string, unknown> = {
         contractNo: form.contractNo, contractType: form.contractType || undefined,
-        landownerId: Number(form.landownerId) || undefined, stationIds: form.stationIds,
+        landownerIds: form.landownerIds, stationIds: form.stationIds,
         signedOn: form.signedOn || undefined, validFrom: form.validFrom, validTo: form.validTo || undefined,
         renewalRemindOn: form.renewalRemindOn || undefined, termsVersion: form.termsVersion || undefined,
         paymentFrequency: form.paymentFrequency || undefined, paymentTerms: form.paymentTerms || undefined,
@@ -210,7 +212,7 @@ const ContractsPage: React.FC = () => {
                 <TableRow key={r.id} hover data-testid="contract-row">
                   <TableCell><Typography variant="body2" fontWeight={600}>{r.contractNo}</Typography></TableCell>
                   <TableCell>{r.contractType || '—'}</TableCell>
-                  <TableCell>{r.landownerName || '—'}</TableCell>
+                  <TableCell>{(r.landowners?.length ? r.landowners.map((l) => l.name).join('、') : r.landownerName) || '—'}</TableCell>
                   <TableCell>{r.stations.map((s) => s.name).join('、') || '—'}</TableCell>
                   <TableCell>{r.signedOn || '—'}</TableCell>
                   <TableCell>{r.validFrom}</TableCell>
@@ -243,13 +245,15 @@ const ContractsPage: React.FC = () => {
               renderInput={(params) => <TextField {...params} label={translate('energy.contracts.type')} data-testid="contract-form-type" />}
             />
             <FormControl fullWidth required data-testid="contract-form-landowner">
-              <InputLabel>{translate('energy.contracts.landowner')}</InputLabel>
+              <InputLabel>{translate('energy.contracts.landowners')}</InputLabel>
               <Select
-                label={translate('energy.contracts.landowner')}
-                value={form.landownerId}
-                onChange={(e) => setForm({ ...form, landownerId: e.target.value })}
+                multiple
+                label={translate('energy.contracts.landowners')}
+                value={form.landownerIds}
+                onChange={(e) => setForm({ ...form, landownerIds: (e.target.value as number[]) })}
+                renderValue={(ids) => landowners.filter((l) => (ids as number[]).includes(l.id)).map((l) => l.name).join('、')}
               >
-                {landowners.map((l) => <MenuItem key={l.id} value={String(l.id)}>{l.name}</MenuItem>)}
+                {landowners.map((l) => <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl fullWidth data-testid="contract-form-stations">
@@ -338,7 +342,7 @@ const ContractsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
-          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || !form.landownerId || !form.validFrom} data-testid="contract-form-save">
+          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || form.landownerIds.length === 0 || !form.validFrom} data-testid="contract-form-save">
             {translate('ra.action.save')}
           </Button>
         </DialogActions>

@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 pub use allocations::{allocation_history, create_allocation, end_allocation, list_allocations, update_allocation};
 pub use contracts::contract_in_org;
-pub use meters::{create_meter, list_meters, update_meter};
+pub use meters::{create_meter, list_meters, record_match_meter, update_meter};
 pub use overview::{landowner_overview, station_overview};
 
 /// 近期資料與清單的筆數上限 —— 參數不是猜測。
@@ -48,6 +48,7 @@ impl AppPlugin for MasterDataPlugin {
     fn configure_routes(&self, cfg: &mut RouteRegistrar<'_>, _self_arc: &Arc<dyn AppPlugin>) {
         cfg.get(&path("/stations"), web::get().to(station_search));
         cfg.post(&path("/stations"), web::post().to(create_station_handler));
+        cfg.post(&path("/onboard"), web::post().to(onboard_handler));
         cfg.get(&path("/station-list"), web::get().to(station_list));
         cfg.patch(&path("/stations/{stationId}"), web::patch().to(update_station_handler));
         cfg.get(&path("/stations/{stationId}/overview"), web::get().to(station_overview_handler));
@@ -81,7 +82,7 @@ impl AppPlugin for MasterDataPlugin {
 pub struct StationFull {
     pub id: i64,
     pub name: String,
-    pub customer_number: String,
+    pub customer_number: Option<String>,
     pub status: String,
     pub address: Option<String>,
     pub latitude: Option<Decimal>,
@@ -89,7 +90,7 @@ pub struct StationFull {
     pub geocode_precision: Option<String>,
     pub geocode_source: Option<String>,
     pub geocoded_at: Option<DateTime<Utc>>,
-    pub landowner_id: i64,
+    pub landowner_id: Option<i64>,
     pub organization_id: i64,
     // ── 卡 A 擴欄 ──
     pub project_code: Option<String>,
@@ -161,7 +162,7 @@ pub fn station_view(s: &StationFull, owners: &HashMap<i64, String>) -> Value {
         "latitude": coord(s.latitude), "longitude": coord(s.longitude),
         // 來源要跟著回：前端才知道這一列是不是 manual（不可被自動推估覆蓋）。
         "geocodePrecision": s.geocode_precision, "geocodeSource": s.geocode_source, "geocodedAt": s.geocoded_at,
-        "landownerId": s.landowner_id, "landownerName": owners.get(&s.landowner_id),
+        "landownerId": s.landowner_id, "landownerName": s.landowner_id.and_then(|id| owners.get(&id)),
         "projectCode": s.project_code, "shortName": s.short_name, "region": s.region, "category": s.category,
         "siteType": s.site_type, "spvPayeeId": s.spv_payee_id, "serviceDistrict": s.service_district,
         "capacityKw": s.capacity_kw.map(|v| v.normalize().to_string()),
@@ -296,7 +297,7 @@ pub async fn list_stations(
     .bind(enabled)
     .fetch_all(&mut **tx)
     .await?;
-    let owners = owner_names(tx, access.org_id(), &crate::common::uniq(rows.iter().map(|r| r.landowner_id))).await?;
+    let owners = owner_names(tx, access.org_id(), &crate::common::uniq(rows.iter().filter_map(|r| r.landowner_id))).await?;
     let spv_ids: Vec<i64> = crate::common::uniq(rows.iter().filter_map(|r| r.spv_payee_id));
     let spv_codes: Vec<(i64, Option<String>)> = if spv_ids.is_empty() {
         vec![]
@@ -601,11 +602,12 @@ async fn spv_code_of(tx: &mut Tx<'_>, org_id: i64, spv_payee_id: i64) -> ApiResu
     Ok(code)
 }
 
-/// 新增案場：同一交易建主電號（meter）與主要受款對象 100% 分配。
+/// 新增案場：不帶電號、不帶地主都可以——沒帶電號就不寫電號列（之後靠陌生電號繫結或手動補），
+/// 沒帶地主就不寫分配列（之後在案場詳情加）。同一交易建主電號（meter）與主要受款對象 100% 分配（有帶才建）。
 pub async fn create_station(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<i64> {
     let name = vstr(b, "name").ok_or_else(|| err(400, "name_required"))?;
-    let customer_number = vstr(b, "customerNumber").ok_or_else(|| err(400, "customer_number_required"))?;
-    let landowner_id = vi64(b, "landownerId").ok_or_else(|| err(400, "landowner_id_required"))?;
+    let customer_number = vstr(b, "customerNumber");
+    let landowner_id = vi64(b, "landownerId");
     let status = vstr(b, "status").unwrap_or_else(|| "operating".into());
     let site_type = vstr(b, "siteType");
     let spv_payee_id = vi64(b, "spvPayeeId");
@@ -615,13 +617,15 @@ pub async fn create_station(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<
     let enabled = vbool(b, "enabled", true);
     let org = ctx.org_id();
 
-    let owner: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL")
-            .bind(landowner_id)
-            .bind(org)
-            .fetch_optional(&mut **tx)
-            .await?;
-    owner.ok_or_else(|| err(400, "landowner_not_found"))?;
+    if let Some(lid) = landowner_id {
+        let owner: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL")
+                .bind(lid)
+                .bind(org)
+                .fetch_optional(&mut **tx)
+                .await?;
+        owner.ok_or_else(|| err(400, "landowner_not_found"))?;
+    }
     let spv_code = match spv_payee_id {
         Some(id) => spv_code_of(tx, org, id).await?,
         None => None,
@@ -654,25 +658,29 @@ pub async fn create_station(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<
     .fetch_one(&mut **tx)
     .await?;
 
-    // 主電號（躉購）—— 收件比對靠這一列，與主檔的 customer_number 永遠同步建立。
-    sqlx::query("INSERT INTO tbl_energy_station_meter (organization_id, station_id, customer_number, usage) VALUES ($1, $2, $3, 'wholesale')")
-        .bind(org)
-        .bind(id)
-        .bind(&customer_number)
-        .execute(&mut **tx)
-        .await?;
-    // 主要受款對象 100% 分配 —— 只存，不算錢。
-    sqlx::query("INSERT INTO mn_energy_landowner_station (organization_id, landowner_id, station_id, method, ratio) VALUES ($1, $2, $3, 'ratio', 100)")
-        .bind(org)
-        .bind(landowner_id)
-        .bind(id)
-        .execute(&mut **tx)
-        .await?;
+    // 主電號（躉購）—— 有帶電號才建，收件比對靠這一列，與主檔的 customer_number 永遠同步建立。
+    if let Some(cn) = &customer_number {
+        sqlx::query("INSERT INTO tbl_energy_station_meter (organization_id, station_id, customer_number, usage) VALUES ($1, $2, $3, 'wholesale')")
+            .bind(org)
+            .bind(id)
+            .bind(cn)
+            .execute(&mut **tx)
+            .await?;
+    }
+    // 主要受款對象 100% 分配 —— 有帶地主才建，只存，不算錢。
+    if let Some(lid) = landowner_id {
+        sqlx::query("INSERT INTO mn_energy_landowner_station (organization_id, landowner_id, station_id, method, ratio) VALUES ($1, $2, $3, 'ratio', 100)")
+            .bind(org)
+            .bind(lid)
+            .bind(id)
+            .execute(&mut **tx)
+            .await?;
+    }
 
     audit::record(
         tx,
         ctx,
-        AuditInput::new("station.geocoded", id, format!("建立案場「{name}」（{customer_number}）"))
+        AuditInput::new("station.geocoded", id, format!("建立案場「{name}」（{}）", customer_number.as_deref().unwrap_or("沒有電號")))
             .label(name.clone())
             .payload(json!({ "changes": {} })),
     )
@@ -693,7 +701,7 @@ pub async fn update_station(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, b: &Val
     let grid_date = vday(b, "gridDate")?;
     let serial_no = vi32(b, "serialNo");
     let enabled = vbool(b, "enabled", st.enabled);
-    let landowner_id = vi64(b, "landownerId").unwrap_or(st.landowner_id);
+    let landowner_id = vi64(b, "landownerId").or(st.landowner_id);
 
     let spv_code = match spv_payee_id {
         Some(id) => spv_code_of(tx, org, id).await?,
@@ -758,6 +766,65 @@ pub async fn create_landowner(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResul
     .await?)
 }
 
+/// 一次建地主（既有或新增）→ 案場（可無電號）→ 分配（照填的比例）→ 合約（掛這些地主與這個案場），
+/// 同一交易，任何一步錯整筆回滾（使用者拍板第 1 題「可以」）。
+/// body：`{ "landowners": [{ "id"?, ...createLandowner 欄位, "ratio" }], "station": {...createStation 欄位（不含 landownerId）},
+///          "contract": {...createContract 欄位（不含 landownerIds／stationIds，由這裡補）} }`
+pub async fn onboard(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult<Value> {
+    let station_body = b.get("station").cloned().unwrap_or_else(|| json!({}));
+    let landowners_body: Vec<Value> = b.get("landowners").and_then(Value::as_array).cloned().unwrap_or_default();
+    let contract_body = b.get("contract").cloned().unwrap_or_else(|| json!({}));
+    if landowners_body.is_empty() {
+        return Err(err(400, "landowners_required"));
+    }
+
+    // 1. 地主：帶 id 就驗存在（同組織），沒帶就新增。
+    let mut landowner_ids: Vec<i64> = Vec::with_capacity(landowners_body.len());
+    for lw in &landowners_body {
+        let id = match vi64(lw, "id") {
+            Some(id) => {
+                let owner: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM tbl_energy_landowner WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL",
+                )
+                .bind(id)
+                .bind(ctx.org_id())
+                .fetch_optional(&mut **tx)
+                .await?;
+                owner.ok_or_else(|| err(400, "landowner_not_found"))?
+            }
+            None => create_landowner(tx, ctx, lw).await?,
+        };
+        landowner_ids.push(id);
+    }
+
+    // 2. 案場：不帶 landownerId（分配由下面逐筆寫，免得 create_station 自動寫一列 100%）。
+    let mut station_input = station_body;
+    if let Value::Object(m) = &mut station_input {
+        m.remove("landownerId");
+    }
+    let station_id = create_station(tx, ctx, &station_input).await?;
+
+    // 3. 分配：照對話框填的比例逐筆寫（每位地主一筆 `ratio`）。
+    for (lw, &landowner_id) in landowners_body.iter().zip(landowner_ids.iter()) {
+        let ratio = lw.get("ratio").cloned().unwrap_or(Value::Null);
+        let alloc_body = json!({ "landownerId": landowner_id, "method": "ratio", "ratio": ratio });
+        allocations::create_allocation(tx, ctx, station_id, &alloc_body).await?;
+    }
+
+    // 4. 合約：掛這些地主與這個案場，生效起訖照對話框填的。
+    let mut contract_input = contract_body;
+    if let Value::Object(m) = &mut contract_input {
+        m.insert("landownerIds".into(), json!(landowner_ids));
+        m.insert("stationIds".into(), json!([station_id]));
+    }
+    let contract_id = contracts::create_contract(tx, ctx, &contract_input).await?;
+
+    let mut out = station_overview(tx, ctx, station_id).await?;
+    out["contractId"] = json!(contract_id);
+    out["landownerIds"] = json!(landowner_ids);
+    Ok(out)
+}
+
 /// 編輯受款對象（表單整包送上來）。
 pub async fn update_landowner(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> ApiResult<()> {
     let owner_org: Option<i64> =
@@ -816,7 +883,7 @@ struct ListQuery {
 async fn station_search(core: Core, user: CurrentUser, org: web::Path<i64>, q: web::Query<ListQuery>) -> ApiResult<HttpResponse> {
     let access = core.rbac.authorize_org(&user, org.into_inner(), gates::FLOW_VIEW).await?;
     let term = q.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let rows: Vec<(i64, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(i64, String, Option<String>, String)> = sqlx::query_as(
         "SELECT id, name, customer_number, status FROM tbl_energy_station
           WHERE organization_id = $1 AND deleted_at IS NULL AND ($2::text IS NULL OR customer_number ILIKE $2 OR name ILIKE $2)
           ORDER BY name ASC, id ASC LIMIT 50",
@@ -843,6 +910,15 @@ async fn create_station_handler(core: Core, user: CurrentUser, meta: RequestMeta
     let mut tx = core.pool.begin().await?;
     let id = create_station(&mut tx, &ctx, &body).await?;
     let out = station_overview(&mut tx, &ctx, id).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().json(out))
+}
+
+async fn onboard_handler(core: Core, user: CurrentUser, meta: RequestMeta, org: web::Path<i64>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
+    let access = core.rbac.authorize_org(&user, org.into_inner(), gates::MASTER_MANAGE).await?;
+    let ctx = Ctx::new(&core, access, &meta);
+    let mut tx = core.pool.begin().await?;
+    let out = onboard(&mut tx, &ctx, &body).await?;
     tx.commit().await?;
     Ok(HttpResponse::Ok().json(out))
 }
