@@ -40,6 +40,10 @@ async function pickSelect(page: Page, comboSelector: string, optionText: string)
     return true;
   }, optionText);
   if (!picked) throw new Error(`下拉裡找不到「${optionText}」`);
+  // 選完要等選單真的關掉（backdrop 退場有轉場），不等的話下一個點擊會打在還沒退場的
+  // backdrop 上，看起來像「點了沒反應」（下拉沒關就接著點別的按鈕，症狀跟按鈕壞掉一樣）。
+  await waitUntil(page, () => !document.querySelector('ul[role="listbox"]'),
+    { timeout: 5000, label: `${comboSelector} 選單關閉` });
 }
 
 async function typeInto(page: Page, selector: string, text: string) {
@@ -47,6 +51,19 @@ async function typeInto(page: Page, selector: string, text: string) {
   if (!el) throw new Error(`找不到輸入框：${selector}`);
   await el.click({ clickCount: 3 });
   await el.type(text, { delay: 5 });
+}
+
+/** `type="date"` 的 input 不能用按鍵打字（會打進瀏覽器自己的年/月/日子欄位，對不上）——
+ * 照 smoke-masters.mjs 的寫法，直接用原生 setter 塞值再送 input 事件。 */
+async function setDate(page: Page, selector: string, value: string) {
+  await page.waitForSelector(selector, { timeout: 10000 });
+  await page.evaluate((sel: string, val: string) => {
+    const el = document.querySelector(sel) as HTMLInputElement | null;
+    if (!el) return;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(el, val);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, selector, value);
 }
 
 /** 等批次離開「還在辨識」的狀態；每次查詢 `GET /ingest-batches/{id}` 都會順便 tick 一次服務。 */
@@ -82,6 +99,17 @@ async function run() {
     await goto(page, 'energyStationConsole', '[data-testid="station-list-table"]');
     await shot(page, '01-stations-before');
 
+    // 先用 API 建一座「有案場但沒建合約」的對照案場（S4 候選要用，不是這一步要畫面驗的東西）。
+    const noContractId = await page.evaluate(async (oid: number) => {
+      const r = await fetch(`/api/v1/orgs/${oid}/energy/stations`, {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'S4 沒合約案場（示範）' }),
+      });
+      const data = await r.json();
+      return data.id;
+    }, orgId);
+    check('先備好一座沒合約的案場當候選對照', !!noContractId, noContractId);
+
     // ── 2. S1：不填電號、不選地主建案場 ──
     hr('② S1：不填電號、不選地主建案場');
     await page.click('[data-testid="station-new"]');
@@ -112,18 +140,19 @@ async function run() {
     await pickSelect(page, '[data-testid="onboard-landowner-existing-select"] [role="combobox"]', firstLandowner?.name ?? '');
     await typeInto(page, '[data-testid="onboard-landowner-ratio"] input', '60');
     await page.click('[data-testid="onboard-landowner-add"]');
-    await sleep(300);
+    await waitUntil(page, () => document.querySelectorAll('[data-testid="onboard-landowner-row"]').length >= 2,
+      { timeout: 5000, label: '加地主那一列渲染出第二列' });
     const rows = await page.$$('[data-testid="onboard-landowner-row"]');
     check('加了第二位地主的輸入列', rows.length === 2, rows.length);
     const second = rows[1];
     await second.$eval('[data-testid="onboard-landowner-mode-new"]', (b) => (b as HTMLElement).click());
-    await sleep(300);
+    await second.waitForSelector('[data-testid="onboard-landowner-new-name"] input', { timeout: 5000 });
     const newNameInput = await second.$('[data-testid="onboard-landowner-new-name"] input');
     if (newNameInput) { await newNameInput.click({ clickCount: 3 }); await newNameInput.type('路竹三爺二期新地主（示範）', { delay: 5 }); }
     const ratioInputs = await second.$$('[data-testid="onboard-landowner-ratio"] input');
     if (ratioInputs[0]) { await ratioInputs[0].click({ clickCount: 3 }); await ratioInputs[0].type('40', { delay: 5 }); }
     await typeInto(page, '[data-testid="onboard-contract-no"] input', 'CT-MIM-S3-DEMO');
-    await typeInto(page, '[data-testid="onboard-contract-validfrom"] input', '2026-01-01');
+    await setDate(page, '[data-testid="onboard-contract-validfrom"] input', '2026-01-01');
     await shot(page, '03-s3-onboard-dialog');
 
     await page.click('[data-testid="onboard-save"]');
@@ -133,7 +162,7 @@ async function run() {
 
     await waitIdle(page);
     const s3Search = await eapi(page, 'GET', '/stations?q=路竹三爺二期');
-    const s3 = (s3Search.data ?? []).find((s: any) => /路竹三爺二期/.test(s.name));
+    const s3 = (s3Search.data?.items ?? []).find((s: any) => /路竹三爺二期/.test(s.name));
     check('找得到剛建好的案場', !!s3, s3Search.data);
     const s3Id: number = s3?.id ?? 0;
 
@@ -160,14 +189,14 @@ async function run() {
       contractRowText.includes('路竹三爺二期新地主') && (firstLandowner ? contractRowText.includes(firstLandowner.name) : true),
       contractRowText);
 
-    await typeInto(page, '[data-testid="contract-search"] input', '路竹三爺二期新地主');
+    await typeInto(page, '[data-testid="contract-search"]', '路竹三爺二期新地主');
     await waitIdle(page);
     const filtered = await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="contract-row"]'))
       .map((r) => (r as HTMLElement).innerText));
     check('依地主篩找得到這份合約', filtered.some((t) => t.includes('CT-MIM-S3-DEMO')), filtered);
     await shot(page, '06-s2-filter');
     // 清掉篩選，不影響後面的步驟。
-    await typeInto(page, '[data-testid="contract-search"] input', '');
+    await typeInto(page, '[data-testid="contract-search"]', '');
     await waitIdle(page);
 
     // ── 5. S4：上傳第一期陌生電號單 ──
@@ -273,7 +302,7 @@ async function run() {
     // ── 8. 舊畫面回歸：示範案場（雙電號）、既有合約、既有案場清單 ──
     hr('⑧ 舊畫面回歸（多對多改完，舊邏輯沒壞）');
     const demoStations = await eapi(page, 'GET', '/stations?q=示範案場');
-    const dual = (demoStations.data ?? []).find((s: any) => /雙電號/.test(s.name));
+    const dual = (demoStations.data?.items ?? []).find((s: any) => /雙電號/.test(s.name));
     check('找得到示範資料裡的「示範案場（雙電號）」', !!dual, demoStations.data);
     if (dual) {
       await goto(page, `energyStationConsole/${dual.id}/show`, '[data-testid="station-name"]');
