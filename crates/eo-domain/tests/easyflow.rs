@@ -1,6 +1,18 @@
 use eo_domain::easyflow::{build_application, application_csv};
 use serde_json::{json, Value};
 
+#[test]
+fn handoff_requires_operator_fields_but_invoice_does_not_require_payment_options() {
+    use eo_domain::easyflow::missing_handoff_fields;
+    let mut p=json!({"applicationType":"invoice","fields":[],"attachments":[{"id":1}]});
+    assert!(missing_handoff_fields(&p).contains(&"applicant".to_string()));
+    let fields=["siteName","companyName","counterpartyName","companyCode","applicant","department","applicationDate","summary","amount","expectedReceiptDate"];
+    p["fields"]=json!(fields.map(|k|json!({"key":k,"value":if k=="applicationDate"||k=="expectedReceiptDate"{"2026-11-24"}else{"test"}})));
+    assert!(missing_handoff_fields(&p).is_empty());
+    p["applicationType"]=json!("payment");
+    assert!(missing_handoff_fields(&p).contains(&"paymentMethod".to_string()));
+}
+
 fn value(p: &Value, key: &str) -> Value {
     p["fields"].as_array().unwrap().iter().find(|f| f["key"] == key).unwrap()["value"].clone()
 }
@@ -104,4 +116,31 @@ fn high_voltage_preserves_discounts_and_reconciles_display_precision_without_dou
         bill["detailFields"]["businessTax"]=json!(999);
         assert_eq!(build_application(&bill,&json!({}),&json!([]))["lineItemsReconciled"],false);
     }
+}
+#[test]
+fn retailer_application_uses_current_buyer_not_legacy_taipower_recipient() {
+ let bill=serde_json::json!({"docType":"retailerSale","detailFields":{"purchaseEnergyFee":"100"},"ocrRaw":{"record":{"fields":{"buyerTaxId":{"value":"12345678"},"buyerName":{"value":"測試購電股份有限公司"}}}}});
+ let station=serde_json::json!({"counterpartyTaxId":"99999999","counterpartyName":"舊台電對象"});
+ let app=eo_domain::easyflow::build_application(&bill,&station,&serde_json::json!([]));
+ let fields=app["fields"].as_array().unwrap();
+ assert_eq!(fields.iter().find(|f|f["key"]=="counterpartyTaxId").unwrap()["value"],"12345678");
+ assert_eq!(fields.iter().find(|f|f["key"]=="counterpartyName").unwrap()["value"],"測試購電股份有限公司");
+}
+#[test]
+fn ledger_keeps_template_columns_and_does_not_invent_submission_dates() {
+ let p=serde_json::json!({"billId":1,"fields":[{"key":"siteName","value":"=danger"},{"key":"meterRentalFee","value":"-983"},{"key":"purchaseEnergyFee","value":"16874"},{"key":"billingPeriodEnd","value":"2026-09-30"},{"key":"currentReadingDate","value":"2026-10-01"}]});
+ let csv=eo_domain::easyflow::electricity_ledger_csv(&p);
+ assert!(csv.contains("\"'\u{3d}danger\""));assert!(csv.contains("\"983\",\"16874\",\"\""));
+ assert!(csv.contains("\"2026-09-30\",\"2026-10-01\""));
+}
+
+#[test]
+fn retailer_identity_is_independent_of_taipower_and_other_providers(){
+ use eo_domain::business_key::{bill_business_key,source_bill_key};
+ let key=bill_business_key(Some("11-72-8007-94-7"),Some("2026-09-01"),Some("2026-09-30"));
+ let tp=source_bill_key(key.clone(),Some("renewableSurplus"),Some("renewable_purchase"));
+ let a=source_bill_key(key.clone(),Some("retailerSale"),Some("retailer_apollo"));
+ let b=source_bill_key(key.clone(),Some("retailerSale"),Some("retailer_inventec"));
+ assert_ne!(tp,a);assert_ne!(a,b);assert_eq!(a,source_bill_key(key,Some("retailerSale"),Some("retailer_apollo")));
+ assert_eq!(source_bill_key(None,Some("retailerSale"),None),None);
 }

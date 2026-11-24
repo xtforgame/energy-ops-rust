@@ -26,6 +26,11 @@ pub struct Fx {
 pub const KNOWN: &str = "03-1111-2222";
 
 impl Fx {
+    /// Explicit legacy engine test. Ordinary intake intentionally uses the new single review flow.
+    pub async fn start_legacy(&self, bill: i64) -> i64 {
+        let v=expect_status!(self.app.post(&self.clerk,&self.u("/executions"),json!({"stationKey":KNOWN,"workflowKey":"bill-approval","subjectType":"energyBill","subjectId":bill.to_string(),"businessDate":"2026-02-28","attributes":{"bill":{"totalAmount":60000}}})).await,200);
+        v["id"].as_i64().unwrap()
+    }
     pub fn u(&self, p: &str) -> String {
         self.app.e(self.org, p)
     }
@@ -121,6 +126,8 @@ pub async fn fixture_with(app: TestApp) -> Fx {
         }
     };
     app.dept_member(dept("sales").await, &clerk, "member").await;
+    app.dept_member(dept("bill-reviewers").await, &clerk, "member").await;
+    app.dept_member(dept("bill-reviewers").await, &manager, "member").await;
     app.dept_member(dept("sales").await, &manager, "manager").await;
     app.dept_member(dept("finance").await, &finance, "manager").await;
     app.dept_member(dept("accounting").await, &accountant, "manager").await;
@@ -326,8 +333,7 @@ async fn cross_org_batch_is_403() {
 async fn submitter_sees_no_actions_at_approval() {
     let fx = fixture().await;
     let b = fx.run(vec![("blocked.png", fx.bill_ocr(KNOWN, 55000.0, None))]).await;
-    let (_, v) = fx.submit_item(&item(&b, 0), Some("2026-02-28")).await;
-    let exec = v["executionId"].as_i64().unwrap();
+    let exec = fx.start_legacy(item(&b,0)["billId"].as_i64().unwrap()).await;
     let t = fx.open_task(&fx.clerk, exec).await;
     assert_eq!(t["nodeKey"], "clerk-review");
     fx.step(&fx.clerk, exec, json!({ "actionKey": "submit" })).await;
@@ -604,8 +610,7 @@ async fn route_gate_audit() {
 async fn patch_is_guarded_by_mode() {
     let fx = fixture().await;
     let bill = amount_bill(&fx, 60000).await;
-    let (_, r) = try_submit(&fx, bill).await;
-    let exec = r["id"].as_i64().unwrap();
+    let exec = fx.start_legacy(bill).await;
     expect_status!(fx.app.post(&fx.admin, &fx.u(&format!("/executions/{exec}/force-advance")), json!({ "toNodeKey": "manager-approve", "reason": "測試：推到不可編輯的關卡" })).await, 200);
     let v = fx.bill_row(bill).await;
     let as_manager = expect_status!(fx.app.get(&fx.manager, &fx.u(&format!("/bills/{bill}"))).await, 200);
@@ -645,7 +650,7 @@ async fn bill_list_carries_one_execution_link() {
     assert!(p["items"].as_array().unwrap().is_empty());
 }
 
-/// 綁定狀態：送審前就看得到會開哪些流程；改單別會開哪些流程當場跟著變；沒有綁定要說沒有、送審擋下。
+/// 電費單共用資料審核；刪除舊案場綁定不阻擋電費送審。
 /// 來源：recognitionFlow.test.ts「該跑的流程**不存在**就擋在送審之前（不是開一半）」＋「改了單別，會開哪些流程**當場跟著變**」
 #[actix_web::test]
 async fn binding_status_follows_doc_type() {
@@ -654,15 +659,15 @@ async fn binding_status_follows_doc_type() {
     let bill = item(&b, 0)["billId"].as_i64().unwrap();
     let v = fx.bill_row(bill).await;
     assert_eq!(v["binding"]["bound"], true);
-    assert_eq!(v["binding"]["flows"][0]["workflowKey"], "bill-approval");
+    assert_eq!(v["binding"]["flows"][0]["workflowKey"], "bill-data-review");
     let v = expect_status!(fx.app.patch(&fx.clerk, &fx.u(&format!("/bills/{bill}")), json!({ "docType": "consumptionDeviceRental" })).await, 200);
-    assert_eq!(v["binding"]["flows"][0]["workflowKey"], "utility-bill");
+    assert_eq!(v["binding"]["flows"][0]["workflowKey"], "bill-data-review");
     assert_eq!(v["binding"]["docType"], "consumptionDeviceRental");
-    // 刪掉用電流程的綁定 → no_binding，送審擋在開流程之前。
+    // 刪掉舊用電流程綁定，新的電費資料審核仍正常送審。
     fx.app.exec_sql(&format!("UPDATE tbl_energy_workflow_binding SET deleted_at = now() WHERE organization_id = {} AND doc_type = 'consumptionBill'", fx.org)).await;
     let v = fx.bill_row(bill).await;
-    assert_eq!((v["binding"]["bound"].clone(), v["binding"]["reason"].clone()), (json!(false), json!("no_binding")));
+    assert_eq!(v["binding"]["bound"], true, "電費審核不依賴舊案場綁定");
     let (s, e) = fx.submit_item(&item(&b, 0), None).await;
-    assert_eq!((s, e["code"].clone()), (404, json!("no_binding_for_business_date")));
-    assert_eq!(fx.app.scalar_i64(&format!("SELECT COUNT(*) FROM tbl_energy_workflow_execution WHERE subject_id = '{bill}'")).await, 0);
+    assert_eq!(s, 200, "{e}");
+    assert_eq!(fx.app.scalar_i64(&format!("SELECT COUNT(*) FROM tbl_energy_workflow_execution WHERE subject_id = '{bill}'")).await, 1);
 }

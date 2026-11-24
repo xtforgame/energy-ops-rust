@@ -1,4 +1,5 @@
 import * as React from 'react';
+import {rentCycleDocument} from './rentCycleDocument';
 import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { energyHttp } from '@/api/energy';
 
@@ -28,8 +29,8 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
       if(dirty) {await energyHttp.post(endpoint,plan);setDirty(false);}
       const v=(await energyHttp.get(`${endpoint}/bills?start=${encodeURIComponent(start)}`)).data;
       setRows(v.items.map((b:any)=>({billId:b.billId,start:b.start,end:b.end,documentNo:b.documentNo,attachmentId:b.attachmentId,
-        source:['renewableSurplus','renewableNoSurplus'].includes(b.docType)?'taipower':'',
-        untaxed:text(b.details?.purchaseEnergyFee),gross:text(b.details?.electricityFeeTotal),kwh:text(b.details?.purchaseKwh),selected:false})));
+        source:['renewableSurplus','renewableNoSurplus'].includes(b.docType)?'taipower':b.docType==='retailerSale'?'transfer':'',
+        untaxed:text(b.details?.purchaseEnergyFee),gross:text(b.docType==='retailerSale'?b.details?.payableTotal:b.details?.electricityFeeTotal),kwh:text(b.details?.purchaseKwh),selected:false})));
     }catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const updateRow=(id:number,key:keyof Row,value:any)=>{setResult(null);setRows(rs=>rs.map(r=>r.billId===id?{...r,[key]:value}:r));};
@@ -40,8 +41,8 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
     catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const download=()=>{
-    const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));
-    const a=document.createElement('a');a.href=url;a.download=`rent-${contractId}-${start}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const url=URL.createObjectURL(new Blob([rentCycleDocument(result)],{type:'text/html;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download=`rent-${contractId}-${start}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   return <>
     <Button size="small" onClick={load}>租金週期試算</Button>
@@ -97,7 +98,7 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
             {result.chargeStatus==='notStarted'&&<Alert severity="info">整個週期均在正式併聯發電日前，不計費。</Alert>}
             <Typography>本期：{result.periodStart}～{result.periodEnd}；{result.feeKind==='management'?'管理費':'租金'}基礎試算：{result.baseRent??'資料未齊，無法計算'} 元</Typography>
             <Alert severity="warning">尚非付款金額。稅費與扣繳待確認；正式送審、付款及排程待後續串接。</Alert>
-            <Button onClick={download}>匯出試算 JSON（含來源與待確認事項）</Button>
+            <Button onClick={download}>下載可閱讀租金試算表</Button>
           </>}
         </Stack>
       </DialogContent><DialogActions><Button disabled={busy} onClick={()=>setOpen(false)}>關閉</Button></DialogActions>

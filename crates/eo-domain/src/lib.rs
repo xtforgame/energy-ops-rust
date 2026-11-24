@@ -73,3 +73,4 @@ pub mod taipower_canonical;
 pub mod taipower_extractor;
 pub mod upload_filename;
 pub mod workflow_defs;
+pub mod rent_worksheet;

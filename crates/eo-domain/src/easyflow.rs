@@ -2,6 +2,24 @@
 //! Stable field keys are the automation contract; values only come from saved final bill/master data.
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
+
+/// Data readiness only; never authorizes external submission or replaces workflow approval.
+pub fn missing_handoff_fields(application: &Value) -> Vec<String> {
+    let mut required=vec!["siteName","companyName","counterpartyName","amount","companyCode","applicant","department","applicationDate","summary"];
+    match application["applicationType"].as_str() {
+        Some("payment")=>required.extend(["paymentMethod","paymentTerms","voucherStatus","contractOption"]),
+        Some("invoice")=>required.push("expectedReceiptDate"),
+        _=>required.push("applicationType"),
+    }
+    let fields=application["fields"].as_array();
+    let mut missing=Vec::new();
+    for key in required {
+        let value=fields.and_then(|f|f.iter().find(|f|f["key"]==key)).and_then(|f|f["value"].as_str()).filter(|s|!s.trim().is_empty());
+        if value.is_none() || (["applicationDate","expectedReceiptDate"].contains(&key) && value.is_some_and(|v|chrono::NaiveDate::parse_from_str(v,"%Y-%m-%d").is_err())) {missing.push(key.to_string());}
+    }
+    if application["attachments"].as_array().is_none_or(|a|a.is_empty()){missing.push("sourceAttachment".into());}
+    missing
+}
 use std::str::FromStr;
 
 fn text(v: &Value) -> Option<String> {
@@ -39,13 +57,17 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     }
     let high_voltage = bill["templateId"]=="high_voltage" || bill["ocrRaw"]["record"]["fields"]["templateId"]["value"]=="high_voltage";
     let mut fields = Vec::new();
+    let retailer = bill["docType"]=="retailerSale";
+    let buyer_tax = &bill["ocrRaw"]["record"]["fields"]["buyerTaxId"]["value"];
+    let counterparty_tax = if retailer {buyer_tax} else {&station["counterpartyTaxId"]};
+
     for (key,label,v,source) in [
         ("customerNumber","電號",&bill["customerNumberRaw"],"bill.customerNumberRaw"),
         ("siteCode","案場編號",&station["projectCode"],"station.projectCode / imported plantNo"),
         ("siteName","案場名稱",&station["name"],"station.name"),
         ("companyName","公司名稱",&station["companyName"],"station.spvPayee.name"),
-        ("counterpartyTaxId","對象統一編號",&station["counterpartyTaxId"],"station.invoice.counterpartyTaxId"),
-        // 售電業購售電單：買方統編是我們自己（跟 station 設定無關），直接從辨識結果取；取不到就標待確認。
+        ("counterpartyTaxId","對象統一編號",counterparty_tax,if retailer {"原單發票買受人統編"}else{"station.invoice.counterpartyTaxId"}),
+        // 售電業購售電單：買方是收受發票的購電方，非電廠企業。
         ("buyerTaxId","買方統一編號",&bill["ocrRaw"]["record"]["fields"]["buyerTaxId"]["value"],"bill.ocrRaw.record.fields.buyerTaxId"),
         ("billingPeriodStart","計費期間起日",&bill["billingPeriodStart"],"bill.billingPeriodStart"),
         ("billingPeriodEnd","計費期間迄日（原單）",&bill["billingPeriodEnd"],"bill.billingPeriodEnd"),
@@ -53,9 +75,9 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("nextReadingDate","下期抄表日",&detail["nextReadingDate"],"bill.detailFields.nextReadingDate"),
         ("dueDate","單據繳費期限",&bill["dueDate"],"bill.dueDate"),
     ] { field(&mut fields,key,label,text(v),source); }
-    let counterparty = text(&station["counterpartyName"]);
-    field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| text(&detail["serviceDepartment"])),
-        if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
+    let counterparty = if retailer {text(&bill["ocrRaw"]["record"]["fields"]["buyerName"]["value"])}else{text(&station["counterpartyName"])};
+    field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer {None}else{text(&detail["serviceDepartment"])}),
+        if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
     for (key,label) in [("purchaseEnergyFee","購電電費（未稅）"),("businessTax","營業稅"),("electricityFeeTotal","電費合計"),
         ("meterRentalFee","電表租費（原始正負號）"),("usageEnergyFee","設備發電使用電費"),("payableTotal","應付總金額（明細）"),
         ("baseEnergyFee","基本電費（約定）"),("flowEnergyFee","流動電費"),("powerFactorAdjustmentFee","功率因數調整費"),
@@ -138,6 +160,16 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
 }
 
 /// UTF-8 BOM for Excel. All cells quoted; untrusted text cannot become spreadsheet formulas.
+pub fn electricity_ledger_csv(p: &Value) -> String {
+    let get=|key:&str|p["fields"].as_array().and_then(|f|f.iter().find(|x|x["key"]==key)).and_then(|f|text(&f["value"])).unwrap_or_default();
+    let headers=["公槽","申請人","日期","公司名稱","案場名稱","電表租費","開立發票金額(發電收入)-未稅","計費區間/下期抄表日","送財會日","發票開立送件日","付款申請單送件日","發票寄送日","紙本/Mail","已傳送","已讀取","白單收據","匯款日","平台單據ID","原單計費起日","原單計費迄日","本次抄表日","下期抄表日","對照說明"];
+    let rental=Decimal::from_str(&get("meterRentalFee")).ok().map(|n|n.abs().normalize().to_string()).unwrap_or_default();
+    // Date convention in the customer's combined H column is unresolved; do not silently substitute reading date.
+    let values=vec![String::new(),get("applicant"),String::new(),get("companyName"),get("siteName"),rental,get("purchaseEnergyFee"),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),text(&p["billId"]).unwrap_or_default(),get("billingPeriodStart"),get("billingPeriodEnd"),get("currentReadingDate"),get("nextReadingDate"),"草稿：前17欄沿用紀錄表順序；收件／送件／付款日期不推測。合併期間欄規則待確認，原始日期另列。".into()];
+    fn cell(s:&str)->String {let guarded=if s.trim_start().starts_with(['=','+','-','@']){format!("'{s}")}else{s.into()};format!("\"{}\"",guarded.replace('"',"\"\""))}
+    format!("\u{feff}{}\r\n{}\r\n",headers.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","),values.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","))
+}
+
 pub fn application_csv(p: &Value) -> String {
     fn cell(s: &str) -> String {
         let guarded = if s.trim_start().starts_with(['=', '+', '-', '@']) { format!("'{s}") } else { s.into() };

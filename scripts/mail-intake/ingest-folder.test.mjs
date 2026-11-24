@@ -15,3 +15,19 @@ test('new PDF produces a review form; renamed or copied content does not upload 
 test('ambiguous batch creation is not retried blindly',async t=>{const c=await setup(t),s=server({lostCreate:true});assert.equal((await ingestFolder(c,s.fetch))[0].status,'error');assert.equal((await ingestFolder(c,s.fetch))[0].status,'needs_reconciliation');assert.equal(s.calls.filter(([m,p])=>m==='POST'&&p.endsWith('/ingest-batches')).length,1);});
 test('lost upload reply reconciles existing batch without duplicate upload',async t=>{const c=await setup(t),s=server({lostUpload:true});assert.equal((await ingestFolder(c,s.fetch))[0].status,'error');assert.equal((await ingestFolder(c,s.fetch))[0].status,'prepared');assert.equal(s.calls.filter(([m,p])=>m==='POST'&&p.endsWith('/attachments')).length,1);});
 test('target scope and active lock cannot be bypassed; output escapes untrusted OCR text',async t=>{const c=await setup(t),s=server();await ingestFolder(c,s.fetch);await assert.rejects(ingestFolder({...c,orgId:8},s.fetch),/其他平台或組織/);await fs.writeFile(path.join(c.stateDir,'scan.lock'),'');await assert.rejects(ingestFolder(c,s.fetch),/已有匯入程序/);const html=readableForm({fields:[{label:'x',value:'<script>alert(1)</script>'}],attachments:[],pending:[]});assert.ok(!html.includes('<script>'));});
+
+test('rental worksheet stops polling, exposes preview, and is deduplicated on the next run',async t=>{
+ const c=await setup(t),s=server();let reads=0;
+ const fetch=async(url,o)=>{
+  const response=await s.fetch(url,o);
+  if(new URL(url).pathname.endsWith('/ingest-batches/8')){
+   const body=await response.json();reads++;
+   if(body.items?.[0]?.billId){body.items[0]={id:9,originalFilename:'bill.pdf',status:'classified',rentalWorksheet:true,rentPayment:{stationId:91}};}
+   return new Response(JSON.stringify(body),{status:200});
+  }
+  return response;
+ };
+ const first=await ingestFolder(c,fetch);assert.equal(first[0].status,'rental_prepared');assert.match(first[0].reviewUrl,/item=9/);assert.ok(reads<5);
+ const second=await ingestFolder(c,fetch);assert.equal(second[0].status,'already_prepared');assert.equal(s.calls.filter(([m,p])=>m==='POST'&&p.endsWith('/attachments')).length,1);
+ assert.ok(!s.calls.some(([,p])=>p.endsWith('/easyflow-application')||p.endsWith('/submit')));
+});

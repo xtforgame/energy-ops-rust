@@ -13,5 +13,5 @@ export function rentDocumentChecklist(r:Draft, invoiceTiming:InvoiceTiming) {
 }
 export const escapeRentHtml=(s:unknown)=>String(s??'待確認').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export function rentDocumentChecklistHtml(r:Draft, timing:InvoiceTiming):string {
- return '<h2>申請附件清單</h2><p>以下為準備清單，未打包附件、未送出申請。發票方式僅為本次預覽選擇，未儲存或啟用提醒。</p><table><tr><th>文件</th><th>目前狀態</th><th>來源附件／頁碼</th></tr>'+rentDocumentChecklist(r,timing).map(x=>`<tr><td>${escapeRentHtml(x.label)}</td><td>${escapeRentHtml(x.status)}</td><td>${x.references.map(l=>`${escapeRentHtml(l.attachmentId)}／${escapeRentHtml(l.page)}`).join('、')||'—'}</td></tr>`).join('')+'</table>';
+ return '<h2>申請附件清單</h2><p>以下為準備清單，未打包附件、未送出申請。憑證安排保存於平台；後補期限尚待確認，未自動啟用提醒。</p><table><tr><th>文件</th><th>目前狀態</th><th>來源附件／頁碼</th></tr>'+rentDocumentChecklist(r,timing).map(x=>`<tr><td>${escapeRentHtml(x.label)}</td><td>${escapeRentHtml(x.status)}</td><td>${x.references.map(l=>`${escapeRentHtml(l.attachmentId)}／${escapeRentHtml(l.page)}`).join('、')||'—'}</td></tr>`).join('')+'</table>';
 }

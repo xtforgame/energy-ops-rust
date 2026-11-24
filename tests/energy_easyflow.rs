@@ -41,7 +41,8 @@ async fn easyflow_draft_is_org_scoped_read_only_and_does_not_need_landlord_contr
     let saved=expect_status!(app.post(&admin,&url,json!({"sourceRevision":revision,"draftRevision":with_attachment["draftRevision"],"action":"save","values":{"applicant":"測試承辦","department":"測試部門"}})).await,200);
     assert!(saved["fields"].as_array().unwrap().iter().any(|f|f["key"]=="applicant"&&f["value"]=="測試承辦"));
     expect_status!(app.post(&admin,&url,json!({"sourceRevision":revision,"draftRevision":with_attachment["draftRevision"],"action":"save","values":{"applicant":"舊分頁不得覆寫"}})).await,409);
-    let confirmed=expect_status!(app.post(&admin,&url,json!({"sourceRevision":revision,"draftRevision":saved["draftRevision"],"action":"confirm","values":{}})).await,200);
+    expect_status!(app.post(&admin,&url,json!({"sourceRevision":revision,"draftRevision":saved["draftRevision"],"action":"confirm","values":{}})).await,422);
+    let confirmed=expect_status!(app.post(&admin,&url,json!({"sourceRevision":revision,"draftRevision":saved["draftRevision"],"action":"confirm","values":{"companyCode":"002","applicationDate":"2026-11-24","expectedReceiptDate":"2026-12-01"}})).await,200);
     assert_eq!(confirmed["applicationReview"]["state"],"confirmed_for_handoff");
     assert_eq!(confirmed["applicationReview"]["reviewedBy"],admin.id);
     assert_eq!(confirmed["submissionAllowed"],false);

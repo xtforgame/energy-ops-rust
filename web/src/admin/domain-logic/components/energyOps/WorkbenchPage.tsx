@@ -15,6 +15,7 @@ import {
 } from './shared';
 import ActionBar, { type TaskAction, type ActionBlocked } from './ActionBar';
 import BillDetailDrawer from './BillDetailDrawer';
+import { submitTaskAction } from './taskAction';
 
 interface Row {
   id: number;
@@ -157,7 +158,7 @@ const WorkbenchPage: React.FC<WorkbenchPageProps> = ({ embedded }) => {
 
   const runAction = async (row: Row, action: TaskAction, withReason?: string) => {
     try {
-      const { data } = await energyHttp.post(`${base}/tasks/${row.id}/actions`, {
+      const { data } = await submitTaskAction((url, body) => energyHttp.post(url, body), base, row, {
         actionKey: action.actionKey, ...(withReason ? { reason: withReason } : {}),
       });
       notify('energy.myTasks.actionDone', { type: 'success' });

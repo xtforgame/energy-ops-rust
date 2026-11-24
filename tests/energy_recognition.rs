@@ -147,10 +147,10 @@ async fn end_to_end_four_samples() {
     assert_eq!(
         docs,
         vec![
-            ("renewableSurplus".into(), "bill-approval".into(), "extracted".into()),
-            ("renewableNoSurplus".into(), "utility-bill".into(), "unmatched".into()),
-            ("consumptionDevice".into(), "utility-bill".into(), "extracted".into()),
-            ("consumptionDeviceRental".into(), "utility-bill".into(), "extracted".into()),
+            ("renewableSurplus".into(), "bill-data-review".into(), "extracted".into()),
+            ("renewableNoSurplus".into(), "bill-data-review".into(), "unmatched".into()),
+            ("consumptionDevice".into(), "bill-data-review".into(), "extracted".into()),
+            ("consumptionDeviceRental".into(), "bill-data-review".into(), "extracted".into()),
         ]
     );
     assert!(by_name(SURPLUS)["recognition"]["templateId"] == "renewable_purchase");
@@ -193,18 +193,13 @@ async fn end_to_end_four_samples() {
     assert!(dl.headers()["content-disposition"].to_str().unwrap().contains("filename*=UTF-8''"));
     assert_eq!(dl.bytes().await.unwrap().as_ref(), b"%PDF-1.4 fake");
 
-    // 走到 end：承辦 → 主管核准 → 財務放行 →（計算應付）→ 會計付款。
-    fx.step(&fx.clerk, exec, json!({ "actionKey": "submit" })).await;
-    fx.step(&fx.manager, exec, json!({ "actionKey": "approve" })).await;
-    fx.step(&fx.finance, exec, json!({ "actionKey": "release" })).await;
-    fx.step(&fx.accountant, exec, json!({ "actionKey": "markPaid", "note": "TX-1" })).await;
-    fx.step(&fx.accountant, exec, json!({ "actionKey": "submit" })).await;
+    // 平台只完成資料審核；不代替 EF 簽核，也不計算地主租金。
+    fx.step(&fx.clerk, exec, json!({ "actionKey": "pass" })).await;
     assert_eq!(fx.app.exec_state(exec).await.0, "completed");
     let bill = fx.bill_row(bill_id).await;
     assert_eq!((bill["approvalState"].clone(), bill["mode"].clone()), (json!("approved"), json!("readonly")));
     let payouts = expect_status!(fx.app.get(&fx.finance, &r.u(&format!("/bills/{bill_id}/payouts"))).await, 200);
-    assert_eq!(payouts["items"][0]["amount"], "9999.90", "售電分潤 10%");
-    assert_eq!(payouts["items"][0]["strategyName"], "售電分潤 10%");
+    assert!(payouts["items"].as_array().unwrap().is_empty());
     let b = r.batch(batch).await;
     assert_eq!(b["status"], "partial");
 

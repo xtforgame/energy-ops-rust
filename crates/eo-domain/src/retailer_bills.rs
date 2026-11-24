@@ -341,9 +341,13 @@ struct ParsedFields {
     company_tax_id: Option<String>,
     /// 買方。
     buyer_tax_id: Option<String>,
+    buyer_name: Option<String>,
 }
 
 /// 陽光伏特家「電廠電費單」：主單 1–3 頁，附件（4–17 台電費用清單）不讀。
+fn company_name(text: &str) -> Option<String> {
+    regex::Regex::new(r"[\p{Han}]{2,}(?:股份有限公司|有限公司)").unwrap().find(text).map(|m|m.as_str().to_string())
+}
 fn parse_sunshine_volt(pages: &PageTokens) -> ParsedFields {
     const MAIN: RangeInclusive<u32> = 1..=3;
     let mut f = ParsedFields::default();
@@ -370,10 +374,10 @@ fn parse_sunshine_volt(pages: &PageTokens) -> ParsedFields {
     };
     // 場所電號：第 2 頁是「場所電號／場所別名／本期度數」表頭，電號在下一列的開頭（實測）。
     f.account_number = value_after_or_next_row(pages, 2..=2, "場所電號").as_deref().and_then(first_account_number);
-    // 第 1 頁（跑馬頭也會在每頁重複出現）「企業統編」＝買方；第 3 頁「發票開立資訊」底下的
-    // 「統編:」（有冒號，跟頭字「企業統編」沒冒號不同，不會兩個標籤互相打架）＝賣方（我方）。
-    f.buyer_tax_id = value_after(pages, 1..=1, "企業統編").and_then(first_tax_id);
-    f.company_tax_id = value_after(pages, 3..=3, "統編:").and_then(first_tax_id);
+    // 發票開立資訊指定發票買受人；企業統編是電廠企業，兩者不可顛倒。
+    f.company_tax_id = value_after(pages, 1..=1, "企業統編").and_then(first_tax_id);
+    f.buyer_tax_id = value_after(pages, 3..=3, "統編:").and_then(first_tax_id);
+    f.buyer_name = value_after(pages, 3..=3, "公司全名:").and_then(company_name);
     f
 }
 
@@ -400,6 +404,7 @@ fn parse_apollo(pages: &PageTokens) -> ParsedFields {
     let (buyer, seller) = apollo_tax_ids(pages, MAIN);
     f.buyer_tax_id = buyer;
     f.company_tax_id = seller;
+    f.buyer_name = pages.iter().filter(|r|r.page==1).take_while(|r|!r.text.contains("供應商資訊")).find_map(|r|company_name(&r.text));
     f
 }
 
@@ -443,6 +448,7 @@ fn parse_inventec(pages: &PageTokens) -> ParsedFields {
     f.payable_total = value_after(pages, MAIN, "本期應付總金額").and_then(first_number);
     // 「用電戶名稱」是表頭（這一列只有欄名、沒有值），買方公司名稱＋統編在下一列。
     f.buyer_tax_id = tax_id_near_label(pages, MAIN, "用電戶名稱");
+    f.buyer_name = row_and_next_containing(pages, MAIN, "用電戶名稱").and_then(|(same,next)|company_name(&same).or_else(||next.and_then(|s|company_name(&s))));
     for row in pages.iter().filter(|r| MAIN.contains(&r.page)) {
         if row.text.contains("統一編號") && !row.text.contains("用電戶名稱") {
             if let Some(id) = first_tax_id(&row.text) {
@@ -525,8 +531,10 @@ fn to_canonical(template: RetailerTemplate, fields: &ParsedFields, source_file_i
     );
     map.insert("companyTaxId".to_string(), field_text(fields.company_tax_id.clone()));
     map.insert("buyerTaxId".to_string(), field_text(fields.buyer_tax_id.clone()));
+    map.insert("buyerName".to_string(), field_text(fields.buyer_name.clone()));
 
     let record = CanonicalRecord {
+        source_pages: Vec::new(),
         fields: map,
         extraction_method: Some(ExtractionMethod::PdfText),
         review_status: String::new(),
@@ -540,6 +548,8 @@ fn to_canonical(template: RetailerTemplate, fields: &ParsedFields, source_file_i
     });
     serde_json::to_value(&doc).expect("CanonicalDocument 一定序列化得出來")
 }
+
+pub fn pdf_page_count(bytes:&[u8])->Option<usize>{pdf_extract::Document::load_mem(bytes).ok().map(|d|d.get_pages().len())}
 
 /// 給 `recognition.rs` 的 send_chunk 用：PDF 位元組命中售電版型就回本機組好的 canonical；
 /// 讀不出字、或三組錨點沒有全中，回 `None`——交給外部服務照舊處理。
@@ -605,8 +615,8 @@ mod tests {
         assert_eq!(fields.billing_start.as_deref(), Some("2026-01-01"));
         assert_eq!(fields.billing_end.as_deref(), Some("2026-01-31"));
         assert_eq!(fields.account_number.as_deref(), Some("01-2233-4455"));
-        assert_eq!(fields.buyer_tax_id.as_deref(), Some("12345678"));
-        assert_eq!(fields.company_tax_id.as_deref(), Some("87654321"));
+        assert_eq!(fields.buyer_tax_id.as_deref(), Some("87654321"));
+        assert_eq!(fields.company_tax_id.as_deref(), Some("12345678"));
 
         let canonical = to_canonical(RetailerTemplate::SunshineVolt, &fields, "1", "a.pdf");
         let doc = as_canonical_document(&canonical).expect("要讀得回來");

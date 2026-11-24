@@ -399,17 +399,17 @@ pub async fn insert_station_binding(
 }
 
 /// 首次送審時建立組織共用電費審核版本，不改既有租金／歷史流程。
-pub async fn ensure_bill_data_review(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<DefinitionRow> {
+pub async fn ensure_bill_data_review_group(tx: &mut Tx<'_>, ctx: &Ctx, group:&str) -> ApiResult<DefinitionRow> {
+    if !["bill-reviewers","tianneng-reviewers"].contains(&group){return Err(crate::common::err(400,"invalid_review_group"));}
     sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(-ctx.org_id()).execute(&mut **tx).await?;
-    let key = eo_domain::workflow_defs::DEPT_BILL_REVIEW;
-    if crate::org::departments::by_key(tx, &ctx.access, key).await?.is_none() {
-        let input = eo_domain::schemas::CreateDepartmentInput { key: key.into(), name: "電費單平台資料審核人員".into(), sort_order: None, parent_id: None };
-        crate::org::departments::create_department(tx, ctx, &input).await?;
+    if crate::org::departments::by_key(tx,&ctx.access,group).await?.is_none(){
+        let input=eo_domain::schemas::CreateDepartmentInput{key:group.into(),name:if group=="tianneng-reviewers"{"天能電費單審核人員".into()}else{"台電電費單審核人員".into()},sort_order:None,parent_id:None};
+        crate::org::departments::create_department(tx,ctx,&input).await?;
     }
-    let row = sqlx::query_as::<_, DefinitionRow>(&format!("SELECT {DEF_COLS} FROM tbl_energy_workflow_definition WHERE organization_id=$1 AND key='bill-data-review' AND status='published' AND deleted_at IS NULL ORDER BY version DESC LIMIT 1"))
-        .bind(ctx.org_id()).fetch_optional(&mut **tx).await?;
-    if let Some(row) = row { return Ok(row); }
-    install_definition(tx, &ctx.access, &eo_domain::workflow_defs::bill_data_review(), None, ctx.now()).await
+    let def=eo_domain::workflow_defs::bill_data_review_group(group);
+    let row=sqlx::query_as::<_,DefinitionRow>(&format!("SELECT {DEF_COLS} FROM tbl_energy_workflow_definition WHERE organization_id=$1 AND key=$2 AND status='published' AND deleted_at IS NULL ORDER BY version DESC LIMIT 1")).bind(ctx.org_id()).bind(&def.key).fetch_optional(&mut **tx).await?;
+    if let Some(row)=row{return Ok(row);}
+    install_definition(tx,&ctx.access,&def,None,ctx.now()).await
 }
 
 /// 內建流程的部門（定義的指派規則用這幾個 key）。

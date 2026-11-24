@@ -16,9 +16,7 @@ const PDF: &[u8] = b"%PDF-1.4\n% attachment spec\n";
 /// 一張送審中的單（停在承辦確認），回傳 (execution, 第一關 task)。
 async fn running(fx: &Fx) -> (i64, i64) {
     let b = fx.run(vec![("scan.jpg", fx.bill_ocr(KNOWN, 5000.0, None))]).await;
-    let (s, v) = fx.submit_item(&b["items"][0], None).await;
-    assert_eq!(s, 200, "{v}");
-    let exec = v["executionId"].as_i64().unwrap();
+    let exec = fx.start_legacy(b["items"][0]["billId"].as_i64().unwrap()).await;
     let task = fx.open_task(&fx.clerk, exec).await["id"].as_i64().unwrap();
     (exec, task)
 }

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
@@ -28,6 +29,7 @@ export async function ingestFolder(config, fetcher = fetch) {
   await fs.mkdir(config.stateDir,{recursive:true});
   const lockPath=path.join(config.stateDir,'scan.lock');
   const lock=await fs.open(lockPath,'wx').catch(()=>{throw Error('已有匯入程序或未清理的 scan.lock；先確認沒有其他程序執行');});
+  await lock.writeFile(JSON.stringify({pid:process.pid,host:os.hostname(),startedAt:new Date().toISOString(),target:base.origin,orgId:config.orgId}));
   try {
     const statePath=path.join(config.stateDir,'state.json');
     let state;
@@ -75,10 +77,11 @@ export async function ingestFolder(config, fetcher = fetch) {
         let item=batch.items[0];
         if(!item.billId && item.status==='uploaded')await request('POST',`/ingest-batches/${entry.batchId}/recognize`,{});
         const until=Date.now()+(config.waitMs??120000);
-        while(!item.billId && !['failed','unclassified','discarded','duplicate'].includes(item.status) && Date.now()<until){
+        while(!item.billId && !item.rentalWorksheet && !['failed','unclassified','discarded','duplicate'].includes(item.status) && Date.now()<until){
           await sleep(config.pollMs??2000);
           batch=await request('GET',`/ingest-batches/${entry.batchId}`);item=batch.items[0];
         }
+        if(item.rentalWorksheet){entry.status=item.rentPayment?'ready':'needs_rule';entry.reviewUrl=`${base.origin}/admin/#/energyIngestConsole/${entry.batchId}?item=${item.id}&org=${config.orgId}`;await persist();report.push({name,status:item.rentPayment?'rental_prepared':'needs_rule',batchId:entry.batchId,reviewUrl:entry.reviewUrl,message:item.classifyReason});continue;}
         if(!item.billId){entry.status=item.status;await persist();report.push({name,status:item.status,batchId:entry.batchId});continue;}
         const application=await request('GET',`/bills/${item.billId}/easyflow-application`);
         const output=path.join(config.stateDir,'forms');await fs.mkdir(output,{recursive:true});
@@ -98,6 +101,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
   const required=['--folder','--state','--base-url','--org-id'];
   if(required.some(k=>!args.includes(k)))throw Error('用法：node ingest-folder.mjs --folder <ready目錄> --state <狀態目錄> --base-url <平台網址> --org-id <組織ID>');
   ingestFolder({folder:get('--folder'),stateDir:get('--state'),baseUrl:get('--base-url'),orgId:Number(get('--org-id')),username:process.env.EO_INTAKE_USER,password:process.env.EO_INTAKE_PASSWORD})
-    .then(r=>{console.log(JSON.stringify(r,null,2));if(r.some(x=>['error','needs_reconciliation','failed','unclassified','too_large','not_pdf'].includes(x.status)))process.exitCode=1;})
+    .then(r=>{console.log(JSON.stringify(r,null,2));if(r.some(x=>['error','needs_reconciliation','failed','unclassified','too_large','not_pdf','needs_rule'].includes(x.status)))process.exitCode=1;})
     .catch(e=>{console.error(e.message);process.exitCode=1;});
 }

@@ -5,6 +5,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct S3Config {
     pub endpoint: String,
+    /// Browser-reachable endpoint for signed URLs; internal requests retain endpoint.
+    pub public_endpoint: Option<String>,
     pub region: String,
     pub bucket: String,
     pub access_key: String,
@@ -53,6 +55,7 @@ impl Config {
             http_port: env("EO_HTTP_PORT").and_then(|p| p.parse().ok()).unwrap_or(10950),
             s3: S3Config {
                 endpoint: req("EO_S3_ENDPOINT")?,
+                public_endpoint: env("EO_S3_PUBLIC_ENDPOINT"),
                 region: env("EO_S3_REGION").unwrap_or_else(|| "us-east-1".into()),
                 bucket: req("EO_S3_BUCKET")?,
                 access_key: req("EO_S3_ACCESS_KEY")?,

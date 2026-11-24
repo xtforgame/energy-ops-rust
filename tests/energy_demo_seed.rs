@@ -27,8 +27,8 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!((c.departments, c.department_members), (6, 10));
     // 四份內建定義 v1 ＋ 核可流程 v2；策略 v1（內建）＋ v2。
     assert_eq!((c.workflow_definitions, c.rating_strategies), (5, 2));
-    // 案場層 7 段 ＋ 契約層 4 × 2 段。
-    assert_eq!((c.workflow_bindings, c.rating_bindings), (15, 3));
+    // 案場層 8 段（含本關要求示範）＋ 契約層 4 × 2 段。
+    assert_eq!((c.workflow_bindings, c.rating_bindings), (16, 3));
     // 保證金請款那筆 ＋ 卡 20261118-0811-d 起：示範「本關要求」的假電費單（停在平台資料審核）。
     assert_eq!(c.executions, 2);
 
@@ -36,7 +36,7 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $ORG")).await, 8);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_contract WHERE organization_id = $ORG")).await, 6);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_installment WHERE organization_id = $ORG")).await, 3);
-    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG")).await, 15);
+    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG")).await, 16);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG AND contract_id IS NOT NULL")).await, 8);
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_rating_strategy_binding WHERE organization_id = $ORG")).await, 3);
     // 電號一律有正規化鍵（配對靠它）。
@@ -57,7 +57,7 @@ async fn demo_seed_is_idempotent_and_accounts_work() {
     assert_eq!(second.created.total(), 0, "second run created: {:?}", second.created);
     assert_eq!(second.deposit_execution_id, Some(exec));
     assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_audit_event WHERE organization_id = $ORG")).await, audit_before);
-    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG")).await, 15);
+    assert_eq!(app.scalar_i64(&q("SELECT COUNT(*) FROM tbl_energy_workflow_binding WHERE organization_id = $ORG")).await, 16);
 
     // 七個帳號都登得進去，角色對得上。
     let roles: Vec<(&str, &str)> = second.accounts.iter().map(|a| (a.email.as_str(), a.role.as_str())).collect();

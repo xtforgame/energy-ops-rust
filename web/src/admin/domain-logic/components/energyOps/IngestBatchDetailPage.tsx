@@ -28,6 +28,7 @@ import { apiErrorCode, apiErrorPayload } from '../../../dataProvider/apiError';
 import { EnergyPageFrame, Money, jvTokens, SourcePreviewFrame } from './shared';
 import RecognitionNote from './RecognitionNote';
 import EasyFlowApplication from './EasyFlowApplication';
+import RentPaymentPreview from './RentPaymentPreview';
 import { intakeStageMessage } from './recognitionDisplay';
 import { billRoute, executionRoute, ingestListRoute } from './routes';
 
@@ -46,6 +47,8 @@ interface IngestItem {
   classifyReason: string | null;
   attachmentId: number | null;
   billId: number | null;
+  rentalWorksheet?: boolean;
+  rentPayment?: {stationId:number;periodStart:string;periodEnd:string}|null;
   installmentId: number | null;
   executionId: number | null;
   status: string;
@@ -226,7 +229,7 @@ const IngestBatchDetailPage: React.FC = () => {
   /** 校對區＝還沒有結論的。已送審／已捨棄的下沉成一行摘要。 */
   const open = items.filter((i) => !['submitted', 'discarded'].includes(i.status));
   const closed = items.filter((i) => ['submitted', 'discarded'].includes(i.status));
-  const ready = open.filter((i) => ['extracted', 'classified'].includes(i.status) && !i.duplicateOfItemId);
+  const ready = open.filter((i) => ['extracted', 'classified'].includes(i.status) && !i.rentalWorksheet && !i.duplicateOfItemId);
   const blockedCount = open.length - ready.length;
 
   /**
@@ -502,7 +505,7 @@ const IngestBatchDetailPage: React.FC = () => {
 
       {/* 右：辨識值 ‖ 最終值 */}
       <Box>
-        {item.billId != null ? (
+        {item.rentPayment ? <><Alert severity="info">{item.classifyReason}</Alert><RentPaymentPreview base={base} stationId={item.rentPayment.stationId}/></> : item.billId != null ? (
           <>
             <Box sx={{mb:2}}><EasyFlowApplication base={base} billId={item.billId}/></Box>
             {/* 「辨識值 vs 最終值」是**全站唯一一份**（`FieldDiffGrid`）——
@@ -514,6 +517,14 @@ const IngestBatchDetailPage: React.FC = () => {
                 順序反過來的話，人會先開始改數字才發現整份都要重看。 */}
             <RecognitionNote summary={item.recognition} />
             {/* 單別要能**在送審前**改 —— 這一頁正是送審前的那一頁。 */}
+            <TextField select fullWidth sx={{mb:2}} label="資料審核組別" value={bill?.reviewGroup ?? ''}
+              disabled={!bill?.canEditSubject || (bill?.executions ?? []).length > 0}
+              helperText="組內任一人確認即可。其他購電公司的單據請確認承辦組別，不依公司名稱猜測；租金另走租金作業。"
+              onChange={async e=>{try{await energyHttp.patch(`${base}/bills/${item.billId}`,{reviewGroup:e.target.value});const r=await energyHttp.get(`${base}/bills/${item.billId}`);setBill(r.data);}catch{notify('審核組別未儲存；已送審資料不能更換組別。',{type:'warning'});}}}>
+              <MenuItem value="" disabled>待確認承辦組別</MenuItem>
+              <MenuItem value="bill-reviewers">台電電費單審核人員</MenuItem>
+              <MenuItem value="tianneng-reviewers">天能電費單審核人員</MenuItem>
+            </TextField>
             <BillDocTypeField
               orgId={orgId}
               billId={bill?.id ?? null}
@@ -739,7 +750,7 @@ const IngestBatchDetailPage: React.FC = () => {
                         </TextField>
                       ) : (
                         <Typography variant="body2">
-                          {i.workflowKey
+                          {i.rentalWorksheet ? '租金計算表' : i.workflowKey
                             ? translate(`energy.workflowName.${i.workflowKey}`, { _: i.workflowKey })
                             : '—'}
                         </Typography>
@@ -833,7 +844,7 @@ const IngestBatchDetailPage: React.FC = () => {
                             {translate(expandedId === i.id ? 'energy.ingest.collapse' : 'energy.intake.review')}
                           </Button>
                         )}
-                        {['extracted', 'classified'].includes(i.status) && (
+                        {!i.rentalWorksheet && ['extracted', 'classified'].includes(i.status) && (
                           <Button
                             size="small" variant="contained"
                             data-testid="intake-submit-one"

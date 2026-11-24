@@ -92,8 +92,11 @@ impl BillRow {
     }
 
     /// 分支條件的屬性快照（金額門檻）。
+    pub fn review_group(&self) -> Option<&str> {
+        self.data["reviewGroup"].as_str().or_else(|| (self.effective_doc_type()!=EnergyDocType::RetailerSale).then_some("bill-reviewers"))
+    }
     pub fn attributes(&self) -> Value {
-        json!({ "bill": { "totalAmount": self.total_amount.and_then(|d| d.to_f64()).unwrap_or(0.0) } })
+        json!({ "reviewGroup":self.review_group(), "bill": { "totalAmount": self.total_amount.and_then(|d| d.to_f64()).unwrap_or(0.0) } })
     }
 
     /// 取版錨點：計費期間結束日，沒有就今天。
@@ -169,6 +172,7 @@ pub fn to_view(b: &BillRow) -> Value {
         "dueDate": day_opt(b.due_date),
         "templateId": b.template_id,
         "docType": b.doc_type,
+        "reviewGroup": b.review_group(),
         "recognizedDocType": recognized_doc_type(b.doc_type_source()).map(|t| t.as_str()),
         "reviewStatus": b.review_status,
         "changedFields": changed_fields(b),
@@ -390,6 +394,7 @@ pub async fn ingest(
             recognized_doc_type(BillDocTypeSource { doc_type: None, template_id: one.template_id.as_deref(), ocr_raw: Some(&ocr_raw) })
                 .map(|t| t.as_str().to_string())
         });
+        let business_key=eo_domain::business_key::source_bill_key(business_key,stored_doc_type.as_deref(),one.template_id.as_deref());
         let extracted_json = serde_json::to_value(one).unwrap_or_else(|_| json!({}));
         let detail_json = Value::Object(one.detail.clone());
         let id: i64 = sqlx::query_scalar(
@@ -631,6 +636,13 @@ pub fn check_doc_type(raw: &Value) -> ApiResult<()> {
 pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBillInput) -> ApiResult<BillRow> {
     let bill = bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
     let mut changes = Map::new();
+    if let Some(group)=&input.review_group {
+        if bill.approval_state=="approved" || live_execution(tx,ctx.org_id(),bill_id).await?.is_some(){return Err(err(409,"review_group_locked"));}
+        if bill.review_group()!=Some(group.as_str()){
+            sqlx::query("UPDATE tbl_energy_bill SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{reviewGroup}',$1,true) WHERE id=$2 AND organization_id=$3").bind(json!(group)).bind(bill_id).bind(ctx.org_id()).execute(&mut **tx).await?;
+            changes.insert("reviewGroup".into(),json!({"from":bill.review_group(),"to":group}));
+        }
+    }
     let mut patch: BTreeMap<&'static str, Col> = BTreeMap::new();
     let mut patched_json: HashMap<&'static str, Value> = HashMap::new();
     for (f, to) in patch_values(input) {
@@ -748,7 +760,7 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
     }
 
     // 改了電號或計費期間就重算業務身分（否則去重靜默失效）。清掉也算改：null 不可以退回舊值。
-    if ["customerNumberRaw", "billingPeriodStart", "billingPeriodEnd"].iter().any(|f| patched_json.contains_key(f)) {
+    if input.doc_type.is_some() || ["customerNumberRaw", "billingPeriodStart", "billingPeriodEnd"].iter().any(|f| patched_json.contains_key(f)) {
         let pick = |f: &str| -> Option<String> {
             match patched_json.get(f) {
                 Some(v) => v.as_str().map(String::from),
@@ -760,6 +772,8 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
             pick("billingPeriodStart").as_deref(),
             pick("billingPeriodEnd").as_deref(),
         );
+        let kind=input.doc_type.unwrap_or_else(||bill.effective_doc_type());
+        let key=eo_domain::business_key::source_bill_key(key,Some(kind.as_str()),bill.template_id.as_deref());
         patch.insert("businessKey", Col::Text(key));
     }
 
@@ -1015,9 +1029,11 @@ pub async fn binding_status(tx: &mut Tx<'_>, access: &OrgAccess, bill: &BillRow,
     };
     let business_date = bill.business_date(today);
     if eo_domain::document_ingest::is_bill_doc_type(bill.effective_doc_type().as_str()) {
+        let Some(group)=bill.review_group() else {return Ok(json!({"bound":false,"reason":"review_group_required","docType":doc_type,"flows":[],"rentNotice":"請確認這份轉供單由哪組承辦審核；不影響辨識或申請預覽。"}));};
+        let key=if group=="tianneng-reviewers"{"tianneng-data-review"}else{"bill-data-review"};
         return Ok(json!({"bound": true, "reason": null, "docType": doc_type, "stationName": station.name,
             "workflowName": "電費單平台資料審核", "defaultWorkflow": true,
-            "flows": [{"workflowKey": "bill-data-review", "workflowName": "電費單平台資料審核"}],
+            "flows": [{"workflowKey": key, "workflowName": if group=="tianneng-reviewers"{"天能電費單平台資料審核"}else{"台電電費單平台資料審核"}}],
             "rentNotice": "地主租金另依租約與付款週期處理，不影響電費資料審核。"}));
     }
     match workflow::resolve_flow_rows(tx, access, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date).await {

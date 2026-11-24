@@ -271,6 +271,7 @@ async fn find_installment(tx: &mut Tx<'_>, org_id: i64, ex: &ExtractedDepositReq
 
 /// 分類 → 抽取 → 寫回某一筆 item（新建或既有）。抽取失敗時那一份標 `failed`，不讓整批倒。
 async fn classify_into_item(tx: &mut Tx<'_>, ctx: &Ctx, item: &ItemRow, ocr_raw: &Value) -> ApiResult<ItemRow> {
+    if let Some(row) = try_rent_worksheet(tx, ctx, item, ocr_raw).await? { return Ok(row); }
     let cls = energy_document_classifier(ocr_raw);
     let workflow_key = cls.workflow_key.clone().or_else(|| doc_type_to_workflow(cls.doc_type).map(String::from));
     let data = merge(
@@ -313,6 +314,41 @@ async fn classify_into_item(tx: &mut Tx<'_>, ctx: &Ctx, item: &ItemRow, ocr_raw:
     .await?;
     recompute_batch_status(tx, row.batch_id).await?;
     Ok(row)
+}
+
+/// Rental worksheets bypass bill classification, but never create an electricity bill.
+async fn try_rent_worksheet(tx: &mut Tx<'_>, ctx: &Ctx, item: &ItemRow, raw: &Value) -> ApiResult<Option<ItemRow>> {
+    let text = raw.pointer("/record/sourcePages/0/text").and_then(Value::as_str).unwrap_or("");
+    if !eo_domain::rent_worksheet::is_worksheet(text) { return Ok(None); }
+    let title = eo_domain::rent_worksheet::title(text);
+    let stations: Vec<(i64, Value)> = sqlx::query_as("SELECT id,data FROM tbl_energy_station WHERE organization_id=$1 AND deleted_at IS NULL AND data ? 'rentPaymentDrafts' FOR UPDATE")
+        .bind(ctx.org_id()).fetch_all(&mut **tx).await?;
+    let matches = stations.iter().filter(|(_,d)|d["rentWorksheetAliases"].as_array().is_some_and(|a|a.iter().any(|v|v.as_str().is_some_and(|s|!s.is_empty() && title.starts_with(s))))).collect::<Vec<_>>();
+    let mut target = Value::Null;
+    let result = eo_domain::rent_worksheet::extract(text,item.attachment_id.unwrap_or(0));
+    let outcome: Result<(),String> = if matches.len()!=1 { Err("租金計算表已讀取；尚未找到唯一已確認的案場名稱對照".into()) } else if let Ok(sheet)=result.as_ref() {
+        let (sid,data)=matches[0];
+        let mut drafts=data["rentPaymentDrafts"].as_array().cloned().unwrap_or_default();
+        let indices=drafts.iter().enumerate().filter(|(_,d)|d["periodStart"]==sheet["periodStart"]&&d["periodEnd"]==sheet["periodEnd"]).map(|(i,_)|i).collect::<Vec<_>>();
+        if indices.len()!=1 {Err("租金計算表已讀取；缺少這一期已確認的合約規則".into())} else {
+            let index=indices[0];
+            match eo_domain::rent_worksheet::apply(&drafts[index],sheet) {
+                Err(e)=>Err(e),
+                Ok(draft)=>{
+                    let before=drafts[index].clone();drafts[index]=draft.clone();
+                    sqlx::query("UPDATE tbl_energy_station SET data=jsonb_set(data,'{rentPaymentDrafts}',$1),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3").bind(json!(drafts)).bind(sid).bind(ctx.org_id()).execute(&mut **tx).await?;
+                    audit::record(tx,ctx,AuditInput::new("station.rent_worksheet_imported",*sid,"由原始 PDF 計算表辨識並依既有合約重新驗算").payload(json!({"itemId":item.id,"attachmentId":item.attachment_id,"before":before,"input":draft}))).await?;
+                    target=json!({"stationId":sid,"periodStart":sheet["periodStart"],"periodEnd":sheet["periodEnd"],"sourceScope":"rentalWorksheetFirstPage"});Ok(())
+                }
+            }
+        }
+    } else {Err(result.unwrap_err())};
+    let reason=outcome.err().unwrap_or_else(||"租金計算表已辨識並重新驗算；可開啟租金預覽。僅讀取首頁彙總表，後附單據與度數尚未逐張核對。".into());
+    let data=merge(&item.data,json!({"ocrRaw":raw,"rentalWorksheet":true,"rentPayment":target,"classifyReason":reason}));
+    let row:ItemRow=sqlx::query_as(&format!("UPDATE tbl_energy_ingest_item SET status='classified',doc_type='unclassified',workflow_key=NULL,error_message=NULL,data=$2 WHERE id=$1 RETURNING {ITEM_COLS}"))
+        .bind(item.id).bind(data).fetch_one(&mut **tx).await?;
+    recompute_batch_status(tx,row.batch_id).await?;
+    Ok(Some(row))
 }
 
 /// 外部管線開批時直接帶辨識結果（`files[].ocrRaw`）。逐檔獨立：一份壞掉不讓整批回滾。
@@ -672,7 +708,7 @@ async fn resolve_flows(
     base: &Value,
 ) -> ApiResult<Vec<FlowToStart>> {
     if is_bill_doc_type(doc_type.as_str()) {
-        let definition = workflow::definition::ensure_bill_data_review(tx, ctx).await?;
+        let definition = workflow::definition::ensure_bill_data_review_group(tx, ctx, base["reviewGroup"].as_str().ok_or_else(||err(409,"review_group_required"))?).await?;
         return Ok(vec![FlowToStart { workflow_key: definition.key.clone(), definition: Some(definition), attributes: base.clone() }]);
     }
     let flows = workflow::resolve_flow_rows(tx, &ctx.access, station_key, station_id, doc_type, business_date).await?;
@@ -867,6 +903,8 @@ pub fn item_view(i: &ItemRow) -> Value {
         // 只為了顯示，前端也不可以拿它當門檻。
         "classifyConfidence": i.classify_confidence.map(|c| c.to_string()),
         "classifyReason": d.get("classifyReason").cloned().unwrap_or(Value::Null),
+        "rentalWorksheet": d.get("rentalWorksheet").cloned().unwrap_or(json!(false)),
+        "rentPayment": d.get("rentPayment").cloned().unwrap_or(Value::Null),
         "attachmentId": i.attachment_id,
         "billId": i.bill_id,
         "installmentId": i.installment_id,

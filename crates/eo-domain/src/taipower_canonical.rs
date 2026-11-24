@@ -141,6 +141,8 @@ pub struct CanonicalIssue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalRecord {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_pages: Vec<serde_json::Value>,
     #[serde(default)]
     pub fields: BTreeMap<String, CanonicalField>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

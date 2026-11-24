@@ -275,6 +275,8 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
     }
     let with_password = files.iter().filter(|f| f.password.is_some()).count();
     let file_count = files.len();
+    let page_count:usize=files.iter().map(|f|if f.content_type=="application/pdf"{eo_domain::retailer_bills::pdf_page_count(&f.bytes).unwrap_or(1).clamp(1,300)}else{1}).sum();
+    let budget_seconds=std::cmp::max(120, page_count as i64 * 30);
     let summary = tpr.create_job(files).await?;
     let job_id = summary.job_id;
     let record = async {
@@ -295,6 +297,8 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
                 "recognitionJobIds": ids,
                 "recognitionStartedAt": started,
                 "recognitionChunkStartedAt": now,
+                "recognitionPageCount": page_count,
+                "recognitionBudgetSeconds": budget_seconds,
             }))
             .execute(&mut *tx)
             .await?;
@@ -457,7 +461,7 @@ async fn tick_claimed(core: &CoreRef, tpr: &TprClient, batch_id: i64) -> ApiResu
         let mut tx = core.pool.begin().await?;
         recognizing_items(&mut tx, batch_id).await?.len()
     };
-    let budget = std::cmp::max(MIN_BUDGET, BUDGET_PER_FILE * recognizing as i32);
+    let budget = std::cmp::max(std::cmp::max(MIN_BUDGET, BUDGET_PER_FILE * recognizing as i32),Duration::seconds(data["recognitionBudgetSeconds"].as_i64().unwrap_or(0).clamp(0,90000)));
 
     let status = match tpr.get_job(&job_id).await {
         Ok(s) => s.status,

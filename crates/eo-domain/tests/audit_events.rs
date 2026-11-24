@@ -47,6 +47,8 @@ fn has_no_duplicate_types() {
 #[test]
 fn declares_only_types_that_are_written() {
     let mut expected = vec![
+        "allocation.created", "allocation.ended", "allocation.updated", "attachment.category_set",
+        "bill.no_contract", "bill.rematched", "contract.created", "contract.updated",
         "department.created", "department.updated", "department.deleted",
         "department.member_added", "department.member_removed", "department.manager_changed",
         "member.role_changed",
@@ -71,14 +73,14 @@ fn declares_only_types_that_are_written() {
         "strategy.published",
         "strategy.binding_created", "strategy.binding_switched", "strategy.binding_ended",
         "flow.binding_created", "flow.binding_switched", "flow.binding_ended",
-        "station.geocoded",
+        "station.geocoded", "station.rent_sources_updated", "station.rent_voucher_updated", "station.rent_worksheet_imported",
         "ingest.batch_classified",
     ];
     let mut actual = audit_event_types();
     expected.sort();
     actual.sort();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 56);
+    assert_eq!(actual.len(), 67);
 }
 
 /// 來源：auditEvents.test.ts「lookup helpers behave」

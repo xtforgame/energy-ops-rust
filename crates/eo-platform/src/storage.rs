@@ -212,6 +212,13 @@ impl Storage {
 
     /// 預簽網址（query 簽章）。`extra` 例如 `response-content-disposition`。
     pub fn presign(&self, method: &str, key: &str, expires: Duration, extra: &[(String, String)]) -> String {
+        // Sign the public host itself: replacing a host after signing invalidates SigV4.
+        if let Some(endpoint) = &self.cfg.public_endpoint {
+            let mut cfg = self.cfg.clone();
+            cfg.endpoint = endpoint.clone();
+            cfg.public_endpoint = None;
+            return Storage::new(cfg).presign(method, key, expires, extra);
+        }
         let now = Utc::now();
         let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
         let date = now.format("%Y%m%d").to_string();

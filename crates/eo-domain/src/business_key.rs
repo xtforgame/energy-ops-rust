@@ -34,6 +34,12 @@ pub fn bill_business_key(
     Some(format!("bill|{cn}|{from}|{to}"))
 }
 
+/// Keep independently received retailer notices separate from Taipower for the same meter/period.
+pub fn source_bill_key(key:Option<String>,doc_type:Option<&str>,template:Option<&str>)->Option<String>{
+    let key=key?;
+    if doc_type==Some("retailerSale") {Some(format!("retailer|{}|{key}",template.unwrap_or("unknown")))} else {Some(key)}
+}
+
 /// 保證金的業務身分 ＝ `inst|合約|期數`。天生唯一；算它是為了讓兩種 subject 的去重同一套。
 /// 參數是原始 JSON 值（id 可能是數字或字串），null 視同沒有。
 pub fn installment_business_key(contract_id: Option<&Value>, seq: Option<&Value>) -> Option<String> {
@@ -51,11 +57,11 @@ pub fn business_key_of(subject_type: &str, row: &Value) -> Option<String> {
                 row.get(k).filter(|v| !v.is_null()).map(js_compat::to_js_string)
             };
             let cn = row.get("customerNumberRaw").filter(|v| js_compat::truthy(v)).map(js_compat::to_js_string);
-            bill_business_key(
+            source_bill_key(bill_business_key(
                 cn.as_deref(),
                 as_text("billingPeriodStart").as_deref(),
                 as_text("billingPeriodEnd").as_deref(),
-            )
+            ),row["docType"].as_str(),row["templateId"].as_str())
         }
         "energyInstallment" => {
             let contract = row.get("contract_id").filter(|v| !v.is_null()).or_else(|| row.get("contractId"));

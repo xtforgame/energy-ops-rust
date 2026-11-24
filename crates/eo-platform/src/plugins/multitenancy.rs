@@ -648,8 +648,11 @@ async fn my_invitations(core: web::Data<CoreRef>, user: CurrentUser) -> ApiResul
 /// 接受：同一交易內建成員關係、加入 lobby／專案、依 preset 授權、改狀態。
 async fn accept_invitation(core: &CoreRef, user: &CurrentUser, inv_id: i64) -> ApiResult<InvitationRow> {
     let mut tx = core.pool.begin().await?;
-    let inv: InvitationRow = sqlx::query_as(&format!("{INV_SELECT} WHERE i.id = $1 AND i.deleted_at IS NULL FOR UPDATE OF i"))
+    // Creation and acceptance must use the same application clock.
+    let select = INV_SELECT.replace("now()", "$2::timestamptz");
+    let inv: InvitationRow = sqlx::query_as(&format!("{select} WHERE i.id = $1 AND i.deleted_at IS NULL FOR UPDATE OF i"))
         .bind(inv_id)
+        .bind(core.clock.now())
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::not_found("invitation_not_found", "invitation not found"))?;

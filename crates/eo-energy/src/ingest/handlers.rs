@@ -144,10 +144,14 @@ pub async fn easyflow_application(core: Core, user: CurrentUser, meta: RequestMe
     let (org, bill_id) = path.into_inner();
     let ctx = gate(&core, &user, org, gates::FLOW_VIEW, &meta).await?;
     let format = q.get("format").and_then(Value::as_str).unwrap_or("json");
-    if !["json", "csv"].contains(&format) { return Err(err(400, "invalid_export_format")); }
+    if !["json", "csv", "ledger"].contains(&format) { return Err(err(400, "invalid_export_format")); }
     let mut tx = core.pool.begin().await?;
     let result=application_snapshot(&mut tx,&ctx,bill_id).await?;
-    if format=="csv" {
+    if format=="ledger" {
+        Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store"))
+          .insert_header(("Content-Disposition",format!("attachment; filename=electricity-ledger-{bill_id}.csv")))
+          .content_type("text/csv; charset=utf-8").body(eo_domain::easyflow::electricity_ledger_csv(&result)))
+    } else if format=="csv" {
         Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store"))
           .insert_header(("Content-Disposition",format!("attachment; filename=easyflow-bill-{bill_id}.csv")))
           .content_type("text/csv; charset=utf-8").body(eo_domain::easyflow::application_csv(&result)))
@@ -204,8 +208,9 @@ async fn application_snapshot(tx: &mut Tx<'_>,ctx:&Ctx,bill_id:i64)->ApiResult<V
         }
     }
     result["sourceRevision"] = json!(revision);
+    result["missingHandoffFields"] = json!(eo_domain::easyflow::missing_handoff_fields(&result));
     result["canReview"] = json!(ctx.has("energy:flow:act").await? && mode_for(tx,ctx,"energyBill",bill_id).await?.verdict.can_edit_subject);
-    result["applicationReview"] = json!({"state":if stale {"needs_recheck"} else {saved["state"].as_str().unwrap_or("draft")},
+    result["applicationReview"] = json!({"state":if stale {"needs_recheck"} else if saved["state"]=="confirmed_for_handoff" && result["missingHandoffFields"].as_array().is_some_and(|a|!a.is_empty()) {"needs_completion"} else {saved["state"].as_str().unwrap_or("draft")},
        "stale":stale,"reviewedAt":saved["reviewedAt"],"reviewedBy":saved["reviewedBy"]});
     result["generatedAt"] = json!(ctx.now());
     Ok(result)
@@ -226,15 +231,15 @@ pub async fn save_easyflow_application(core: Core,user: CurrentUser,meta: Reques
     if current["canReview"]!=true{return Err(err(403,"subject_not_editable"));}
     if body["sourceRevision"]!=current["sourceRevision"]{return Err(err(409,"application_source_changed"));}
     if body["draftRevision"]!=current["draftRevision"]{return Err(err(409,"application_draft_changed"));}
-    if action=="confirm" {
-        let fields=current["fields"].as_array().unwrap();
-        if current["applicationType"]=="unconfirmed" || ["siteName","companyName","amount"].iter().any(|k|!fields.iter().any(|f|f["key"]==*k&&!f["value"].is_null())) || current["attachments"].as_array().is_none_or(|a|a.is_empty()) {
-            return Err(err(422,"application_source_incomplete"));
-        }
-    }
     let before=bill.data["easyflowApplication"].clone();
     let mut merged=before["values"].as_object().cloned().unwrap_or_default();
     merged.extend(values.clone());
+    if action=="confirm" {
+        let mut proposed=current.clone();
+        if let Some(fields)=proposed["fields"].as_array_mut(){for field in fields{if let Some(value)=merged.get(field["key"].as_str().unwrap_or("")){field["value"]=value.clone();}}}
+        let missing=eo_domain::easyflow::missing_handoff_fields(&proposed);
+        if !missing.is_empty(){return Err(err_d(422,"application_source_incomplete",json!({"missingFields":missing})));}
+    }
     let next=json!({"values":merged,"sourceRevision":current["sourceRevision"],"state":if action=="confirm"{"confirmed_for_handoff"}else{"prepared"},
        "reviewedBy":if action=="confirm"{json!(ctx.user_id())}else{Value::Null},"reviewedAt":if action=="confirm"{json!(ctx.now())}else{Value::Null},"updatedBy":ctx.user_id(),"updatedAt":ctx.now()});
     sqlx::query("UPDATE tbl_energy_bill SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{easyflowApplication}',$1,true),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3")

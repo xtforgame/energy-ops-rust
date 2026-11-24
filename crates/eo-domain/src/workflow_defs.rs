@@ -723,6 +723,19 @@ pub fn bill_data_review() -> WorkflowDefinition {
     d
 }
 
+/// Source-specific group; unknown retailer ownership must be selected by the user.
+pub fn bill_data_review_group(group:&str)->WorkflowDefinition {
+    let mut d=bill_data_review();
+    if group=="tianneng-reviewers" {
+        d.key="tianneng-data-review".into();d.name="天能電費單平台資料審核".into();
+        for n in &mut d.nodes {if n.node_key=="platform-review" {
+            n.assignment_rule=AssignmentRule::department(group,"all");
+            n.requirements.fields.retain(|f|f.path!="customerNumberRaw");
+        }}
+    }
+    d
+}
+
 pub fn platform_review_bill_binding() -> SeedBinding {
     binding(&platform_review_bill(), Some(EnergyDocType::ElectricityBill), "Q-04 平台資料審核")
 }

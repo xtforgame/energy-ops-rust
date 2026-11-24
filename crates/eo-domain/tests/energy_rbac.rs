@@ -37,7 +37,7 @@ fn grants(s: &RbacSeeds, role_name: &str) -> Vec<String> {
 fn is_self_consistent() {
     assert_eq!(validate_seeds(&[seed()]), Ok(()));
     let s = seed();
-    assert_eq!(s.permissions.iter().filter(|p| !p.complex).count(), 17);
+    assert_eq!(s.permissions.iter().filter(|p| !p.complex).count(), 18);
     assert_eq!(s.permissions.iter().filter(|p| p.complex).count(), 5);
     assert_eq!(s.roles.len(), 5);
 }
@@ -176,15 +176,15 @@ fn viewer_sees_everything_but_cannot_act() {
     assert!(!g.contains(&"energy:flow:act".to_string()));
 }
 
-/// 來源：getRbacSeeds.test.ts「admin and CXO differ ONLY by energy:govern:system (§2.5.2)」
+/// Current seeds additionally reserve master-data management for admin; no CXO privilege escalation.
 #[test]
-fn admin_and_cxo_differ_only_by_govern_system() {
+fn admin_also_owns_master_data_management() {
     let s = seed();
     let admin = &role(&s, "energy:admin").permissions;
     let cxo = &role(&s, "energy:cxo").permissions;
     let admin_only: Vec<&String> = admin.iter().filter(|p| !cxo.contains(p)).collect();
     let cxo_only: Vec<&String> = cxo.iter().filter(|p| !admin.contains(p)).collect();
-    assert_eq!(admin_only, vec!["energy:govern:system"]);
+    assert_eq!(admin_only, vec!["energy:govern:system", "energy:master:manage"]);
     assert!(cxo_only.is_empty());
     assert!(admin.contains(&"energy:flow:abort-approve".to_string()));
     assert!(cxo.contains(&"energy:flow:abort-approve".to_string()));

@@ -59,6 +59,7 @@ impl TestApp {
             http_port: 0,
             s3: S3Config {
                 endpoint: env_or("EO_TEST_S3_ENDPOINT", "http://127.0.0.1:56900"),
+                public_endpoint: None,
                 region: "us-east-1".into(),
                 bucket: env_or("EO_TEST_S3_BUCKET", "energy-files-test"),
                 access_key: env_or("EO_TEST_S3_ACCESS_KEY", "energyminio"),

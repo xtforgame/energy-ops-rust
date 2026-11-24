@@ -653,7 +653,18 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Info,
         false,
     ),
+    ev(
+        "station.rent_voucher_updated", "energyStation",
+        &[req("periodStart", STR1), req("periodEnd", STR1), req("before", Ty::Unknown),
+          req("invoiceTiming", Ty::Enum(&["unknown","before","later"]))],
+        "audit.type.station.rentVoucherUpdated", Notable, true,
+    ),
     // ── 案場座標：要記從哪來，換 geocoder 時才知道哪些該重跑 ──
+    ev(
+        "station.rent_worksheet_imported", "energyStation",
+        &[req("itemId", INT), req("attachmentId", INT), req("before", Ty::Unknown), req("input", Ty::Unknown)],
+        "audit.type.station.rentWorksheetImported", Notable, true,
+    ),
     ev(
         "station.rent_sources_updated", "energyStation",
         &[req("billId", INT), req("periodStart", STR1), req("periodEnd", STR1),

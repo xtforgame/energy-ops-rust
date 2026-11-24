@@ -40,3 +40,27 @@ async fn bill_review_without_rent_contract_rules_or_station_binding() {
  in_tx!(app,tx=>tasks::perform_action(&mut tx,&ctx,t.id,ActionInput{action_key:"pass".into(),..Default::default()}).await).unwrap();
  assert!(!app.tasks(ex[0].id).await.iter().any(|t|t.node_key=="calc"));
 }
+
+#[actix_web::test]
+async fn retailer_review_group_is_explicit_and_does_not_include_other_groups() {
+ let app=TestApp::new().await;let(admin,org)=app.energy_org("source-groups").await;
+ let lo=app.landowner(org,"測試").await;let station=app.station(org,lo,"GROUP-1","測試來源組別").await;
+ let bill=app.bill(org,Some(station),"2026-01-01","2026-01-31",Some("100"),None).await;
+ sqlx::query("UPDATE tbl_energy_bill SET doc_type='retailerSale' WHERE id=$1").bind(bill).execute(&app.core.pool).await.unwrap();
+ let url=app.e(org,&format!("/bills/{bill}"));
+ expect_status!(app.post(&admin,&format!("{url}/submit"),json!({})).await,409);
+ expect_status!(app.patch(&admin,&url,json!({"reviewGroup":"rent-reviewers"})).await,400);
+ let dept=app.department(org,"tianneng-reviewers","天能審核").await;
+ let mut reviewers=Vec::new();for n in 0..5{let u=app.member(org,&format!("tian-{n}"),Some("energy:operator")).await;app.dept_member(dept,&u,"member").await;reviewers.push(u);}
+ let other=app.member(org,"taipower-only",Some("energy:operator")).await;
+ let pd=app.department(org,DEPT_BILL_REVIEW,"台電審核").await;app.dept_member(pd,&other,"member").await;
+ expect_status!(app.patch(&admin,&url,json!({"reviewGroup":"tianneng-reviewers"})).await,200);
+ let started=expect_status!(app.post(&admin,&format!("{url}/submit"),json!({})).await,200);
+ let exec=started["id"].as_i64().unwrap();let task=app.tasks(exec).await.into_iter().find(|t|t.node_key=="platform-review").unwrap();
+ assert_eq!(app.candidates(task.id).await.iter().filter(|c|c.0=="potentialOwner").count(),5);
+ expect_status!(app.post(&other,&app.e(org,&format!("/tasks/{}/claim",task.id)),json!({})).await,403);
+ let locked=app.patch(&admin,&url,json!({"reviewGroup":"bill-reviewers"})).await;assert!([403,409].contains(&locked.0.as_u16()));
+ let first=&reviewers[0];expect_status!(app.post(first,&app.e(org,&format!("/tasks/{}/claim",task.id)),json!({})).await,200);
+ // No attachment has been supplied: routing works but completion must still be blocked.
+ expect_status!(app.post(first,&app.e(org,&format!("/tasks/{}/actions",task.id)),json!({"actionKey":"pass"})).await,422);
+}

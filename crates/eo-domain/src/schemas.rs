@@ -372,6 +372,8 @@ impl Validate for MatchStationInput {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CorrectBillInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_group: Option<String>,
     /// 電號。改它會重新配案場 —— 它是這張單走哪一條流程的依據。
     #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
     pub customer_number_raw: Option<Option<String>>,
@@ -413,6 +415,7 @@ impl Validate for CorrectBillInput {
     fn validate(&self) -> Result<(), Vec<String>> {
         let mut e = Errs::default();
         let inner = |v: &Option<Option<String>>| v.as_ref().and_then(|x| x.as_deref()).map(str::to_string);
+        if self.review_group.as_deref().is_some_and(|g| !["bill-reviewers","tianneng-reviewers"].contains(&g)) { e.0.push("reviewGroup: 無效的電費審核組別".into()); }
         e.max("customerNumberRaw", inner(&self.customer_number_raw).as_deref(), 120);
         e.date("billingPeriodStart", inner(&self.billing_period_start).as_deref());
         e.date("billingPeriodEnd", inner(&self.billing_period_end).as_deref());
