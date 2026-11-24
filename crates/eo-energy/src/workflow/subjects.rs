@@ -38,16 +38,16 @@ pub struct InstallmentLite {
 pub struct StationLite {
     pub id: i64,
     pub name: String,
-    pub customer_number: String,
-    pub landowner_id: i64,
+    pub customer_number: Option<String>,
+    pub landowner_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct SubjectIndex {
     pub bills: HashMap<i64, BillLite>,
     pub installments: HashMap<i64, InstallmentLite>,
-    /// 契約 id → (契約編號, 地主 id)。
-    pub contracts: HashMap<i64, (String, i64)>,
+    /// 契約 id → (契約編號, 第一位地主 id；可能沒有)。
+    pub contracts: HashMap<i64, (String, Option<i64>)>,
     /// 契約 → 它涵蓋的案場（順序穩定，畫面取第一個當代表）。
     pub stations_of_contract: HashMap<i64, Vec<i64>>,
     pub stations: HashMap<i64, StationLite>,
@@ -88,7 +88,7 @@ pub async fn load(tx: &mut Tx<'_>, org_id: i64, execs: &[&ExecutionRow]) -> ApiR
     }
     let contract_ids: Vec<i64> = crate::common::uniq(idx.installments.values().map(|i| i.contract_id));
     if !contract_ids.is_empty() {
-        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+        let rows: Vec<(i64, String, Option<i64>)> = sqlx::query_as(
             "SELECT id, contract_no, landowner_id FROM tbl_energy_contract WHERE id = ANY($1) AND organization_id = $2 AND deleted_at IS NULL",
         )
         .bind(&contract_ids)
@@ -121,8 +121,8 @@ pub async fn load(tx: &mut Tx<'_>, org_id: i64, execs: &[&ExecutionRow]) -> ApiR
         .await?;
         idx.stations = rows.into_iter().map(|s| (s.id, s)).collect();
     }
-    let mut owner_ids: Vec<i64> = idx.stations.values().map(|s| s.landowner_id).collect();
-    owner_ids.extend(idx.contracts.values().map(|c| c.1));
+    let mut owner_ids: Vec<i64> = idx.stations.values().filter_map(|s| s.landowner_id).collect();
+    owner_ids.extend(idx.contracts.values().filter_map(|c| c.1));
     let owner_ids = crate::common::uniq(owner_ids);
     if !owner_ids.is_empty() {
         let rows: Vec<(i64, String)> = sqlx::query_as(
@@ -157,7 +157,7 @@ impl SubjectIndex {
             "energyBill" => {
                 let b = id.and_then(|i| self.bills.get(&i));
                 let st = b.and_then(|b| b.station_id).and_then(|s| self.stations.get(&s));
-                let owner = st.map(|s| s.landowner_id);
+                let owner = st.and_then(|s| s.landowner_id);
                 json!({
                     "kind": "energyBill",
                     "billId": b.map(|b| b.id),
@@ -176,7 +176,7 @@ impl SubjectIndex {
                 let i = id.and_then(|x| self.installments.get(&x));
                 let c = i.and_then(|i| self.contracts.get(&i.contract_id).map(|c| (i.contract_id, c)));
                 let st = c.and_then(|(cid, _)| self.contract_station(cid));
-                let owner = c.map(|(_, c)| c.1);
+                let owner = c.and_then(|(_, c)| c.1);
                 json!({
                     "kind": "energyInstallment",
                     "installmentId": i.map(|i| i.id),
@@ -203,12 +203,12 @@ impl SubjectIndex {
             "energyBill" => {
                 let Some(b) = id.and_then(|i| self.bills.get(&i)) else { return Value::Null };
                 let st = b.station_id.and_then(|s| self.stations.get(&s));
-                let owner = st.map(|s| s.landowner_id);
+                let owner = st.and_then(|s| s.landowner_id);
                 json!({
                     "kind": "energyBill",
                     "billId": b.id,
-                    // 電號：優先用指認到的案場；沒指認就用原樣值（例外件）。
-                    "customerNumber": st.map(|s| s.customer_number.clone()).or_else(|| b.customer_number_raw.clone()),
+                    // 電號：優先用指認到的案場；沒指認就用原樣值（例外件）；案場沒電號也退回原樣值。
+                    "customerNumber": st.and_then(|s| s.customer_number.clone()).or_else(|| b.customer_number_raw.clone()),
                     "stationName": st.map(|s| s.name.clone()),
                     "stationId": st.map(|s| s.id),
                     "landownerId": owner,
@@ -223,7 +223,7 @@ impl SubjectIndex {
                 let Some(i) = id.and_then(|x| self.installments.get(&x)) else { return Value::Null };
                 let c = self.contracts.get(&i.contract_id);
                 let st = self.contract_station(i.contract_id);
-                let owner = c.map(|c| c.1);
+                let owner = c.and_then(|c| c.1);
                 json!({
                     "kind": "energyInstallment",
                     "installmentId": i.id,
@@ -231,7 +231,7 @@ impl SubjectIndex {
                     "seq": i.seq,
                     "stationId": st.map(|s| s.id),
                     "stationName": st.map(|s| s.name.clone()),
-                    "customerNumber": st.map(|s| s.customer_number.clone()),
+                    "customerNumber": st.and_then(|s| s.customer_number.clone()),
                     "landownerId": owner,
                     "landownerName": owner.and_then(|o| self.owners.get(&o).cloned()),
                     "totalAmount": i.amount.to_string(),

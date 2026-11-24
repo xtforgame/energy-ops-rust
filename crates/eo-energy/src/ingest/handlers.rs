@@ -325,6 +325,18 @@ pub async fn match_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: 
     Ok(HttpResponse::Ok().json(json!({ "id": row.id, "reviewStatus": row.review_status, "stationId": row.station_id })))
 }
 
+/// 指認對話框的候選清單（S4）：`hasContract` 讓前端把沒合約的案場灰掉標字。
+pub async fn match_candidates(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, q: web::Query<Value>) -> ApiResult<HttpResponse> {
+    let (org, bill_id) = path.into_inner();
+    let ctx = gate(&core, &user, org, gates::FLOW_ACT, &meta).await?;
+    let mut tx = core.pool.begin().await?;
+    let bill = bills::bill_in_org(&mut tx, ctx.org_id(), bill_id, false).await?;
+    let business_date = bill.business_date(ctx.today());
+    let q = q.into_inner();
+    let items = bills::match_candidates(&mut tx, ctx.org_id(), business_date, q_str(&q, "q").as_deref()).await?;
+    Ok(HttpResponse::Ok().json(json!({ "items": items })))
+}
+
 /// 合約後補之後，在校對台按「重新比對」（S1）。
 pub async fn rematch_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>) -> ApiResult<HttpResponse> {
     let (org, bill_id) = path.into_inner();

@@ -106,7 +106,7 @@ impl Kind {
 pub struct StationRow {
     pub id: i64,
     pub name: String,
-    pub customer_number: String,
+    pub customer_number: Option<String>,
     pub organization_id: i64,
     pub status: String,
 }
@@ -159,6 +159,10 @@ async fn segments(
     st: &StationRow,
     lane: Option<(&Option<String>, Option<&str>)>,
 ) -> ApiResult<Vec<Segment>> {
+    // 沒有電號的案場不可能有工作流綁定（建的時候已經擋）；不查，免得 station_key 比對綁到型別不合的值。
+    if kind == Kind::Workflow && st.customer_number.is_none() {
+        return Ok(vec![]);
+    }
     let k = kind.def();
     let doc_col = if k.supports_doc_type { "doc_type" } else { "NULL::varchar" };
     let (station_where, bind_station): (&str, Value) = match kind {
@@ -367,6 +371,10 @@ fn doc_type_of(kind: Kind, raw: Option<&str>) -> ApiResult<Option<String>> {
 /// 動作一：綁定（這條線目前沒有開著的段）。
 pub async fn create(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, kind: Kind, doc_type: Option<&str>, version_id: i64, valid_from: NaiveDate) -> ApiResult<()> {
     let st = station_in_org(tx, &ctx.access, station_id).await?;
+    // 沒有電號的案場不能建工作流綁定（執行用主電號當 key）：先繫結電號、系統補上主電號之後再回來綁。
+    if kind == Kind::Workflow && st.customer_number.is_none() {
+        return Err(err(409, "station_has_no_meter"));
+    }
     let v = version(tx, kind, ctx, version_id).await?;
     let doc = doc_type_of(kind, doc_type)?;
     let rows = segments(tx, kind, ctx.org_id(), &st, Some((&doc, Some(&v.key)))).await?;
@@ -531,8 +539,11 @@ pub async fn unbound_stations(tx: &mut Tx<'_>, ctx: &Ctx) -> ApiResult<Vec<Value
     Ok(stations
         .into_iter()
         .filter_map(|s| {
-            let missing_workflow =
-                !flows.iter().any(|f| f.0.as_deref() == Some(s.customer_number.as_str()) && in_effect(f.1, f.2, today));
+            // 沒有電號的案場本來就建不了工作流綁定，一律算「缺」。
+            let missing_workflow = match s.customer_number.as_deref() {
+                None => true,
+                Some(cn) => !flows.iter().any(|f| f.0.as_deref() == Some(cn) && in_effect(f.1, f.2, today)),
+            };
             let missing_rating = !rates.iter().any(|r| r.0 == s.id && in_effect(r.1, r.2, today));
             (missing_workflow || missing_rating).then(|| {
                 json!({ "id": s.id, "name": s.name, "customerNumber": s.customer_number, "status": s.status,

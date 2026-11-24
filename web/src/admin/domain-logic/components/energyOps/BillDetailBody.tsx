@@ -37,7 +37,7 @@ import {
   type SourceFieldBox,
 } from 'common/plugins/EnergyOpsCommonPlugin/taipowerExtractor';
 
-interface StationOption { id: number; name: string; customerNumber: string; status: string }
+interface StationOption { id: number; name: string; customerNumber: string | null; noMeter?: boolean; hasContract?: boolean }
 
 /** 附件類別：封閉代碼，照後端 `eo_domain::attachment_limits::AttachmentCategory`。 */
 const ATTACHMENT_CATEGORIES = ['taipowerNotice', 'bankbookCopy', 'transferList', 'approvalSheet', 'receipt', 'other'] as const;
@@ -547,8 +547,8 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
    * 搬家不是重寫。重寫一份的話兩邊會慢慢長歪，
    * 而這件事在**送件詳情頁**還有第三份入口（那是【4】做的 dialog）。
    *
-   * 搜尋走 `GET .../stations?q=`（輕量搜尋端點），
-   * 不是 P5 用的 `station-list` —— 那支會帶經緯度與地主，指認對話框不需要。
+   * 搜尋走 `GET .../bills/{billId}/match-candidates?q=`（S4：帶 `hasContract`，
+   * 這段業務日期沒有生效合約的案場照樣列出、前端灰掉標字，不是 P5 用的 `station-list`）。
    */
   const [matchOpen, setMatchOpen] = React.useState(false);
   const [stationQuery, setStationQuery] = React.useState('');
@@ -557,14 +557,14 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
   const [matchError, setMatchError] = React.useState<string | null>(null);
 
   const searchStations = React.useCallback(async (q: string) => {
-    if (!orgId) return;
+    if (!orgId || !billId) return;
     try {
-      const { data } = await energyHttp.get(`${energyBase(orgId)}/stations`, {
+      const { data } = await energyHttp.get(`${base}/bills/${billId}/match-candidates`, {
         params: q ? { q } : {},
       });
-      setStationOptions(Array.isArray(data) ? data : []);
+      setStationOptions(Array.isArray(data?.items) ? data.items : []);
     } catch { setStationOptions([]); }
-  }, [orgId]);
+  }, [orgId, billId, base]);
 
   const openMatch = async () => {
     setMatchError(null); setPickedStation(''); setMatchOpen(true);
@@ -1855,8 +1855,15 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
               inputProps={{ 'data-testid': 'station-picker' }}
             >
               {stationOptions.map((st) => (
-                <MenuItem key={st.id} value={String(st.id)}>
-                  {`${st.name}（${st.customerNumber}）`}
+                <MenuItem
+                  key={st.id}
+                  value={String(st.id)}
+                  disabled={st.hasContract === false}
+                  data-testid="station-candidate-option"
+                  data-has-contract={st.hasContract === false ? 'false' : 'true'}
+                >
+                  {`${st.name}（${st.customerNumber ?? translate('energy.stations.noMeter')}）`}
+                  {st.hasContract === false ? `　${translate('energy.unmatched.stationHasNoContract')}` : ''}
                 </MenuItem>
               ))}
             </TextField>

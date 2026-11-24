@@ -205,7 +205,7 @@ pub async fn bill_in_org(tx: &mut Tx<'_>, org_id: i64, bill_id: i64, for_update:
 pub struct StationLite {
     pub id: i64,
     pub name: String,
-    pub customer_number: String,
+    pub customer_number: Option<String>,
 }
 
 pub async fn station_by_id(tx: &mut Tx<'_>, org_id: i64, id: i64) -> ApiResult<Option<StationLite>> {
@@ -228,7 +228,7 @@ pub async fn find_station_and_meter(
     business_date: NaiveDate,
 ) -> ApiResult<Option<(StationLite, Option<i64>)>> {
     if let Some(key) = normalize_customer_number(Some(customer_number)) {
-        let via_meter: Option<(i64, i64, String, String)> = sqlx::query_as(
+        let via_meter: Option<(i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT m.id, s.id, s.name, s.customer_number FROM tbl_energy_station_meter m
                JOIN tbl_energy_station s ON s.id = m.station_id AND s.deleted_at IS NULL
               WHERE m.organization_id = $1 AND m.customer_number_key = $2 AND m.deleted_at IS NULL
@@ -264,6 +264,31 @@ pub async fn find_station_and_meter(
     .fetch_optional(&mut **tx)
     .await?;
     Ok(hit.map(|s| (s, None)))
+}
+
+/// 指認對話框的候選清單（S4）：電號或名稱篩，順便算這段業務日期有沒有生效合約——
+/// 沒有生效合約的案場照樣列出（`hasContract: false`），前端灰掉標字；
+/// 直接打 `match_station` 送出也被擋（409 `station_has_no_contract`，使用者拍板第 2 題「B」）。
+pub async fn match_candidates(tx: &mut Tx<'_>, org_id: i64, business_date: NaiveDate, q: Option<&str>) -> ApiResult<Vec<Value>> {
+    let term = q.map(str::trim).filter(|s| !s.is_empty()).map(|s| format!("%{}%", s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+    let rows: Vec<StationLite> = sqlx::query_as(
+        "SELECT id, name, customer_number FROM tbl_energy_station
+          WHERE organization_id = $1 AND deleted_at IS NULL AND ($2::text IS NULL OR customer_number ILIKE $2 OR name ILIKE $2)
+          ORDER BY name ASC, id ASC LIMIT 50",
+    )
+    .bind(org_id)
+    .bind(&term)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for s in rows {
+        let has_contract = !crate::workflow::definition::effective_contracts_for_org(tx, org_id, s.id, business_date).await?.is_empty();
+        out.push(json!({
+            "id": s.id, "name": s.name, "customerNumber": s.customer_number,
+            "noMeter": s.customer_number.is_none(), "hasContract": has_contract,
+        }));
+    }
+    Ok(out)
 }
 
 /// 相容舊呼叫點（卡 A2 的測試）：效期比今天，不帶 meter id。新碼請用 `find_station_and_meter`。
@@ -463,12 +488,20 @@ pub async fn ingest(
     Ok(out)
 }
 
-/// 人工指認：把例外件配到一個案場，指認之後再查合約（S1：有生效合約才是「待校對」，沒有是「找不到生效合約」）。
+/// 人工指認：把例外件配到一個案場，指認之後再查合約——這段期間沒有生效合約就回 409 擋下
+/// （`station_has_no_contract`，使用者拍板第 2 題「B」：候選清單裡這種案場灰掉標字，直接打 API 也擋）；
+/// 成功就把這張單的電號寫進案場電號表、補上主電號（陌生電號繫結完就算輸入完畢，下一張同電號自動對到）。
 pub async fn match_station(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, station_id: i64) -> ApiResult<BillRow> {
     let bill = bill_in_org(tx, ctx.org_id(), bill_id, true).await?;
     let station = station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(404, "station_not_found"))?;
     let business_date = bill.business_date(ctx.today());
     let outcome = resolve_contract_for_station(tx, ctx.org_id(), station.clone(), None, business_date).await?;
+    if matches!(outcome, MatchOutcome::NoContract { .. }) {
+        return Err(err(409, "station_has_no_contract"));
+    }
+    if let Some(cn) = bill.customer_number_raw.as_deref().filter(|s| !s.is_empty()) {
+        crate::master_data::record_match_meter(tx, ctx, station_id, cn, bill.billing_period_start).await?;
+    }
     sqlx::query("UPDATE tbl_energy_bill SET station_id = $2, review_status = $3, contract_id = $4, station_meter_id = $5 WHERE id = $1 AND deleted_at IS NULL")
         .bind(bill_id)
         .bind(station_id)
@@ -836,7 +869,7 @@ async fn record_route_change(tx: &mut Tx<'_>, ctx: &Ctx, bill: &BillRow, from: &
     let Some(station) = station_by_id(tx, ctx.org_id(), station_id).await? else { return Ok(()) };
     let business_date = bill.business_date(ctx.today());
     // 走綁定取版（不是最新版）—— 跟送審那一刻取到的必須是同一版。
-    let def = match workflow::resolve_definition(tx, &ctx.access, &station.customer_number, "bill-approval", business_date).await {
+    let def = match workflow::resolve_definition(tx, &ctx.access, station.customer_number.as_deref().unwrap_or(""), "bill-approval", business_date).await {
         Ok(d) => d,
         Err(_) => return Ok(()),
     };
@@ -1036,7 +1069,7 @@ pub async fn binding_status(tx: &mut Tx<'_>, access: &OrgAccess, bill: &BillRow,
             "flows": [{"workflowKey": key, "workflowName": if group=="tianneng-reviewers"{"天能電費單平台資料審核"}else{"台電電費單平台資料審核"}}],
             "rentNotice": "地主租金另依租約與付款週期處理，不影響電費資料審核。"}));
     }
-    match workflow::resolve_flow_rows(tx, access, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date).await {
+    match workflow::resolve_flow_rows(tx, access, station.customer_number.as_deref().unwrap_or(""), Some(station.id), bill.effective_doc_type(), business_date).await {
         Ok(flows) => Ok(json!({
             "bound": true,
             "reason": null,
@@ -1067,7 +1100,7 @@ pub async fn branch_preview(tx: &mut Tx<'_>, access: &OrgAccess, bill: &BillRow,
     };
     let business_date = bill.business_date(today);
     // 用這張單自己會走的流程（不是寫死核可流程）；多條時取第一條。
-    let flows = workflow::resolve_flow_rows(tx, access, &station.customer_number, Some(station.id), bill.effective_doc_type(), business_date).await;
+    let flows = workflow::resolve_flow_rows(tx, access, station.customer_number.as_deref().unwrap_or(""), Some(station.id), bill.effective_doc_type(), business_date).await;
     let Some(definition) = flows.ok().and_then(|f| f.into_iter().next()).map(|f| f.definition) else {
         return Ok(json!({ "available": false, "reason": "no_binding", "nodes": [], "threshold": null }));
     };

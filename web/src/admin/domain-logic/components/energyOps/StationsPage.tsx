@@ -16,13 +16,14 @@ import {
   EnergyPageFrame, EmptyRow, StatusChip, jvTokens,
 } from './shared';
 import { stationRoute } from './routes';
+import OnboardDialog from './OnboardDialog';
 
 interface StationRow {
   id: number; name: string; status: string; projectCode: string | null; siteType: string | null;
   spvPayeeId: number | null; serviceDistrict: string | null; capacityKw: string | null; gridDate: string | null;
   serialNo: number | null; shortName: string | null; region: string | null; category: string | null;
   address: string | null;
-  meterCount: number; enabled: boolean; landownerId: number; landownerName?: string | null;
+  meterCount: number; enabled: boolean; landownerId: number | null; landownerName?: string | null;
   projectCodeMissing: string[];
 }
 
@@ -67,6 +68,7 @@ const StationsPage: React.FC = () => {
     skipped: number; errors: Array<{ row: number; column: string; code: string; message: string }>;
   } | null>(null);
   const [importing, setImporting] = React.useState(false);
+  const [onboardOpen, setOnboardOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!orgId) { setRows([]); setDenied(false); return; }
@@ -102,7 +104,7 @@ const StationsPage: React.FC = () => {
     // 編輯是整包送上來（後端：缺的欄位視同清空）——**一定要把現有值全部帶回表單**，
     // 不然使用者只改一個欄位，其他欄位（尤其序號，專案編號靠它）會被靜默清掉。
     setForm({
-      id: r.id, name: r.name, customerNumber: '', landownerId: String(r.landownerId),
+      id: r.id, name: r.name, customerNumber: '', landownerId: r.landownerId != null ? String(r.landownerId) : '',
       shortName: r.shortName ?? '', region: r.region ?? '', category: r.category ?? '', siteType: r.siteType ?? '',
       spvPayeeId: r.spvPayeeId ? String(r.spvPayeeId) : '', serviceDistrict: r.serviceDistrict ?? '',
       capacityKw: r.capacityKw ?? '', gridDate: r.gridDate ?? '', serialNo: r.serialNo != null ? String(r.serialNo) : '',
@@ -203,6 +205,9 @@ const StationsPage: React.FC = () => {
           <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={openImport} data-testid="station-import-open">
             {translate('energy.stations.importExcel')}
           </Button>
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOnboardOpen(true)} data-testid="station-onboard-open">
+            {translate('energy.stations.onboard')}
+          </Button>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} data-testid="station-new">
             {translate('energy.stations.newStation')}
           </Button>
@@ -241,7 +246,12 @@ const StationsPage: React.FC = () => {
                     )}
                   </TableCell>
                   <TableCell sx={{ cursor: 'pointer' }} onClick={() => navigate(stationRoute(r.id))}>
-                    <Typography variant="body2" fontWeight={600}>{r.name}</Typography>
+                    <Stack direction="row" gap={1} alignItems="center">
+                      <Typography variant="body2" fontWeight={600}>{r.name}</Typography>
+                      {r.meterCount === 0 && (
+                        <Chip size="small" variant="outlined" label={translate('energy.stations.noMeter')} data-testid="station-no-meter-chip" />
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>{r.siteType ? translate(`energy.siteType.${r.siteType}`) : '—'}</TableCell>
                   <TableCell>{landowners.find((l) => l.id === r.spvPayeeId)?.name ?? '—'}</TableCell>
@@ -270,15 +280,20 @@ const StationsPage: React.FC = () => {
           <Stack gap={2} mt={1}>
             <TextField label={translate('energy.stations.name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="station-form-name" required />
             {!form.id && (
-              <TextField label={translate('energy.bills.customerNumber')} value={form.customerNumber} onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} data-testid="station-form-customer-number" required />
+              <TextField
+                label={translate('energy.bills.customerNumber')} value={form.customerNumber}
+                onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} data-testid="station-form-customer-number"
+                helperText={translate('energy.stations.noMeterHint')}
+              />
             )}
-            <FormControl fullWidth required data-testid="station-form-landowner">
+            <FormControl fullWidth data-testid="station-form-landowner">
               <InputLabel>{translate('energy.landowners.name')}</InputLabel>
               <Select
                 label={translate('energy.landowners.name')}
                 value={form.landownerId}
                 onChange={(e) => setForm({ ...form, landownerId: e.target.value })}
               >
+                <MenuItem value="">—</MenuItem>
                 {landowners.map((l) => <MenuItem key={l.id} value={String(l.id)}>{l.name}</MenuItem>)}
               </Select>
             </FormControl>
@@ -328,7 +343,7 @@ const StationsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
-          <Button variant="contained" onClick={save} disabled={saving || !form.name || !form.landownerId} data-testid="station-form-save">
+          <Button variant="contained" onClick={save} disabled={saving || !form.name} data-testid="station-form-save">
             {translate('ra.action.save')}
           </Button>
         </DialogActions>
@@ -402,6 +417,14 @@ const StationsPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <OnboardDialog
+        open={onboardOpen}
+        onClose={() => setOnboardOpen(false)}
+        base={base}
+        landowners={landowners}
+        onCreated={() => { load(); loadLandowners(); }}
+      />
     </EnergyPageFrame>
   );
 };

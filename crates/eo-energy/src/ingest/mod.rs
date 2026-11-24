@@ -60,6 +60,7 @@ impl AppPlugin for IngestPlugin {
         cfg.post(&path("/bills/{billId}/rent-payment"), web::post().to(rent_payment::save));
         cfg.post(&path("/bills/{billId}/submit"), web::post().to(h::submit_bill));
         cfg.post(&path("/bills/{billId}/match"), web::post().to(h::match_bill));
+        cfg.get(&path("/bills/{billId}/match-candidates"), web::get().to(h::match_candidates));
         cfg.post(&path("/bills/{billId}/rematch"), web::post().to(h::rematch_bill));
         cfg.post(&path("/ingest-batches"), web::post().to(h::create_batch));
         cfg.get(&path("/ingest-batches"), web::get().to(h::list_batches));

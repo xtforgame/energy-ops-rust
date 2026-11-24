@@ -68,7 +68,7 @@ async fn load_rules(tx: &mut Tx<'_>, org: i64) -> ApiResult<HashMap<String, Rule
 
 /// `contractExpiry`：每份有 `valid_to` 的合約到期各一筆（去重：kind+contract_id+event_date）。
 async fn generate_contract_expiry(tx: &mut Tx<'_>, org: i64) -> ApiResult<i64> {
-    let rows: Vec<(i64, String, NaiveDate, i64, Option<i64>)> = sqlx::query_as(
+    let rows: Vec<(i64, String, NaiveDate, Option<i64>, Option<i64>)> = sqlx::query_as(
         "SELECT c.id, c.contract_no, c.valid_to, c.landowner_id,
                 (SELECT station_id FROM mn_energy_contract_station cs WHERE cs.contract_id = c.id AND cs.deleted_at IS NULL ORDER BY cs.id LIMIT 1)
            FROM tbl_energy_contract c WHERE c.organization_id = $1 AND c.valid_to IS NOT NULL AND c.deleted_at IS NULL",
@@ -109,7 +109,7 @@ async fn generate_contract_expiry(tx: &mut Tx<'_>, org: i64) -> ApiResult<i64> {
 
 /// `contractRenewal`：每份有 `renewal_remind_on` 的合約各一筆。
 async fn generate_contract_renewal(tx: &mut Tx<'_>, org: i64) -> ApiResult<i64> {
-    let rows: Vec<(i64, String, NaiveDate, i64, Option<i64>)> = sqlx::query_as(
+    let rows: Vec<(i64, String, NaiveDate, Option<i64>, Option<i64>)> = sqlx::query_as(
         "SELECT c.id, c.contract_no, c.renewal_remind_on, c.landowner_id,
                 (SELECT station_id FROM mn_energy_contract_station cs WHERE cs.contract_id = c.id AND cs.deleted_at IS NULL ORDER BY cs.id LIMIT 1)
            FROM tbl_energy_contract c WHERE c.organization_id = $1 AND c.renewal_remind_on IS NOT NULL AND c.deleted_at IS NULL",
@@ -158,7 +158,7 @@ async fn generate_bill_expected(tx: &mut Tx<'_>, org: i64, as_of: NaiveDate, rul
         .map(|d| d.day())
         .unwrap_or(28);
     let Some(event_date) = NaiveDate::from_ymd_opt(as_of.year(), as_of.month(), (dom as u32).min(last_day)) else { return Ok(0) };
-    let stations: Vec<(i64, String, i64)> =
+    let stations: Vec<(i64, String, Option<i64>)> =
         sqlx::query_as("SELECT id, name, landowner_id FROM tbl_energy_station WHERE organization_id = $1 AND enabled = true AND deleted_at IS NULL")
             .bind(org)
             .fetch_all(&mut **tx)

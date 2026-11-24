@@ -140,6 +140,39 @@ pub async fn create_meter(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, b: &Value
     .await?)
 }
 
+/// 陌生電號人工繫結成功之後：把這張單的電號寫進案場電號表（用途 wholesale，valid_from＝這張單的計費起日），
+/// 同一正規化電號已有重疊的段就不重寫（照 `create_meter` 的 overlap 判斷）；案場主電號是空的就補上
+/// （執行、工作流綁定都靠它當 key）。寫不進去（例如電號是空字串）就靜靜跳過，不擋繫結本身。
+pub async fn record_match_meter(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, customer_number: &str, valid_from: Option<NaiveDate>) -> ApiResult<()> {
+    let customer_number = customer_number.trim();
+    if customer_number.is_empty() {
+        return Ok(());
+    }
+    let Some(key) = normalize_customer_number(Some(customer_number)) else { return Ok(()) };
+    let existing = existing_segments(tx, ctx.org_id(), &key, None).await?;
+    if !existing.iter().any(|(_, f, t)| overlaps(valid_from, None, *f, *t)) {
+        sqlx::query(
+            "INSERT INTO tbl_energy_station_meter (organization_id, station_id, customer_number, usage, valid_from) VALUES ($1, $2, $3, 'wholesale', $4)",
+        )
+        .bind(ctx.org_id())
+        .bind(station_id)
+        .bind(customer_number)
+        .bind(valid_from)
+        .execute(&mut **tx)
+        .await?;
+    }
+    // 主電號是空的才補；已經有主電號的案場不覆蓋（可能是另一個電號）。
+    sqlx::query(
+        "UPDATE tbl_energy_station SET customer_number = $2 WHERE id = $1 AND organization_id = $3 AND customer_number IS NULL AND deleted_at IS NULL",
+    )
+    .bind(station_id)
+    .bind(customer_number)
+    .bind(ctx.org_id())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 pub async fn update_meter(tx: &mut Tx<'_>, ctx: &Ctx, meter_id: i64, b: &Value) -> ApiResult<()> {
     let row: Option<MeterRow> = sqlx::query_as(&format!("SELECT {METER_COLS} FROM tbl_energy_station_meter WHERE id = $1 AND deleted_at IS NULL"))
         .bind(meter_id)

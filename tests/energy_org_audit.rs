@@ -497,7 +497,9 @@ async fn domain_model_constraints() {
     assert!(null("tbl_energy_workflow_execution", "station_key").is_some() && null("tbl_energy_workflow_execution", "station_id").is_some());
     assert_eq!(null("tbl_energy_landowner", "organization_id").as_deref(), Some("NO"));
     assert_eq!(null("tbl_energy_station", "organization_id").as_deref(), Some("NO"));
-    assert_eq!(null("tbl_energy_station", "landowner_id").as_deref(), Some("NO"));
+    // 卡 20261124-2316 起：案場可以沒有地主就建檔（沒有電號也是，見下面 customer_number）。
+    assert_eq!(null("tbl_energy_station", "landowner_id").as_deref(), Some("YES"));
+    assert_eq!(null("tbl_energy_station", "customer_number").as_deref(), Some("YES"));
     assert_eq!(null("tbl_energy_bill", "organization_id").as_deref(), Some("NO"));
     assert_eq!(null("tbl_energy_bill", "station_id").as_deref(), Some("YES"), "例外件的命脈");
     assert!(null("tbl_energy_contract", "station_id").is_none(), "合約不再直接掛案場");

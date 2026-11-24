@@ -643,3 +643,127 @@ async fn overview_pages() {
     let v = expect_status!(app.get(&owner, &app.e(org, &format!("/landowners/{lo}/overview"))).await, 200);
     assert_eq!(v["id"], lo);
 }
+
+/// 卡 20261124-2316：案場／地主／合約各自獨立，沒有電號也能建檔，陌生電號人工繫結後下月自動對到。
+/// S1：不帶電號／地主建案場，沒有電號案場建工作流綁定回 409。
+/// S2：合約掛多位地主，依任一位地主篩都找得到，拿掉一位不影響另一位與案場。
+/// S3：一次建案場、地主（一舊一新）、合約（`/onboard`），分配照填的比例逐筆寫。
+/// S4：候選清單裡沒合約的案場灰掉標字（`hasContract: false`）、直接送出也 409；
+/// 繫結成功寫電號表、補主電號；下一期同電號 ingest 自動對到，不進待指認。
+#[actix_web::test]
+async fn masters_independent_unknown_meter() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("mim-org").await;
+    let base = app.e(org, "");
+
+    // ── S1：不帶電號、不帶地主也能建案場 ──
+    let s1 = expect_status!(app.post(&owner, &format!("{base}/stations"), json!({ "name": "S1 無電號案場" })).await, 200);
+    let s1_id = s1["id"].as_i64().unwrap();
+    assert!(s1["landownerId"].is_null(), "{s1}");
+    let list = expect_status!(app.get(&owner, &format!("{base}/station-list")).await, 200);
+    let row = list["items"].as_array().unwrap().iter().find(|r| r["id"] == s1_id).unwrap();
+    assert_eq!(row["meterCount"], 0, "{row}");
+
+    // 連帶：沒有電號的案場不能建工作流綁定（執行用主電號當 key）。
+    app.install_def(&owner, org, &eo_domain::workflow_defs::default_bill_approval(), None).await;
+    let opts = expect_status!(app.get(&owner, &format!("{base}/binding-options?kind=workflow")).await, 200);
+    let bill_def = opts["items"].as_array().unwrap().iter().find(|o| o["key"] == "bill-approval").unwrap()["id"].as_i64().unwrap();
+    let blocked_bind = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/stations/{s1_id}/bindings"),
+            json!({ "kind": "workflow", "docType": "electricityBill", "versionId": bill_def, "validFrom": "2000-01-01" }),
+        )
+        .await,
+        409
+    );
+    assert_eq!(blocked_bind["code"], "station_has_no_meter");
+
+    // ── S2：合約掛多位地主 ──
+    let lo1 = app.landowner(org, "地主甲").await;
+    let lo2 = app.landowner(org, "地主乙").await;
+    let s2_station = app.station(org, lo1, "99-s2-0001", "S2 案場").await;
+    let created = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-MIM-S2", "landownerIds": [lo1, lo2], "stationIds": [s2_station], "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    let contract_id = created["id"].as_i64().unwrap();
+    assert_eq!(created["landowners"].as_array().unwrap().len(), 2, "{created}");
+    let by_lo2 = expect_status!(app.get(&owner, &format!("{base}/contracts?landownerId={lo2}")).await, 200);
+    assert!(by_lo2["items"].as_array().unwrap().iter().any(|c| c["id"] == contract_id), "{by_lo2}");
+    let updated = expect_status!(
+        app.patch(
+            &owner,
+            &format!("{base}/contracts/{contract_id}"),
+            json!({ "contractNo": "CT-MIM-S2", "landownerIds": [lo1], "stationIds": [s2_station], "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    assert_eq!(updated["landowners"].as_array().unwrap().len(), 1, "{updated}");
+    let still = expect_status!(app.get(&owner, &format!("{base}/stations/{s2_station}/overview")).await, 200);
+    assert!(still["landownerId"].is_number(), "拿掉一位地主不影響案場：{still}");
+
+    // ── S3：一次建案場、地主（一舊一新）、合約 ──
+    let onboarded = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/onboard"),
+            json!({
+                "station": { "name": "S3 路竹三爺二期（示範）" },
+                "landowners": [ { "id": lo1, "ratio": 60 }, { "name": "S3 新地主", "ratio": 40 } ],
+                "contract": { "contractNo": "CT-MIM-S3", "validFrom": "2026-01-01" },
+            }),
+        )
+        .await,
+        200
+    );
+    let s3_id = onboarded["id"].as_i64().unwrap();
+    assert!(onboarded["landownerIds"].as_array().unwrap().len() == 2, "{onboarded}");
+    assert!(onboarded["contractId"].as_i64().unwrap() > 0, "{onboarded}");
+    let allocs = expect_status!(app.get(&owner, &format!("{base}/stations/{s3_id}/allocations")).await, 200);
+    assert_eq!(allocs["items"].as_array().unwrap().len(), 2, "{allocs}");
+
+    // ── S4：陌生電號繫結，候選灰掉沒合約的案場、直接送出 409；成功後寫電號表、下一期自動對到 ──
+    let no_contract_station = app.station(org, lo1, "99-s4-nc-0001", "S4 沒合約案場").await;
+    let bill1 = app.bill(org, None, "2026-06-01", "2026-06-30", Some("1000"), None).await;
+    app.exec_sql(&format!("UPDATE tbl_energy_bill SET customer_number_raw = '99-3217-2001' WHERE id = {bill1}")).await;
+
+    let candidates = expect_status!(app.get(&owner, &format!("{base}/bills/{bill1}/match-candidates")).await, 200);
+    let items = candidates["items"].as_array().unwrap();
+    let nc = items.iter().find(|c| c["id"] == no_contract_station).unwrap();
+    assert_eq!(nc["hasContract"], false, "{nc}");
+    let s3c = items.iter().find(|c| c["id"] == s3_id).unwrap();
+    assert_eq!(s3c["hasContract"], true, "{s3c}");
+
+    let blocked = expect_status!(app.post(&owner, &format!("{base}/bills/{bill1}/match"), json!({ "stationId": no_contract_station })).await, 409);
+    assert_eq!(blocked["code"], "station_has_no_contract");
+
+    let matched = expect_status!(app.post(&owner, &format!("{base}/bills/{bill1}/match"), json!({ "stationId": s3_id })).await, 200);
+    assert_eq!(matched["reviewStatus"], "pendingReview", "{matched}");
+    let meters = expect_status!(app.get(&owner, &format!("{base}/stations/{s3_id}/meters")).await, 200);
+    assert_eq!(meters["items"].as_array().unwrap().len(), 1, "繫結成功要寫電號表：{meters}");
+    let overview = expect_status!(app.get(&owner, &format!("{base}/stations/{s3_id}/overview")).await, 200);
+    assert_eq!(overview["customerNumber"], "99-3217-2001", "要補主電號，「沒有電號」才會消失：{overview}");
+
+    // 下一期同電號：ingest 自動對到這座案場與合約，不進待指認。
+    let r = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/bills/ingest"),
+            json!({ "ocrJson": { "bills": [{ "customerNumber": "99-3217-2001", "計費起": "2026/07/01", "計費訖": "2026/07/31", "totalAmount": 2000 }] } }),
+        )
+        .await,
+        200
+    );
+    assert_eq!(r["matched"], 1, "{r}");
+    let bill2 = r["billIds"][0].as_i64().unwrap();
+    let bill2_detail = expect_status!(app.get(&owner, &format!("{base}/bills/{bill2}")).await, 200);
+    assert_eq!(bill2_detail["stationId"], s3_id, "{bill2_detail}");
+    assert_eq!(bill2_detail["reviewStatus"], "pendingReview", "{bill2_detail}");
+}

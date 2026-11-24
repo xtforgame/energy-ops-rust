@@ -19,7 +19,7 @@ set -u
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 
-ALL=(audit-i18n flowgraph mywork queue binding executions doctype modes recognition journey roles tenant-console)
+ALL=(audit-i18n flowgraph mywork queue binding executions doctype modes recognition journey roles tenant-console masters-onboard)
 if [ $# -gt 0 ]; then CRAWLERS=("$@"); else CRAWLERS=("${ALL[@]}"); fi
 
 DB=${E2E_DB:-eo_e2e}
@@ -56,7 +56,7 @@ for c in "${CRAWLERS[@]}"; do
   rm -rf "$OUT"; mkdir -p "$OUT"
 
   # 有幾支要從收件台真的走一遍（單據留白）；其餘灌四份範本帳單與它們的流程。
-  case "$c" in binding|executions|queue|roles|journey) samples=0 ;; *) samples=1 ;; esac
+  case "$c" in binding|executions|queue|roles|journey|masters-onboard) samples=0 ;; *) samples=1 ;; esac
 
   psql_admin -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB" >/dev/null || { echo "$c: 重建資料庫失敗" | tee -a "$SUMMARY"; total_fail=1; continue; }
 
