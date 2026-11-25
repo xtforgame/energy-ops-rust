@@ -20,6 +20,7 @@ import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './ro
 // 綁定的三個具名動作（`FRONTEND.md §2.84`）——這一頁是動作的家。
 import BindingActions, { type BindingKind } from './BindingActions';
 import RentCycle from './RentCycle';
+import RentApplication from './RentApplication';
 
 /** 卡 20261118-0427-a 時區修正：`toISOString()`／`Date` 的 `.slice()` 都是 UTC，顯示給人看要轉本地時間。
  *  後端存的 UTC 不動（`occurredAt` 原樣送 PATCH／顯示其他地方），這裡只管「轉成人看的字串」這一層。 */
@@ -672,6 +673,8 @@ const StationDetailPage: React.FC = () => {
 
       {/* 卡 20261118-0427-a S2／S4：電號區、地主分配區（各自抓自己的資料，不擋其他區塊）。 */}
       {id && <RentPaymentPreview base={base} stationId={Number(id)} />}
+      {/* 卡 20261126-0416 S1：同案場同期多地主合一張租金付款申請。 */}
+      {id && <RentApplication base={base} stationId={Number(id)} />}
       {id && <MetersSection orgId={orgId} stationId={Number(id)} onDone={() => { loadBindings(); load(); }} />}
       {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
 
@@ -711,7 +714,7 @@ const StationDetailPage: React.FC = () => {
                         sx={{ background: jvTokens.primary, color: '#fff', fontWeight: 600, height: 20 }}
                       />
                     )}
-                    <RentCycle base={base} contractId={c.id} stationId={Number(id)} />
+                    <RentCycle base={base} contractId={c.id} stationId={Number(id)} rentCalcCode={c.rentCalcCode} />
                   </TableCell>
                 </TableRow>
               )) : <EmptyRow colSpan={6} />}

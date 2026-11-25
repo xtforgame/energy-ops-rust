@@ -259,3 +259,103 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
         "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,
         "invoiceDirection":"receiveLandlordInvoice","note":"此為租金基礎試算；稅費、扣繳與正式付款待範例確認，不產生付款或變更審核狀態。"}))
 }
+
+/// 一份合約（可能掛多位地主，不分攤金額，整份一列：決定 1）在合併申請裡的一列輸入。
+/// `has_issue` 含「試算有 issue」與「base_rent 算不出來」兩種情況，由呼叫端（`eo-energy` 的
+/// `station_application`）判定，這裡只負責組字串與加總，不碰資料庫。
+#[derive(Debug, Clone)]
+pub struct ApplicationEntryInput {
+    pub contract_no: String,
+    pub rent_calc_code: Option<String>,
+    pub kind: String,
+    /// 地主姓名全部列出（決定 3：多地主不拆列、不拆金額）。
+    pub landowner_names: Vec<String>,
+    /// 多地主時只取第一位的 tax_id 判斷類型／憑證文字（決定 3 的簡化：驗收例都只有一位地主）。
+    pub landowner_tax_id: Option<String>,
+    /// 存草稿時選的憑證安排（"before"／"later"／"unknown"），只有公司地主會用到。
+    pub invoice_timing: Option<String>,
+    pub base_rent: Option<String>,
+    pub has_issue: bool,
+}
+
+/// tax_id 是 8 位數字＝公司（統編），有值但不是 8 位數字＝個人，空的＝類型待確認（決定 2）。
+fn landowner_kind(tax_id: &Option<String>) -> &'static str {
+    match tax_id.as_deref() {
+        None => "unknown",
+        Some(t) if t.trim().is_empty() => "unknown",
+        Some(t) if t.len() == 8 && t.chars().all(|c| c.is_ascii_digit()) => "company",
+        Some(_) => "individual",
+    }
+}
+
+/// 租金計算方式代號對人看的中文名（跟 RentCycle.tsx 的下拉選單同一套文字）：申請裡的「算法」欄
+/// 與費用說明不印程式代號，commander 代看畫面時糾正的產品缺陷。
+fn kind_label(kind: &str) -> String {
+    match kind {
+        "fixedArea" => "面積 × 固定單價",
+        "revenueShare" => "電費收入 × 比例",
+        "fixedAnnual" => "整組年額（不分面積）",
+        "annualTiered" => "年度基準＋級距調整",
+        "kwhRate" => "度數 × 每度費率 × 比例",
+        other => other,
+    }
+    .to_string()
+}
+
+/// T-8 欄位規則：公司依憑證安排三選一文字；個人固定「有，租金計算表」；類型待確認時單獨一句。
+fn voucher_text(tax_id: &Option<String>, invoice_timing: &Option<String>) -> String {
+    match landowner_kind(tax_id) {
+        "unknown" => "地主類型待確認".into(),
+        "company" => match invoice_timing.as_deref() {
+            Some("before") => "有，發票".into(),
+            Some("later") => "無，後補".into(),
+            _ => "待確認".into(),
+        },
+        _ => "有，租金計算表".into(),
+    }
+}
+
+/// 同案場同一期的租金付款申請（T-8：多地主合一張）。純函式，不讀資料庫、不寫入；
+/// `company_code`／`company_name` 由呼叫端先讀案場 `easyflowDefaults`、沒有就傳「待補」。
+/// 合計只加沒有 issue 的列；任何一列有 issue 或算不出 baseRent，整張 `total` 回 null、`state` 為
+/// `"needsReview"`（決定 4 的延伸：試算不完整時申請本身也不能給出一個誤導的合計數字）。
+pub fn application(
+    station_name: &str,
+    company_code: &str,
+    company_name: &str,
+    period_start: &str,
+    period_end: &str,
+    entries: &[ApplicationEntryInput],
+) -> Value {
+    let mut total = Decimal::ZERO;
+    let mut needs_review = false;
+    let lines: Vec<Value> = entries
+        .iter()
+        .map(|e| {
+            if e.has_issue || e.base_rent.is_none() {
+                needs_review = true;
+            } else if let Some(amt) = &e.base_rent {
+                if let Ok(d) = Decimal::from_str(amt) {
+                    total += d;
+                }
+            }
+            json!({
+                "contractNo": e.contract_no, "rentCalcCode": e.rent_calc_code, "kind": kind_label(&e.kind),
+                "landownerNames": e.landowner_names, "landownerType": landowner_kind(&e.landowner_tax_id),
+                "voucher": voucher_text(&e.landowner_tax_id, &e.invoice_timing),
+                "baseRent": e.base_rent, "hasIssue": e.has_issue,
+            })
+        })
+        .collect();
+    json!({
+        "summary": format!("支付{station_name}租金（{period_start}～{period_end}）"),
+        "periodStart": period_start, "periodEnd": period_end,
+        "companyCode": company_code, "companyName": company_name,
+        "feeDescription": entries.iter().map(|e| format!("{}：{}，繳費期限待補",e.contract_no,kind_label(&e.kind))).collect::<Vec<_>>().join("；"),
+        "entries": lines,
+        "total": if needs_review {Value::Null} else {json!(total.to_string())},
+        "state": if needs_review {"needsReview"} else {"draft"},
+        "paymentAllowed": false,
+        "note": "預覽草稿・尚未送出、未付款",
+    })
+}
