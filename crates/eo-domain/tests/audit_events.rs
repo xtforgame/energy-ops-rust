@@ -48,7 +48,7 @@ fn has_no_duplicate_types() {
 fn declares_only_types_that_are_written() {
     let mut expected = vec![
         "allocation.created", "allocation.ended", "allocation.updated", "attachment.category_set",
-        "bill.no_contract", "bill.rematched", "contract.created", "contract.updated",
+        "bill.no_contract", "bill.rematched", "contract.created", "contract.updated", "contract.rent_payment_draft_saved",
         "department.created", "department.updated", "department.deleted",
         "department.member_added", "department.member_removed", "department.manager_changed",
         "member.role_changed",

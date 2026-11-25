@@ -9,11 +9,12 @@ const message=(e:any)=>e?.response?.data?.details?.message || e?.response?.data?
 const text=(v:unknown)=>v==null?'':String(v);
 
 /** Separate rent-cycle preparation, never invokes the per-bill payout workflow. */
-export default function RentCycle({base,contractId,stationId}:{base:string;contractId:number;stationId:number}) {
+export default function RentCycle({base,contractId,stationId,rentCalcCode}:{base:string;contractId:number;stationId:number;rentCalcCode?:string|null}) {
   const [open,setOpen]=React.useState(false),[busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
   const [plan,setPlan]=React.useState<Plan>({stationId,anchor:'',months:3,transfer:false,kind:'revenueShare',basis:'untaxed',sharePercent:null,area:null,unitPrice:null,unitPeriod:'month',roundingPlaces:0});
   const [transferChoice,setTransferChoice]=React.useState('');
   const [start,setStart]=React.useState(''),[rows,setRows]=React.useState<Row[]>([]),[result,setResult]=React.useState<any>(null),[dirty,setDirty]=React.useState(true);
+  const [invoiceTiming,setInvoiceTiming]=React.useState('unknown'),[draftSaved,setDraftSaved]=React.useState<{start:string;end:string}|null>(null);
   // 合約改綁到別的案場時，試算原本設在哪個案場；null＝沒有衝突。確認過才能覆蓋存檔。
   const [rebindFrom,setRebindFrom]=React.useState<{id:number;name:string}|null>(null);
   const [confirmRebind,setConfirmRebind]=React.useState(false);
@@ -55,20 +56,32 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
   };
   const updateRow=(id:number,key:keyof Row,value:any)=>{setResult(null);setRows(rs=>rs.map(r=>r.billId===id?{...r,[key]:value}:r));};
   const calculate=async()=>{
-    setBusy(true);setError('');setResult(null);
+    setBusy(true);setError('');setResult(null);setDraftSaved(null);
     try {setResult((await energyHttp.post(`${endpoint}/preview`,{start,receipts:rows.filter(r=>r.selected).map(r=>({billId:r.billId,source:r.source,
       untaxed:r.untaxed.trim()||null,gross:r.gross.trim()||null,kwh:r.kwh.trim()||null}))})).data);}
     catch(e){setError(message(e));}finally{setBusy(false);}
+  };
+  /** S2：R-A 零單據也能存，不經 POST /bills/{id}/rent-payment（決定 1）。 */
+  const saveDraft=async()=>{
+    setBusy(true);setError('');
+    try {
+      const r=(await energyHttp.post(`${endpoint}/payment-draft`,{start,receipts:rows.filter(r=>r.selected).map(r=>({billId:r.billId,source:r.source,
+        untaxed:r.untaxed.trim()||null,gross:r.gross.trim()||null,kwh:r.kwh.trim()||null})),invoiceTiming})).data;
+      setDraftSaved({start:r.periodStart,end:r.periodEnd});
+    } catch(e){setError(message(e));} finally{setBusy(false);}
   };
   const download=()=>{
     const url=URL.createObjectURL(new Blob([rentCycleDocument(result)],{type:'text/html;charset=utf-8'}));
     const a=document.createElement('a');a.href=url;a.download=`rent-${contractId}-${start}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   return <>
-    <Button size="small" onClick={load}>租金週期試算</Button>
+    <Button size="small" onClick={()=>{if(rentCalcCode==='R-0'){setOpen(true);}else{load();}}}>租金週期試算</Button>
     <Dialog open={open} onClose={()=>!busy&&setOpen(false)} fullWidth maxWidth="xl">
       <DialogTitle>地主租金週期試算</DialogTitle>
       <DialogContent>
+        {rentCalcCode==='R-0' ? (
+          <Alert severity="info" data-testid="rent-cycle-not-payable">R-0 業主自建案：不需付款，不產出租金計算表與付款申請</Alert>
+        ) : (
         <Stack spacing={2}>
           <Alert severity="info">依合約付款週期彙整。這裡收取地主發票；與電費售電開票分開。設定僅供試算，不啟用既有逐單租金流程，也不產生付款。</Alert>
           <Alert severity="warning">稅費、扣繳與補充保費待實際範例確認，目前只算租金基底。面積與單價必須使用相同單位。轉供案場須收齊台電與轉供單據，零元也須有單據。</Alert>
@@ -84,12 +97,12 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
           )}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <TextField select label="費用性質" value={plan.feeKind??'rent'} onChange={e=>change('feeKind',e.target.value)}><MenuItem value="rent">租金</MenuItem><MenuItem value="management">管理費</MenuItem></TextField>
-            <TextField label="第一期起日（每月一日）" type="date" InputLabelProps={{shrink:true}} value={plan.anchor} onChange={e=>{change('anchor',e.target.value);setStart(e.target.value);}}/>
+            <TextField label="第一期起日（每月一日）" type="date" inputProps={{'data-testid':'rent-cycle-anchor-date'}} InputLabelProps={{shrink:true}} value={plan.anchor} onChange={e=>{change('anchor',e.target.value);setStart(e.target.value);}}/>
             <TextField label="每幾個月付款" type="number" value={plan.months} inputProps={{min:1,max:12}} onChange={e=>change('months',Number(e.target.value))}/>
-            <TextField select label="此期間是否已轉供" sx={{minWidth:170}} value={transferChoice} onChange={e=>{setTransferChoice(e.target.value);change('transfer',e.target.value==='true');}}>
+            <TextField select data-testid="rent-cycle-transfer-select" label="此期間是否已轉供" sx={{minWidth:170}} value={transferChoice} onChange={e=>{setTransferChoice(e.target.value);change('transfer',e.target.value==='true');}}>
               <MenuItem value="false">未轉供</MenuItem><MenuItem value="true">已轉供</MenuItem>
             </TextField>
-            <TextField select label="租金方式" value={plan.kind} onChange={e=>{change('kind',e.target.value);if(e.target.value!=='revenueShare')change('monthlyMinimum',null);}}>
+            <TextField select data-testid="rent-cycle-kind-select" label="租金方式" value={plan.kind} onChange={e=>{change('kind',e.target.value);if(e.target.value!=='revenueShare')change('monthlyMinimum',null);}}>
               <MenuItem value="fixedArea">面積 × 固定單價</MenuItem>
               <MenuItem value="revenueShare">電費收入 × 比例</MenuItem>
               <MenuItem value="fixedAnnual">整組年額（不分面積）</MenuItem>
@@ -102,7 +115,7 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
               <TextField select label="單價週期" value={plan.unitPeriod} onChange={e=>change('unitPeriod',e.target.value)}><MenuItem value="month">每月</MenuItem><MenuItem value="cycle">整個付款週期</MenuItem></TextField>
             </>}
             {plan.kind==='revenueShare'&&<TextField label="租金比例（%）" value={plan.sharePercent??''} onChange={e=>change('sharePercent',e.target.value)}/>}
-            {plan.kind==='fixedAnnual'&&<TextField label="整組年額" value={plan.annualAmount??''} onChange={e=>change('annualAmount',e.target.value)}/>}
+            {plan.kind==='fixedAnnual'&&<TextField label="整組年額" inputProps={{'data-testid':'rent-cycle-annual-amount'}} value={plan.annualAmount??''} onChange={e=>change('annualAmount',e.target.value)}/>}
             {plan.kind==='annualTiered'&&<>
               <TextField label="年度基準（經營年租金）" value={plan.annualAmount??''} onChange={e=>change('annualAmount',e.target.value)}/>
               <TextField label="售電回饋百分比（%）" value={plan.sharePercent??''} onChange={e=>change('sharePercent',e.target.value)}/>
@@ -144,8 +157,18 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
             <Typography>本期：{result.periodStart}～{result.periodEnd}；{result.feeKind==='management'?'管理費':'租金'}基礎試算：{result.baseRent??'資料未齊，無法計算'} 元</Typography>
             <Alert severity="warning">尚非付款金額。稅費與扣繳待確認；正式送審、付款及排程待後續串接。</Alert>
             <Button onClick={download}>下載可閱讀租金試算表</Button>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <TextField select size="small" data-testid="rent-cycle-invoice-timing-select" label="憑證安排" sx={{minWidth:140}} value={invoiceTiming} onChange={e=>setInvoiceTiming(e.target.value)}>
+                <MenuItem value="unknown">未定</MenuItem>
+                <MenuItem value="before">先附發票</MenuItem>
+                <MenuItem value="later">後補</MenuItem>
+              </TextField>
+              <Button disabled={busy||!result.baseRent} variant="contained" data-testid="rent-cycle-save-payment-draft" onClick={saveDraft}>存成租金付款草稿</Button>
+            </Stack>
+            {draftSaved&&<Alert severity="success">已存成 {draftSaved.start}～{draftSaved.end} 的租金付款草稿</Alert>}
           </>}
         </Stack>
+        )}
       </DialogContent><DialogActions><Button disabled={busy} onClick={()=>setOpen(false)}>關閉</Button></DialogActions>
     </Dialog>
   </>;

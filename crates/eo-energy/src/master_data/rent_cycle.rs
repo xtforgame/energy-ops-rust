@@ -1,14 +1,15 @@
 //! Explicit landlord-cycle drafts. Does not advance electricity sales or post payables.
-use super::contracts::{contract_in_org, ContractRow};
+use super::contracts::{contract_in_org, ContractRow, CONTRACT_COLS};
 use crate::audit::{self, AuditInput};
 use crate::common::{err, err_d, Ctx, RequestMeta, Tx};
 use crate::gates;
 use actix_web::{web, HttpResponse};
 use chrono::NaiveDate;
-use eo_domain::rent_cycle::{self, Plan, Receipt};
+use eo_domain::rent_cycle::{self, ApplicationEntryInput, Plan, Receipt};
 use eo_platform::{auth::CurrentUser, core::CoreRef, error::ApiResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 type Core=web::Data<CoreRef>;
 
 fn invalid(message:String)->eo_platform::error::ApiError {err_d(422,"rent_cycle_invalid",json!({"message":message}))}
@@ -89,7 +90,7 @@ pub async fn bills(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>,query:we
     if rows.len()>500 {return Err(err(422,"rent_too_many_bills"));}
     Ok(HttpResponse::Ok().json(json!({"items":rows,"periodStart":a,"periodEnd":b})))
 }
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct Input {
     bill_id:i64,source:String,untaxed:Option<String>,gross:Option<String>,kwh:Option<String>,
@@ -97,25 +98,130 @@ pub struct Input {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preview {start:String,receipts:Vec<Input>}
-pub async fn preview(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>,body:web::Json<Preview>)->ApiResult<HttpResponse> {
-    let (org,id)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
-    let mut tx=core.pool.begin().await?;
-    let c=contract_in_org(&mut tx,org,id).await?;let p=saved_plan(&mut tx,org,id).await?;
-    check_dates(&c,&p,&body.start)?;
-    if body.receipts.len()>500 {return Err(err(422,"rent_too_many_bills"));}
-    let ids:Vec<_>=body.receipts.iter().map(|r|r.bill_id).collect();
+
+/// `preview` 與 `payment_draft` 共用的計算核心：讀已存的試算設定、核對單據真的屬於這份合約的
+/// 案場，交給 `eo_domain::rent_cycle::preview` 算。回傳 (這份計畫, 試算結果 JSON)。
+async fn compute(tx:&mut Tx<'_>,org:i64,id:i64,c:&ContractRow,start:&str,receipts:&[Input])->ApiResult<(Plan,Value)> {
+    let p=saved_plan(tx,org,id).await?;
+    check_dates(c,&p,start)?;
+    if receipts.len()>500 {return Err(err(422,"rent_too_many_bills"));}
+    let ids:Vec<_>=receipts.iter().map(|r|r.bill_id).collect();
     let bills:Vec<(i64,Option<NaiveDate>,Option<NaiveDate>,Option<i64>)>=sqlx::query_as("SELECT id,billing_period_start,billing_period_end,source_attachment_id FROM tbl_energy_bill WHERE organization_id=$1 AND station_id=$2 AND id=ANY($3) AND deleted_at IS NULL")
-        .bind(org).bind(p.station_id).bind(&ids).fetch_all(&mut *tx).await?;
-    let mut rows=Vec::new();let mut attachments=Vec::new();
-    for r in &body.receipts {
+        .bind(org).bind(p.station_id).bind(&ids).fetch_all(&mut **tx).await?;
+    let mut rows=Vec::new();
+    for r in receipts {
         let b=bills.iter().find(|b|b.0==r.bill_id).ok_or_else(||err(422,"rent_bill_not_in_station"))?;
         rows.push(Receipt{bill_id:r.bill_id,source:r.source.clone(),start:b.1.map(|d|d.to_string()).unwrap_or_default(),
             end:b.2.map(|d|d.to_string()).unwrap_or_default(),untaxed:r.untaxed.clone(),gross:r.gross.clone(),kwh:r.kwh.clone()});
-        attachments.push(json!({"billId":r.bill_id,"attachmentId":b.3,"downloadPath":b.3.map(|a|format!("/api/v1/orgs/{org}/energy/attachments/{a}/download"))}));
     }
-    let mut result=rent_cycle::preview(&p,&body.start,&rows).map_err(invalid)?;
+    let result=rent_cycle::preview(&p,start,&rows).map_err(invalid)?;
+    Ok((p,result))
+}
+pub async fn preview(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>,body:web::Json<Preview>)->ApiResult<HttpResponse> {
+    let (org,id)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
+    let mut tx=core.pool.begin().await?;
+    let c=contract_in_org(&mut tx,org,id).await?;
+    let (_,mut result)=compute(&mut tx,org,id,&c,&body.start,&body.receipts).await?;
+    let ids:Vec<_>=body.receipts.iter().map(|r|r.bill_id).collect();
+    let atts:Vec<(i64,Option<i64>)>=sqlx::query_as("SELECT id,source_attachment_id FROM tbl_energy_bill WHERE organization_id=$1 AND id=ANY($2) AND deleted_at IS NULL")
+        .bind(org).bind(&ids).fetch_all(&mut *tx).await?;
+    let attachments:Vec<Value>=body.receipts.iter().map(|r|{
+        let a=atts.iter().find(|a|a.0==r.bill_id).and_then(|a|a.1);
+        json!({"billId":r.bill_id,"attachmentId":a,"downloadPath":a.map(|a|format!("/api/v1/orgs/{org}/energy/attachments/{a}/download"))})
+    }).collect();
     result["contractId"]=json!(id);result["contractNo"]=json!(c.contract_no);
     result["attachments"]=json!(attachments);
     result["inputProvenance"]=json!("userConfirmedDraftInputs; bill dates and station verified against database; amounts do not overwrite OCR");
     Ok(HttpResponse::Ok().json(result))
+}
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct PaymentDraftBody {start:String,receipts:Vec<Input>,invoice_timing:Option<String>}
+
+/// S2：試算結果沒有 issue、算出 baseRent 才能存；R-A 零單據（`receipts` 空陣列）也走這條，
+/// 不經舊路 `POST /bills/{id}/rent-payment`（決定 1）。鍵用 periodStart，同一期再存會蓋掉自己那一筆。
+pub async fn payment_draft(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i64,i64)>,body:web::Json<PaymentDraftBody>)->ApiResult<HttpResponse> {
+    let (org,id)=path.into_inner();
+    let access=core.rbac.authorize_org(&user,org,gates::MASTER_MANAGE).await?;
+    let ctx=Ctx::new(&core,access,&meta);
+    let mut tx=core.pool.begin().await?;
+    let c=contract_in_org(&mut tx,org,id).await?;
+    let (p,result)=compute(&mut tx,org,id,&c,&body.start,&body.receipts).await?;
+    let issues_empty=result["issues"].as_array().map(|a|a.is_empty()).unwrap_or(false);
+    let base_rent=result["baseRent"].as_str().map(str::to_string);
+    if !issues_empty || base_rent.is_none() {
+        return Err(err(422,"rent_payment_draft_incomplete"));
+    }
+    let period_start=result["periodStart"].as_str().unwrap_or_default().to_string();
+    let period_end=result["periodEnd"].as_str().unwrap_or_default().to_string();
+    let invoice_timing=body.invoice_timing.clone().unwrap_or_else(||"unknown".into());
+    let draft=json!({"periodStart":period_start,"periodEnd":period_end,"kind":p.kind,"baseRent":base_rent,
+        "receipts":body.receipts,"invoiceTiming":invoice_timing,"savedAt":ctx.now()});
+    let before:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_contract WHERE id=$1 FOR UPDATE").bind(id).fetch_one(&mut *tx).await?;
+    let mut drafts=before["rentPaymentDrafts"].as_object().cloned().unwrap_or_default();
+    drafts.insert(period_start.clone(),draft);
+    let drafts=Value::Object(drafts);
+    sqlx::query("UPDATE tbl_energy_contract SET data=jsonb_set(data,'{rentPaymentDrafts}',$1,true),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3")
+        .bind(&drafts).bind(id).bind(org).execute(&mut *tx).await?;
+    audit::record(&mut tx,&ctx,AuditInput::new("contract.rent_payment_draft_saved",id,"存成租金付款草稿")
+        .label(c.contract_no.clone()).payload(json!({"contractNo":c.contract_no,"periodStart":period_start,"periodEnd":period_end,"baseRent":base_rent}))).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().json(json!({"periodStart":period_start,"periodEnd":period_end,"baseRent":base_rent,"state":"draft","paymentAllowed":false})))
+}
+
+/// S1：這個案場掛的所有合約，依已存的草稿重算（不存快照），依 (periodStart,periodEnd) 分組成
+/// 一期一張申請，R-0 合約（決定 4）不重算、直接進 `notPayable`，不計入任何一期。
+pub async fn station_application(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse> {
+    let (org,station_id)=path.into_inner();
+    core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
+    let mut tx=core.pool.begin().await?;
+    let station:Option<(String,Value)>=sqlx::query_as("SELECT name,data FROM tbl_energy_station WHERE id=$1 AND organization_id=$2 AND deleted_at IS NULL")
+        .bind(station_id).bind(org).fetch_optional(&mut *tx).await?;
+    let (station_name,station_data)=station.ok_or_else(||err(404,"station_not_found"))?;
+    let defaults=&station_data["easyflowDefaults"];
+    let company_code=defaults.get("companyCode").and_then(Value::as_str).filter(|s|!s.is_empty()).unwrap_or("待補").to_string();
+    let company_name=defaults.get("companyName").and_then(Value::as_str).filter(|s|!s.is_empty()).unwrap_or("待補").to_string();
+
+    let contracts:Vec<ContractRow>=sqlx::query_as(&format!(
+        "SELECT {CONTRACT_COLS} FROM tbl_energy_contract c WHERE c.organization_id=$1 AND c.deleted_at IS NULL
+           AND c.id IN (SELECT contract_id FROM mn_energy_contract_station WHERE station_id=$2 AND deleted_at IS NULL) ORDER BY c.id"))
+        .bind(org).bind(station_id).fetch_all(&mut *tx).await?;
+
+    let mut not_payable=Vec::new();
+    let mut periods:BTreeMap<(String,String),Vec<ApplicationEntryInput>>=BTreeMap::new();
+    for c in &contracts {
+        if c.rent_calc_code.as_deref()==Some("R-0") {
+            not_payable.push(json!({"contractId":c.id,"contractNo":c.contract_no}));
+            continue;
+        }
+        let landowners:Vec<(String,Option<String>)>=sqlx::query_as(
+            "SELECT lo.name,lo.tax_id FROM mn_energy_contract_landowner cl JOIN tbl_energy_landowner lo ON lo.id=cl.landowner_id
+               WHERE cl.contract_id=$1 AND cl.deleted_at IS NULL ORDER BY cl.id")
+            .bind(c.id).fetch_all(&mut *tx).await?;
+        if landowners.is_empty() {continue;}
+        let data:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_contract WHERE id=$1").bind(c.id).fetch_one(&mut *tx).await?;
+        let drafts=data["rentPaymentDrafts"].as_object().cloned().unwrap_or_default();
+        for (period_start,draft) in drafts {
+            let receipts:Vec<Input>=serde_json::from_value(draft["receipts"].clone()).unwrap_or_default();
+            let (p,result)=match compute(&mut tx,org,c.id,c,&period_start,&receipts).await {
+                Ok(v)=>v,
+                // 草稿存檔後合約效期或單據被改掉，重算失敗；整列算待確認，不讓整支 API 掛掉。
+                Err(_)=>continue,
+            };
+            let period_end=result["periodEnd"].as_str().unwrap_or_default().to_string();
+            let issues_empty=result["issues"].as_array().map(|a|a.is_empty()).unwrap_or(false);
+            let base_rent=result["baseRent"].as_str().map(str::to_string);
+            let entry=ApplicationEntryInput{
+                contract_no:c.contract_no.clone(),rent_calc_code:c.rent_calc_code.clone(),kind:p.kind.clone(),
+                landowner_names:landowners.iter().map(|(n,_)|n.clone()).collect(),
+                landowner_tax_id:landowners.first().and_then(|(_,t)|t.clone()),
+                invoice_timing:draft["invoiceTiming"].as_str().map(str::to_string),
+                base_rent,has_issue:!issues_empty,
+            };
+            periods.entry((period_start,period_end)).or_default().push(entry);
+        }
+    }
+    let applications:Vec<Value>=periods.into_iter().map(|((ps,pe),entries)|
+        rent_cycle::application(&station_name,&company_code,&company_name,&ps,&pe,&entries)).collect();
+    Ok(HttpResponse::Ok().json(json!({"applications":applications,"notPayable":not_payable})))
 }
