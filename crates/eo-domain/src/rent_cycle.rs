@@ -26,6 +26,12 @@ pub struct Plan {
     pub monthly_minimum:Option<String>,
     #[serde(default, skip_serializing_if="Option::is_none")]
     pub commercial_operation_date:Option<String>,
+    /// fixedAnnual：整組年額；annualTiered：年度基準（經營年租金）。
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub annual_amount:Option<String>,
+    /// kwhRate：每度費率。
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    pub rate_per_kwh:Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -66,9 +72,39 @@ pub fn validate(p:&Plan)->Result<(),String> {
             let rate=number(p.share_percent.as_deref())?;
             if rate<Decimal::ZERO || rate>Decimal::from(100) {return Err("比例須介於 0 與 100".into());}
         },
+        "fixedAnnual"=>{
+            if number(p.annual_amount.as_deref())?<=Decimal::ZERO {return Err("整組年額須大於零".into());}
+        },
+        "annualTiered"=>{
+            if number(p.annual_amount.as_deref())?<=Decimal::ZERO {return Err("年度基準（經營年租金）須大於零".into());}
+            let rate=number(p.share_percent.as_deref())?;
+            if rate<Decimal::ZERO || rate>Decimal::from(100) {return Err("售電回饋百分比須介於 0 與 100".into());}
+            if p.months!=12 {return Err("年度基準級距僅支援 12 個月付款週期".into());}
+        },
+        "kwhRate"=>{
+            if number(p.rate_per_kwh.as_deref())?<Decimal::ZERO {return Err("每度費率不得為負".into());}
+            let rate=number(p.share_percent.as_deref())?;
+            if rate<Decimal::ZERO || rate>Decimal::from(100) {return Err("比例須介於 0 與 100".into());}
+        },
         _=>return Err("未知租金計算方式".into()),
     }
     Ok(())
+}
+/// 獅甲公證書第五條第二項逐列級距表（每 5 個百分點一階，原文「未滿 X%／逾 A% 未滿 B%」者照 B% 計收；
+/// 95%～105% 不調整照 100% 收，在此以門檻 105→100 表示）。找第一個 ratio < 門檻 的列，回傳對應百分比；
+/// 都不成立（ratio ≥ 200）回 None，由呼叫端轉成「依契約應變更經營年租金，不自動計算」的 issue。
+const SCHOOL_ROOF_TIERS:&[(i64,i64)]=&[
+    (5,5),(10,10),(15,15),(20,20),(25,25),(30,30),(35,35),(40,40),(45,45),(50,50),
+    (55,55),(60,60),(65,65),(70,70),(75,75),(80,80),(85,85),(90,90),(95,95),
+    (105,100),
+    (110,110),(115,115),(120,120),(125,125),(130,130),(135,135),(140,140),(145,145),(150,150),
+    (155,155),(160,160),(165,165),(170,170),(175,175),(180,180),(185,185),(190,190),(195,195),(200,200),
+];
+fn tier_percent(ratio:Decimal)->Option<Decimal> {
+    for (threshold,percent) in SCHOOL_ROOF_TIERS {
+        if ratio<Decimal::from(*threshold) {return Some(Decimal::from(*percent));}
+    }
+    None
 }
 pub fn bounds(p:&Plan,start:&str)->Result<(NaiveDate,NaiveDate),String> {
     validate(p)?;
@@ -87,7 +123,7 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
             return Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
                 "plan":p,"receipts":rows,"sources":{"taipower":{"status":"notRequired","amount":null,"kwh":null,"billIds":[]},
                 "transfer":{"status":if p.transfer {"notRequired"}else{"notApplicable"},"amount":null,"kwh":null,"billIds":[]}},
-                "issues":[],"baseRent":format!("{:.*}",p.rounding_places as usize,Decimal::ZERO),"monthlyBreakdown":[],
+                "issues":[],"baseRent":Decimal::ZERO.to_string(),"lines":[],"referenceRent":null,"ratioPercent":null,"tierPercent":null,"monthlyBreakdown":[],
                 "feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"notStarted",
                 "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,"invoiceDirection":"receiveLandlordInvoice",
                 "note":"整期在正式併聯發電日前，不計費；不是零收入單據，也不啟動付款。"}));
@@ -100,25 +136,47 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
         if !["taipower","transfer"].contains(&r.source.as_str()) {issues.push(format!("單據 {} 尚未指定來源",r.bill_id));}
         if !p.transfer && r.source=="transfer" {issues.push("非轉供案場卻選入轉供單據，請確認設定".into());}
     }
+    let line_kind:Option<&str>=match p.kind.as_str() {"revenueShare"|"annualTiered"=>Some("income"),"kwhRate"=>Some("kwh"),_=>None};
     let mut sources=serde_json::Map::new();let mut revenue=Decimal::ZERO;
+    let mut lines=Vec::<Value>::new();let mut line_total=Decimal::ZERO;
     for source in ["taipower","transfer"] {
         let selected:Vec<_>=rows.iter().filter(|r|r.source==source).collect();
-        let required=p.kind=="revenueShare" || p.transfer;
+        let required=["revenueShare","annualTiered","kwhRate"].contains(&p.kind.as_str()) || p.transfer;
         let applicable=source=="taipower" || p.transfer;
         let label=if source=="taipower" {"台電"}else{"轉供"};
         let before=issues.len();let mut amount=Decimal::ZERO;let mut kwh=Decimal::ZERO;let mut ranges=vec![];
+        let mut source_line_total=Decimal::ZERO;
         for r in &selected {
             match (day(&r.start),day(&r.end)) {
                 (Ok(a),Ok(b)) if a<=b && a>=from && b<=to=>ranges.push((a,b)),
-                _=>issues.push(format!("{label}單據 {} 期間不完整或跨出付款週期；不可直接整筆加總",r.bill_id)),
+                (Ok(a),Ok(b)) if a<=b=>issues.push(format!("{label}單據 {} 計費期間跨結算期，與 PM 11/25 確認不符，請人工確認",r.bill_id)),
+                _=>issues.push(format!("{label}單據 {} 期間不完整或無法判讀",r.bill_id)),
             }
             let value=if p.basis=="untaxed" {&r.untaxed}else{&r.gross};
             match number(value.as_deref()) {
-                Ok(n)=>amount+=n,
+                Ok(n)=>{
+                    amount+=n;
+                    if line_kind==Some("income") {
+                        let share=number(p.share_percent.as_deref())?;
+                        let raw=n.checked_mul(share).and_then(|x|x.checked_div(Decimal::from(100))).ok_or("金額超出範圍")?;
+                        let rounded=raw.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero);
+                        source_line_total+=rounded;
+                        lines.push(json!({"billId":r.bill_id,"source":source,"basis":n.normalize().to_string(),"lineAmount":rounded.to_string()}));
+                    }
+                },
                 Err(_)=>issues.push(format!("{label}單據 {} 缺少或無法判讀選定收入基底",r.bill_id)),
             }
             match number(r.kwh.as_deref()) {
-                Ok(n) if n>=Decimal::ZERO=>kwh+=n,
+                Ok(n) if n>=Decimal::ZERO=>{
+                    kwh+=n;
+                    if line_kind==Some("kwh") {
+                        let rate=number(p.rate_per_kwh.as_deref())?;let share=number(p.share_percent.as_deref())?;
+                        let raw=n.checked_mul(rate).and_then(|x|x.checked_mul(share)).and_then(|x|x.checked_div(Decimal::from(100))).ok_or("金額超出範圍")?;
+                        let rounded=raw.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero);
+                        source_line_total+=rounded;
+                        lines.push(json!({"billId":r.bill_id,"source":source,"basis":n.normalize().to_string(),"lineAmount":rounded.to_string()}));
+                    }
+                },
                 _=>issues.push(format!("{label}單據 {} 缺少或無法判讀度數",r.bill_id)),
             }
         }
@@ -134,7 +192,7 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
         let status=if !applicable {"notApplicable"}else if selected.is_empty() && !required {"notRequired"}else if selected.is_empty() {"missing"}else if complete {"received"}else{"needsReview"};
         sources.insert(source.into(),json!({"status":status,"amount":if complete {Some(amount.normalize().to_string())}else{None},
             "kwh":if complete {Some(kwh.normalize().to_string())}else{None},"billIds":selected.iter().map(|r|r.bill_id).collect::<Vec<_>>()}));
-        if complete && applicable {revenue+=amount;}
+        if complete && applicable {revenue+=amount;line_total+=source_line_total;}
     }
     let mut monthly=Vec::new();let mut floor_total=Decimal::ZERO;
     if let Some(floor)=&p.monthly_minimum {
@@ -154,24 +212,47 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
                         income+=number(if p.basis=="gross" {r.gross.as_deref()}else{r.untaxed.as_deref()})?;
                     }
                 }
-                let proportional=income.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100))).ok_or("金額超出範圍")?;
-                let amount=proportional.max(floor);floor_total+=amount;
+                let proportional_raw=income.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100))).ok_or("金額超出範圍")?;
+                let proportional=proportional_raw.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero);
+                let floor_rounded=floor.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero);
+                let amount=proportional.max(floor_rounded);floor_total+=amount;
                 monthly.push(json!({"month":month.format("%Y-%m").to_string(),"income":income.normalize().to_string(),
-                    "proportionalAmount":proportional.normalize().to_string(),"minimum":floor.normalize().to_string(),
-                    "amountAfterFloor":amount.normalize().to_string()}));
+                    "proportionalAmount":proportional.to_string(),"minimum":floor_rounded.to_string(),
+                    "amountAfterFloor":amount.to_string()}));
             }
         }
     }
-    let base=if issues.is_empty() {
-        let raw=if p.kind=="fixedArea" {
-            number(p.area.as_deref())?.checked_mul(number(p.unit_price.as_deref())?)
-                .and_then(|n|n.checked_mul(Decimal::from(if p.unit_period=="month" {p.months}else{1})))
-        }else if p.monthly_minimum.is_some() {Some(floor_total)}
-        else{revenue.checked_mul(number(p.share_percent.as_deref())?).and_then(|n|n.checked_div(Decimal::from(100)))}.ok_or("計算金額超出範圍")?;
-        Some(format!("{:.*}",p.rounding_places as usize,raw.round_dp_with_strategy(p.rounding_places,RoundingStrategy::MidpointAwayFromZero)))
-    }else{None};
+    // T-12：所有 kind 的結果都以逐筆（單據、月、期）先取整再加總為準，這裡只再做一次「整數元」格式化，不再依 roundingPlaces 取小數。
+    let mut reference_rent:Option<Decimal>=None;let mut ratio_percent:Option<Decimal>=None;let mut tier_percent_out:Option<Decimal>=None;
+    let base=if !issues.is_empty() {None}
+    else if p.kind=="annualTiered" {
+        reference_rent=Some(line_total);
+        let baseline=number(p.annual_amount.as_deref())?;
+        let ratio=if baseline>Decimal::ZERO {line_total.checked_mul(Decimal::from(100)).and_then(|n|n.checked_div(baseline)).ok_or("計算金額超出範圍")?}else{Decimal::ZERO};
+        ratio_percent=Some(ratio);
+        match tier_percent(ratio) {
+            Some(tier)=>{
+                tier_percent_out=Some(tier);
+                Some(baseline.checked_mul(tier).and_then(|n|n.checked_div(Decimal::from(100))).ok_or("計算金額超出範圍")?
+                    .round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero))
+            },
+            None=>{issues.push("依契約應變更經營年租金，不自動計算".into());None},
+        }
+    } else {
+        let raw=match p.kind.as_str() {
+            "fixedArea"=>number(p.area.as_deref())?.checked_mul(number(p.unit_price.as_deref())?)
+                .and_then(|n|n.checked_mul(Decimal::from(if p.unit_period=="month" {p.months}else{1}))).ok_or("計算金額超出範圍")?,
+            "fixedAnnual"=>number(p.annual_amount.as_deref())?.checked_mul(Decimal::from(p.months)).and_then(|n|n.checked_div(Decimal::from(12))).ok_or("計算金額超出範圍")?,
+            "kwhRate"=>line_total,
+            _/*revenueShare*/=>if p.monthly_minimum.is_some() {floor_total}else{line_total},
+        };
+        Some(raw.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero))
+    };
+    let base=if issues.is_empty() {base.map(|v|v.to_string())}else{None};
     Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
-        "plan":p,"receipts":rows,"sources":sources,"issues":issues,"baseRent":base,
+        "plan":p,"receipts":rows,"sources":sources,"issues":issues,"baseRent":base,"lines":lines,
+        "referenceRent":reference_rent.map(|v|v.to_string()),"ratioPercent":ratio_percent.map(|v|v.normalize().to_string()),
+        "tierPercent":tier_percent_out.map(|v|v.to_string()),
         "monthlyBreakdown":monthly,"feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"calculating",
         "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,
         "invoiceDirection":"receiveLandlordInvoice","note":"此為租金基礎試算；稅費、扣繳與正式付款待範例確認，不產生付款或變更審核狀態。"}))
