@@ -1,7 +1,13 @@
 const esc=(v:unknown)=>String(v??'待確認').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export function rentCycleDocument(r:any):string {
  const status:Record<string,string>={received:'已收齊',missing:'缺單',needsReview:'待確認',notApplicable:'不適用',notRequired:'本期不需單據計算'};
- const formula=r.plan?.kind==='fixedArea'?`面積 ${esc(r.plan?.area)} × 單價 ${esc(r.plan?.unitPrice)}`:`${r.plan?.basis==='gross'?'含稅收入':'未稅收入'} × ${esc(r.plan?.sharePercent)}%`;
+ const formulas:Record<string,string>={
+   fixedArea:`面積 ${esc(r.plan?.area)} × 單價 ${esc(r.plan?.unitPrice)}`,
+   fixedAnnual:`整組年額 ${esc(r.plan?.annualAmount)} × ${esc(r.plan?.months)} 個月 ÷ 12`,
+   annualTiered:`年度基準 ${esc(r.plan?.annualAmount)} × 套用級距 ${esc(r.tierPercent)}%（參考年租金 ${esc(r.referenceRent)}，比值 ${esc(r.ratioPercent)}%）`,
+   kwhRate:`度數 × 每度費率 ${esc(r.plan?.ratePerKwh)} × 比例 ${esc(r.plan?.sharePercent)}%`,
+ };
+ const formula=formulas[r.plan?.kind]??`${r.plan?.basis==='gross'?'含稅收入':'未稅收入'} × ${esc(r.plan?.sharePercent)}%`;
  const sourceRows=['taipower','transfer'].map(k=>`<tr><td>${k==='taipower'?'台電':'轉供'}</td><td>${esc(status[r.sources?.[k]?.status]??'待確認')}</td><td>${esc(r.sources?.[k]?.amount)}</td><td>${esc(r.sources?.[k]?.kwh)}</td></tr>`).join('');
  return `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>租金週期試算</title><style>body{font:16px/1.6 sans-serif;max-width:950px;margin:35px auto;color:#35253e}h1{color:#70448e}table{border-collapse:collapse;width:100%}td,th{padding:10px;border:1px solid #ddd;text-align:left}.notice{background:#fff3cc;padding:14px}</style><h1>租金週期試算</h1><p class="notice">預覽草稿，尚未送審或付款。以下為租金基底，稅費、扣繳與付款申請資料須另核對。</p><table><tr><th>合約</th><td>${esc(r.contractNo)}</td></tr><tr><th>期間</th><td>${esc(r.periodStart)} ～ ${esc(r.periodEnd)}</td></tr><tr><th>計算方式</th><td>${formula}</td></tr><tr><th>租金基底</th><td>${esc(r.baseRent)} 元</td></tr></table><h2>來源與收齊狀態</h2><table><tr><th>來源</th><th>狀態</th><th>收入</th><th>度數</th></tr>${sourceRows}</table><h2>待確認</h2><ul>${(r.issues??[]).map((s:string)=>`<li>${esc(s)}</li>`).join('')}</ul><h2>來源單據</h2><ul>${(r.attachments??[]).map((a:any)=>`<li>平台單據 ${esc(a.billId)}；附件 ${esc(a.attachmentId)}</li>`).join('')}</ul></html>`;
 }
