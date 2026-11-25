@@ -62,6 +62,7 @@ pub mod geocoder;
 pub mod rating;
 pub mod rent_cycle;
 pub mod rent_payment;
+pub mod rent_rules;
 pub mod rbac;
 pub mod retailer_bills;
 pub mod resolve_mode;

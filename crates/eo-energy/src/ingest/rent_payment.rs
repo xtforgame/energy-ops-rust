@@ -14,6 +14,7 @@ pub async fn get_station(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->
   let mut result=eo_domain::rent_payment::calculate(d).map_err(|m|err_d(422,"rent_payment_invalid",json!({"message":m})))?;
   result["stationName"]=s["name"].clone();result["customerNumber"]=d["customerNumber"].clone();add_voucher(&mut result,d,id);items.push(result);
  }}
+ super::rent_rules::append(&core,org,id,&s,&mut items,None).await?;
  Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(json!({"items":items,"stationId":id,"paymentAllowed":false})))
 }
 pub async fn get(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse>{
@@ -26,6 +27,7 @@ pub async fn get(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResul
   let mut result=eo_domain::rent_payment::calculate(d).map_err(|m|err_d(422,"rent_payment_invalid",json!({"message":m})))?;
   result["stationName"]=s["name"].clone();result["customerNumber"]=json!(bill.customer_number_raw);add_voucher(&mut result,d,s["id"].as_i64().unwrap());items.push(result);
  }}}
+ if let Some(s)=&station {super::rent_rules::append(&core,org,s["id"].as_i64().unwrap(),s,&mut items,bill.billing_period_start.zip(bill.billing_period_end)).await?;}
  Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(json!({"items":items,"billId":id,"paymentAllowed":false})))
 }
 /// Persist the declared invoice arrangement; this never asserts that an invoice was received.

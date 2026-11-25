@@ -1,5 +1,24 @@
 # 既有平台資料匯入（不重建資料庫）
 
+## 2026-11-25：可重用租金規則
+
+新增 migration `0111_station_rent_rules.sql`。案場電號仍沿用既有主檔；租金規則保存於 `tbl_energy_station_rent_rule`，修改版本留存於 revision 表。完整租約是否已附，與規則是否可用分開記錄。
+
+`prepare-rent-rules.py` 讀取資產清單的租金欄位及案場對照，預設全部待確認。只有人工核對的 overrides 能標已確認；簽署日不會自動當作規則生效日。重複電號或無法唯一對應的列列入 unmatched。
+
+```powershell
+python prepare-rent-rules.py --asset 資產清單.xlsx --stations stations.json --overrides overrides.json --out prepared-rules.json
+node import-rent-rules.mjs --base http://127.0.0.1:11951 --org 1 --package prepared-rules.json --env-file 平台私有.env --out import-report.json
+```
+
+先備份目標資料庫。匯入器使用 API 與管理員權限，按目標環境的唯一主電號重新找案場，不直接沿用來源 stationId。相同 sourceKey 已存在時保留平台版本，避免覆蓋使用者修改。不同來源需人工確認，不能直接當作新規則啟用。
+
+已確認且支援的比例規則會依週期讀取案場電費單最終欄位產出租金預覽。缺當期單據、來源重複、規則涵蓋不完整或待確認時顯示原因；完整租約附件缺漏不阻擋試算。歷史人工草稿保留，重疊期間不混算。其他計算類型先保存條件待確認，不宣稱已支援自動計算。
+
+真實來源檔、overrides 與 prepared-rules 都放在 Git 外。此工具不代表自動部署客戶資料庫，也不送出 EasyFlow。
+
+若資料包含租約附件 ID，資料包必須另有 `attachmentScope: {base: "目標網址", organizationId: 組織ID}`；匯入器拒絕跨環境沿用。換環境須先重新上傳或依檔案雜湊找回該環境附件，再更新 ID 與 scope，不能只改 scope。
+
 程式庫只保存工具。真實案場與地主資料、聯絡資訊、付款紀錄放在獨立資料包，不提交公開 Git。
 
 ## 資料包內容

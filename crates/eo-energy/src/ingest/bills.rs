@@ -496,7 +496,7 @@ pub async fn match_station(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, station_id:
     let station = station_by_id(tx, ctx.org_id(), station_id).await?.ok_or_else(|| err(404, "station_not_found"))?;
     let business_date = bill.business_date(ctx.today());
     let outcome = resolve_contract_for_station(tx, ctx.org_id(), station.clone(), None, business_date).await?;
-    if matches!(outcome, MatchOutcome::NoContract { .. }) {
+    if matches!(outcome, MatchOutcome::NoContract { .. }) && !eo_domain::document_ingest::is_bill_doc_type(bill.effective_doc_type().as_str()) {
         return Err(err(409, "station_has_no_contract"));
     }
     if let Some(cn) = bill.customer_number_raw.as_deref().filter(|s| !s.is_empty()) {

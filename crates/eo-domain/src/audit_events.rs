@@ -654,6 +654,11 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         false,
     ),
     ev(
+        "station.rent_rule_saved", "energyStation",
+        &[req("ruleId", INT), req("version", INT), req("rule", Ty::Unknown)],
+        "audit.type.station.rentRuleSaved", Notable, true,
+    ),
+    ev(
         "station.rent_voucher_updated", "energyStation",
         &[req("periodStart", STR1), req("periodEnd", STR1), req("before", Ty::Unknown),
           req("invoiceTiming", Ty::Enum(&["unknown","before","later"]))],
