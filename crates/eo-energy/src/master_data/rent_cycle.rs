@@ -41,6 +41,16 @@ pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i6
     let ctx=Ctx::new(&core,access,&meta);let mut tx=core.pool.begin().await?;
     let c=contract_in_org(&mut tx,org,id).await?;
     rent_cycle::validate(&body).map_err(invalid)?;
+    // 合約租金算法代號對租金試算的 kind：R-A 只准 fixedArea、R-B 只准 revenueShare，R-0/R-C/R-D 一律不合（還沒有對應算法），代號空的放行。
+    let kind_ok=match c.rent_calc_code.as_deref() {
+        None=>true,
+        Some("R-A")=>body.kind=="fixedArea",
+        Some("R-B")=>body.kind=="revenueShare",
+        Some(_)=>false,
+    };
+    if !kind_ok {
+        return Err(err_d(422,"rent_kind_mismatch",json!({"rentCalcCode":c.rent_calc_code,"kind":body.kind})));
+    }
     check_station(&mut tx,org,id,body.station_id).await?;
     check_dates(&c,&body,&body.anchor)?;
     let before:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_contract WHERE id=$1 FOR UPDATE").bind(id).fetch_one(&mut *tx).await?;

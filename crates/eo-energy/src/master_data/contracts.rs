@@ -17,6 +17,9 @@ use serde_json::{json, Value};
 use sqlx::FromRow;
 
 const PAYMENT_FREQUENCIES: &[&str] = &["monthly", "bimonthly", "quarterly", "semiannual", "annual", "other"];
+const BILL_CODES: &[&str] = &["E-A", "E-B", "E-C", "E-D"];
+const RENT_CALC_CODES: &[&str] = &["R-0", "R-A", "R-B", "R-C", "R-D"];
+const RENT_PAY_CODES: &[&str] = &["RP-1", "RP-2", "RP-3", "RP-4"];
 
 #[derive(Debug, Clone, FromRow)]
 pub struct ContractRow {
@@ -37,10 +40,14 @@ pub struct ContractRow {
     pub terms_version: Option<String>,
     pub payment_frequency: Option<String>,
     pub payment_terms: Option<String>,
+    pub bill_codes: Vec<String>,
+    pub rent_calc_code: Option<String>,
+    pub rent_pay_code: Option<String>,
 }
 
 pub const CONTRACT_COLS: &str = "id, organization_id, landowner_id, contract_no, sign_method, valid_from, valid_to, stage,
-    installment_total, note, contract_type, signed_on, renewal_remind_on, terms_version, payment_frequency, payment_terms";
+    installment_total, note, contract_type, signed_on, renewal_remind_on, terms_version, payment_frequency, payment_terms,
+    bill_codes, rent_calc_code, rent_pay_code";
 
 /// 本組織的某份合約（查無 404、別家 403）。
 pub async fn contract_in_org(tx: &mut Tx<'_>, org_id: i64, id: i64) -> ApiResult<ContractRow> {
@@ -154,6 +161,38 @@ fn check_payment_frequency(v: &Option<String>) -> ApiResult<()> {
     Ok(())
 }
 
+fn vstr_array(b: &Value, k: &str) -> Vec<String> {
+    b.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default()
+}
+
+/// 可以全空：還在建置、沒有收費條款的合約可以先不綁代號。
+fn check_bill_codes(v: &[String]) -> ApiResult<()> {
+    for c in v {
+        if !BILL_CODES.contains(&c.as_str()) {
+            return Err(err_d(400, "bad_bill_code", json!({ "billCode": c, "allowed": BILL_CODES })));
+        }
+    }
+    Ok(())
+}
+
+fn check_rent_calc_code(v: &Option<String>) -> ApiResult<()> {
+    if let Some(c) = v {
+        if !RENT_CALC_CODES.contains(&c.as_str()) {
+            return Err(err_d(400, "bad_rent_calc_code", json!({ "rentCalcCode": c, "allowed": RENT_CALC_CODES })));
+        }
+    }
+    Ok(())
+}
+
+fn check_rent_pay_code(v: &Option<String>) -> ApiResult<()> {
+    if let Some(c) = v {
+        if !RENT_PAY_CODES.contains(&c.as_str()) {
+            return Err(err_d(400, "bad_rent_pay_code", json!({ "rentPayCode": c, "allowed": RENT_PAY_CODES })));
+        }
+    }
+    Ok(())
+}
+
 async fn landowner_in_org(tx: &mut Tx<'_>, org: i64, id: i64) -> ApiResult<()> {
     let owner: Option<i64> =
         sqlx::query_scalar("SELECT id FROM tbl_energy_landowner WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL")
@@ -176,6 +215,12 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     }
     let payment_frequency = vstr(b, "paymentFrequency");
     check_payment_frequency(&payment_frequency)?;
+    let bill_codes = uniq(vstr_array(b, "billCodes").into_iter());
+    check_bill_codes(&bill_codes)?;
+    let rent_calc_code = vstr(b, "rentCalcCode");
+    check_rent_calc_code(&rent_calc_code)?;
+    let rent_pay_code = vstr(b, "rentPayCode");
+    check_rent_pay_code(&rent_pay_code)?;
     for &lid in &landowner_ids {
         landowner_in_org(tx, org, lid).await?;
     }
@@ -194,8 +239,9 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO tbl_energy_contract
            (organization_id, landowner_id, contract_no, sign_method, valid_from, valid_to, stage, installment_total, note,
-            contract_type, signed_on, renewal_remind_on, terms_version, payment_frequency, payment_terms)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id",
+            contract_type, signed_on, renewal_remind_on, terms_version, payment_frequency, payment_terms,
+            bill_codes, rent_calc_code, rent_pay_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id",
     )
     .bind(org)
     .bind(primary_landowner_id)
@@ -212,6 +258,9 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     .bind(&terms_version)
     .bind(&payment_frequency)
     .bind(&payment_terms)
+    .bind(&bill_codes)
+    .bind(&rent_calc_code)
+    .bind(&rent_pay_code)
     .fetch_one(&mut **tx)
     .await?;
 
@@ -225,7 +274,10 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
         ctx,
         AuditInput::new("contract.created", id, format!("建立合約「{contract_no}」"))
             .label(contract_no.clone())
-            .payload(json!({ "contractNo": contract_no, "landownerId": primary_landowner_id, "landownerIds": landowner_ids, "landownerName": landowner_name })),
+            .payload(json!({
+                "contractNo": contract_no, "landownerId": primary_landowner_id, "landownerIds": landowner_ids, "landownerName": landowner_name,
+                "billCodes": bill_codes, "rentCalcCode": rent_calc_code, "rentPayCode": rent_pay_code,
+            })),
     )
     .await?;
     Ok(id)
@@ -244,6 +296,12 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     }
     let payment_frequency = vstr(b, "paymentFrequency");
     check_payment_frequency(&payment_frequency)?;
+    let bill_codes = uniq(vstr_array(b, "billCodes").into_iter());
+    check_bill_codes(&bill_codes)?;
+    let rent_calc_code = vstr(b, "rentCalcCode");
+    check_rent_calc_code(&rent_calc_code)?;
+    let rent_pay_code = vstr(b, "rentPayCode");
+    check_rent_pay_code(&rent_pay_code)?;
     for &lid in &landowner_ids {
         landowner_in_org(tx, org, lid).await?;
     }
@@ -263,8 +321,9 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
         "UPDATE tbl_energy_contract SET
            landowner_id = $2, contract_no = $3, sign_method = $4, valid_from = $5, valid_to = $6, stage = $7,
            installment_total = $8, note = $9, contract_type = $10, signed_on = $11, renewal_remind_on = $12,
-           terms_version = $13, payment_frequency = $14, payment_terms = $15
-         WHERE id = $1 AND organization_id = $16 AND deleted_at IS NULL",
+           terms_version = $13, payment_frequency = $14, payment_terms = $15,
+           bill_codes = $16, rent_calc_code = $17, rent_pay_code = $18
+         WHERE id = $1 AND organization_id = $19 AND deleted_at IS NULL",
     )
     .bind(id)
     .bind(primary_landowner_id)
@@ -281,6 +340,9 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     .bind(&terms_version)
     .bind(&payment_frequency)
     .bind(&payment_terms)
+    .bind(&bill_codes)
+    .bind(&rent_calc_code)
+    .bind(&rent_pay_code)
     .bind(org)
     .execute(&mut **tx)
     .await?;
@@ -297,6 +359,7 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
             .label(contract_no.clone())
             .payload(json!({
                 "contractNo": contract_no, "landownerId": primary_landowner_id, "landownerIds": landowner_ids, "landownerName": landowner_name,
+                "billCodes": bill_codes, "rentCalcCode": rent_calc_code, "rentPayCode": rent_pay_code,
                 "changes": { "validTo": { "from": day_opt(existing.valid_to), "to": day_opt(valid_to) } },
             })),
     )
@@ -354,6 +417,7 @@ async fn contract_views(tx: &mut Tx<'_>, org: i64, rows: Vec<ContractRow>) -> Ap
                 "signedOn": day_opt(r.signed_on), "validFrom": day(r.valid_from), "validTo": day_opt(r.valid_to),
                 "renewalRemindOn": day_opt(r.renewal_remind_on), "termsVersion": r.terms_version,
                 "paymentFrequency": r.payment_frequency, "paymentTerms": r.payment_terms, "stage": r.stage,
+                "billCodes": r.bill_codes, "rentCalcCode": r.rent_calc_code, "rentPayCode": r.rent_pay_code,
                 "attachmentCount": attachment_count,
             })
         })
@@ -426,10 +490,13 @@ pub async fn create_handler(core: Core, user: CurrentUser, meta: RequestMeta, or
     let ctx = Ctx::new(&core, access, &meta);
     let mut tx = core.pool.begin().await?;
     let id = create_contract(&mut tx, &ctx, &body).await?;
+    let workflow_bindings = crate::bindings::bind_by_contract_codes(&mut tx, &ctx, id).await?;
     let row = contract_in_org(&mut tx, ctx.org_id(), id).await?;
     let views = contract_views(&mut tx, ctx.org_id(), vec![row]).await?;
     tx.commit().await?;
-    Ok(HttpResponse::Ok().json(views.into_iter().next().unwrap()))
+    let mut view = views.into_iter().next().unwrap();
+    view["workflowBindings"] = json!(workflow_bindings);
+    Ok(HttpResponse::Ok().json(view))
 }
 
 pub async fn update_handler(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
@@ -438,8 +505,11 @@ pub async fn update_handler(core: Core, user: CurrentUser, meta: RequestMeta, pa
     let ctx = Ctx::new(&core, access, &meta);
     let mut tx = core.pool.begin().await?;
     update_contract(&mut tx, &ctx, id, &body).await?;
+    let workflow_bindings = crate::bindings::bind_by_contract_codes(&mut tx, &ctx, id).await?;
     let row = contract_in_org(&mut tx, ctx.org_id(), id).await?;
     let views = contract_views(&mut tx, ctx.org_id(), vec![row]).await?;
     tx.commit().await?;
-    Ok(HttpResponse::Ok().json(views.into_iter().next().unwrap()))
+    let mut view = views.into_iter().next().unwrap();
+    view["workflowBindings"] = json!(workflow_bindings);
+    Ok(HttpResponse::Ok().json(view))
 }

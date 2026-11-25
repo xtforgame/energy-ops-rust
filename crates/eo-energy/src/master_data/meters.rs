@@ -121,7 +121,7 @@ pub async fn create_meter(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, b: &Value
     if existing.iter().any(|(_, f, t)| overlaps(valid_from, valid_to, *f, *t)) {
         return Err(err(409, "meter_overlap"));
     }
-    Ok(sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO tbl_energy_station_meter
            (organization_id, station_id, customer_number, usage, taipower_contract_no, feed_in_rate, green_rate, valid_from, valid_to, note)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
@@ -137,7 +137,34 @@ pub async fn create_meter(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, b: &Value
     .bind(valid_to)
     .bind(vstr(b, "note"))
     .fetch_one(&mut **tx)
-    .await?)
+    .await?;
+    // 案場主檔電號是空的才補（執行、工作流綁定都靠它當 key）；有值不覆蓋（可能是另一個電號）。
+    sqlx::query(
+        "UPDATE tbl_energy_station SET customer_number = $2 WHERE id = $1 AND organization_id = $3 AND customer_number IS NULL AND deleted_at IS NULL",
+    )
+    .bind(st.id)
+    .bind(&customer_number)
+    .bind(ctx.org_id())
+    .execute(&mut **tx)
+    .await?;
+    Ok(id)
+}
+
+/// 後補電號那一刻，對這個案場掛著的每份有效合約補綁工作流（存合約時多半還沒有電號，綁不上）。
+pub async fn bind_station_contracts(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64) -> ApiResult<Vec<Value>> {
+    let contract_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT cs.contract_id FROM mn_energy_contract_station cs JOIN tbl_energy_contract c ON c.id = cs.contract_id
+          WHERE cs.station_id = $1 AND cs.deleted_at IS NULL AND c.deleted_at IS NULL AND c.organization_id = $2",
+    )
+    .bind(station_id)
+    .bind(ctx.org_id())
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut out = Vec::new();
+    for contract_id in contract_ids {
+        out.extend(crate::bindings::bind_by_contract_codes(tx, ctx, contract_id).await?);
+    }
+    Ok(out)
 }
 
 /// 陌生電號人工繫結成功之後：把這張單的電號寫進案場電號表（用途 wholesale，valid_from＝這張單的計費起日），
@@ -233,8 +260,9 @@ pub async fn create_handler(core: Core, user: CurrentUser, meta: RequestMeta, pa
     let mut tx = core.pool.begin().await?;
     create_meter(&mut tx, &ctx, station_id, &body).await?;
     let out = list_meters(&mut tx, &ctx.access, station_id).await?;
+    let workflow_bindings = bind_station_contracts(&mut tx, &ctx, station_id).await?;
     tx.commit().await?;
-    Ok(HttpResponse::Ok().json(json!({ "items": out })))
+    Ok(HttpResponse::Ok().json(json!({ "items": out, "workflowBindings": workflow_bindings })))
 }
 
 pub async fn update_handler(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {

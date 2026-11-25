@@ -991,6 +991,13 @@ const customChineseTWMessages: TranslationMessages = {
       uploadAttachment: '上傳合約檔',
       noAttachments: '還沒有附件。',
       download: '下載',
+      // 卡 20261125-2334：合約綁電費計算代號／租金算法／付款方式代號，存檔依代號建工作流綁定。
+      billCodes: '電費計算代號',
+      rentCalcCode: '租金算法代號',
+      rentPayCode: '付款方式代號',
+      codes: '代號',
+      bindingsCreated: '已替 %{station} 綁定 %{count} 條工作流',
+      bindingsNoMeter: '%{count} 個案場還沒有電號，補電號後會自動綁',
     },
     paymentFrequency: {
       monthly: '每月',

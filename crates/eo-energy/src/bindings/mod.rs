@@ -398,6 +398,101 @@ pub async fn create(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, kind: Kind, doc
     .await
 }
 
+/// 本組織同 key 最新的 published 定義（照 `workflow/definition.rs:410` 的 SQL 寫法）。沒有就是還沒裝。
+async fn latest_published_version(tx: &mut Tx<'_>, kind: Kind, org_id: i64, key: &str) -> ApiResult<Option<VersionRow>> {
+    let k = kind.def();
+    let t = if kind == Kind::Rating { "type" } else { "NULL::varchar" };
+    Ok(sqlx::query_as(&format!(
+        "SELECT id, key, version, name, status, organization_id, {t} AS vtype FROM {} WHERE organization_id = $1 AND key = $2 AND status = 'published' AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
+        k.version_table
+    ))
+    .bind(org_id)
+    .bind(key)
+    .fetch_optional(&mut **tx)
+    .await?)
+}
+
+/// 合約電費代號 → (doc_type, workflow_key)。E-B／E-D 是同一條線（utility-bill），只建一條。
+const CODE_FLOWS: &[(&str, &str, &str)] = &[
+    ("E-A", "renewableSurplus", "invoice-issue"),
+    ("E-B", "consumptionBill", "utility-bill"),
+    ("E-C", "retailerSale", "invoice-issue"),
+    ("E-D", "consumptionBill", "utility-bill"),
+];
+
+/// 使用者 2026-11-25 拍板：存合約時依電費計算代號替掛著的案場建工作流綁定；E-C 另外裝天能組審核。
+/// 沒有電號、流程沒裝、已經綁過，都跳過記結果、不報錯——存合約本身不能被這件事擋住。
+pub async fn bind_by_contract_codes(tx: &mut Tx<'_>, ctx: &Ctx, contract_id: i64) -> ApiResult<Vec<Value>> {
+    let row: Option<(Vec<String>, NaiveDate)> = sqlx::query_as(
+        "SELECT bill_codes, valid_from FROM tbl_energy_contract WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL",
+    )
+    .bind(contract_id)
+    .bind(ctx.org_id())
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((bill_codes, valid_from)) = row else { return Ok(vec![]) };
+    if bill_codes.is_empty() {
+        return Ok(vec![]);
+    }
+    if bill_codes.iter().any(|c| c == "E-C") {
+        crate::workflow::definition::ensure_bill_data_review_group(tx, ctx, "tianneng-reviewers").await?;
+    }
+    let station_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT station_id FROM mn_energy_contract_station WHERE contract_id = $1 AND station_id IS NOT NULL AND deleted_at IS NULL",
+    )
+    .bind(contract_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut out = Vec::new();
+    for station_id in station_ids {
+        let st = station_in_org(tx, &ctx.access, station_id).await?;
+        // 同一條線（E-B／E-D 都是 utility-bill）這次呼叫只實際判斷一次；第二個代號照第一個的結果來，
+        // 只有第一個真的建成了才把第二個改記 alreadyBound（還沒建成的話，第二個理由跟第一個一樣）。
+        let mut lane_results: Vec<((&str, &str), &str)> = Vec::new();
+        for code in &bill_codes {
+            let Some((_, doc_type, workflow_key)) = CODE_FLOWS.iter().find(|t| t.0 == code.as_str()).copied() else { continue };
+            let lane = (doc_type, workflow_key);
+            let prev = lane_results.iter().find(|entry| entry.0 == lane).map(|entry| entry.1);
+            let result = if let Some(prev) = prev {
+                if prev == "created" { "alreadyBound" } else { prev }
+            } else if st.customer_number.is_none() {
+                "noMeter"
+            } else {
+                match latest_published_version(tx, Kind::Workflow, ctx.org_id(), workflow_key).await? {
+                    None => "notInstalled",
+                    Some(v) => {
+                        let doc = Some(doc_type.to_string());
+                        let rows = segments(tx, Kind::Workflow, ctx.org_id(), &st, Some((&doc, Some(workflow_key)))).await?;
+                        if open_segment(&rows).is_some() || active_at(&rows, valid_from).is_some() {
+                            "alreadyBound"
+                        } else {
+                            let id = create_segment(tx, Kind::Workflow, ctx, &st, &v, &doc, valid_from).await?;
+                            record(
+                                tx,
+                                ctx,
+                                Kind::Workflow,
+                                Kind::Workflow.def().audit_created,
+                                &st,
+                                id,
+                                format!("依合約代號「{code}」綁定「{} v{}」到案場「{}」，{} 起生效", v.name, v.version, st.name, day(valid_from)),
+                                json!({ "targetKey": v.key, "toVersion": v.version, "validFrom": day(valid_from), "validTo": null, "contractId": contract_id, "billCode": code }),
+                            )
+                            .await?;
+                            "created"
+                        }
+                    }
+                }
+            };
+            lane_results.push((lane, result));
+            out.push(json!({
+                "stationId": st.id, "stationName": st.name, "code": code,
+                "docType": doc_type, "workflowKey": workflow_key, "result": result,
+            }));
+        }
+    }
+    Ok(out)
+}
+
 /// 動作二：換版 —— 截斷舊段＋開新段＋稽核同一個交易（分開寫會有「兩段都生效」的瞬間）。
 pub async fn switch_version(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64, kind: Kind, doc_type: Option<&str>, to_version_id: i64, effective_from: NaiveDate) -> ApiResult<()> {
     let st = station_in_org(tx, &ctx.access, station_id).await?;

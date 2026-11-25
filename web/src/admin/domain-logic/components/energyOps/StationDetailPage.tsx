@@ -40,7 +40,7 @@ function localDateTime(iso: string): string {
 }
 
 /** 卡 20261118-0427-a S2：電號區（一對多，有效期重疊回 409 `meter_overlap`）。 */
-const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({ orgId, stationId }) => {
+const MetersSection: React.FC<{ orgId?: number | null; stationId: number; onDone?: () => void }> = ({ orgId, stationId, onDone }) => {
   const notify = useNotify();
   const translate = useTranslate();
   const base = energyBase(orgId);
@@ -68,6 +68,8 @@ const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({
       setOpen(false);
       setForm({ customerNumber: '', usage: 'wholesale', validFrom: '', note: '', taipowerContractNo: '', feedInRate: '' });
       load();
+      // 補電號之後有可能自動補上工作流綁定（卡 20261125-2334），讓外層重抓綁定區才看得到。
+      onDone?.();
     } catch (e: any) {
       if (apiErrorCode(e) === 'meter_overlap') {
         notify(translate('energy.meters.overlap'), { type: 'warning' });
@@ -670,7 +672,7 @@ const StationDetailPage: React.FC = () => {
 
       {/* 卡 20261118-0427-a S2／S4：電號區、地主分配區（各自抓自己的資料，不擋其他區塊）。 */}
       {id && <RentPaymentPreview base={base} stationId={Number(id)} />}
-      {id && <MetersSection orgId={orgId} stationId={Number(id)} />}
+      {id && <MetersSection orgId={orgId} stationId={Number(id)} onDone={() => { loadBindings(); load(); }} />}
       {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
 
       {/* 兩條效期軸 */}

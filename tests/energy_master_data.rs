@@ -767,3 +767,199 @@ async fn masters_independent_unknown_meter() {
     assert_eq!(bill2_detail["stationId"], s3_id, "{bill2_detail}");
     assert_eq!(bill2_detail["reviewStatus"], "pendingReview", "{bill2_detail}");
 }
+
+/// 卡 20261125-2334：合約綁電費計算代號／租金算法代號／付款方式代號，存檔時依代號建工作流綁定；
+/// 後補電號那一刻自動補上之前綁不到的流程；租金試算依代號核對 kind。
+/// S1：三欄存讀、400（bad_bill_code／bad_rent_calc_code／bad_rent_pay_code）、三欄全空照存。
+/// S2：四代號綁定結果（含 E-B／E-D 同線只建一條、E-C 裝天能組審核）、重存全 alreadyBound、R-B 配 kind 422/200。
+/// S3：沒有電號先回 noMeter，後補電號自動補綁且回應帶 workflowBindings；案場已有主電號不覆蓋。
+#[actix_web::test]
+async fn contract_codes_workflow_bind() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("ccwb-org").await;
+    let base = app.e(org, "");
+    expect_status!(app.post(&owner, &format!("{base}/setup/install-defaults"), json!({})).await, 200);
+
+    let lo = app.landowner(org, "測試地主").await;
+    let station = app.station(org, lo, "77-0001", "代號測試案場").await;
+
+    // ── S1：三欄存讀、400、全空照存 ──
+    let bad_bill = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CCWB-BAD1", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01", "billCodes": ["E-Z"] }),
+        )
+        .await,
+        400
+    );
+    assert_eq!(bad_bill["code"], "bad_bill_code", "{bad_bill}");
+
+    let bad_rent_calc = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CCWB-BAD2", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01", "rentCalcCode": "R-9" }),
+        )
+        .await,
+        400
+    );
+    assert_eq!(bad_rent_calc["code"], "bad_rent_calc_code", "{bad_rent_calc}");
+
+    let bad_rent_pay = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CCWB-BAD3", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01", "rentPayCode": "RP-0" }),
+        )
+        .await,
+        400
+    );
+    assert_eq!(bad_rent_pay["code"], "bad_rent_pay_code", "{bad_rent_pay}");
+
+    let empty = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CCWB-EMPTY", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    assert_eq!(empty["billCodes"], json!([]), "{empty}");
+    assert!(empty["rentCalcCode"].is_null(), "{empty}");
+    assert!(empty["rentPayCode"].is_null(), "{empty}");
+    let empty_id = empty["id"].as_i64().unwrap();
+    let fetched = expect_status!(app.get(&owner, &format!("{base}/contracts/{empty_id}")).await, 200);
+    assert_eq!(fetched["billCodes"], json!([]), "{fetched}");
+    let listed = expect_status!(app.get(&owner, &format!("{base}/contracts")).await, 200);
+    assert!(listed["items"].as_array().unwrap().iter().any(|c| c["id"] == empty_id), "{listed}");
+
+    // ── S2：四代號綁定結果、E-C 裝天能組審核、重存全 alreadyBound、R-B 配 kind 422/200 ──
+    let created = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({
+                "contractNo": "CT-CCWB-S2", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01",
+                "billCodes": ["E-A", "E-B", "E-C", "E-D"], "rentCalcCode": "R-B", "rentPayCode": "RP-1",
+            }),
+        )
+        .await,
+        200
+    );
+    let contract_id = created["id"].as_i64().unwrap();
+    assert_eq!(created["billCodes"], json!(["E-A", "E-B", "E-C", "E-D"]), "{created}");
+    assert_eq!(created["rentCalcCode"], "R-B", "{created}");
+    assert_eq!(created["rentPayCode"], "RP-1", "{created}");
+    let fetched2 = expect_status!(app.get(&owner, &format!("{base}/contracts/{contract_id}")).await, 200);
+    assert_eq!(fetched2["billCodes"], json!(["E-A", "E-B", "E-C", "E-D"]), "{fetched2}");
+
+    let bindings = created["workflowBindings"].as_array().unwrap();
+    assert_eq!(bindings.len(), 4, "{created}");
+    let find = |code: &str| bindings.iter().find(|b| b["code"] == code).unwrap().clone();
+    assert_eq!(find("E-A")["result"], "created", "{created}");
+    assert_eq!(find("E-A")["workflowKey"], "invoice-issue", "{created}");
+    assert_eq!(find("E-B")["result"], "created", "{created}");
+    assert_eq!(find("E-B")["workflowKey"], "utility-bill", "{created}");
+    assert_eq!(find("E-C")["result"], "created", "{created}");
+    assert_eq!(find("E-C")["workflowKey"], "invoice-issue", "{created}");
+    assert_eq!(find("E-D")["result"], "alreadyBound", "E-B／E-D 同線只建一條：{created}");
+    assert_eq!(find("E-D")["workflowKey"], "utility-bill", "{created}");
+
+    // E-C 裝好天能組審核。
+    let tianneng: i64 = app
+        .scalar_i64(&format!(
+            "SELECT COUNT(*) FROM tbl_energy_workflow_definition WHERE organization_id = {org} AND key = 'tianneng-data-review' AND status = 'published' AND deleted_at IS NULL"
+        ))
+        .await;
+    assert_eq!(tianneng, 1, "E-C 要裝好天能組審核");
+    let dept: i64 =
+        app.scalar_i64(&format!("SELECT COUNT(*) FROM tbl_energy_department WHERE organization_id = {org} AND key = 'tianneng-reviewers'")).await;
+    assert_eq!(dept, 1);
+
+    let bindings_list = expect_status!(app.get(&owner, &format!("{base}/stations/{station}/bindings")).await, 200);
+    assert_eq!(bindings_list["workflow"].as_array().unwrap().len(), 3, "E-B／E-D 同線只建一條：{bindings_list}");
+
+    // 再存一次同一份合約：四個都 alreadyBound，不多建。
+    let resaved = expect_status!(
+        app.patch(
+            &owner,
+            &format!("{base}/contracts/{contract_id}"),
+            json!({
+                "contractNo": "CT-CCWB-S2", "landownerIds": [lo], "stationIds": [station], "validFrom": "2026-01-01",
+                "billCodes": ["E-A", "E-B", "E-C", "E-D"], "rentCalcCode": "R-B", "rentPayCode": "RP-1",
+            }),
+        )
+        .await,
+        200
+    );
+    assert!(resaved["workflowBindings"].as_array().unwrap().iter().all(|b| b["result"] == "alreadyBound"), "{resaved}");
+    let bindings_list2 = expect_status!(app.get(&owner, &format!("{base}/stations/{station}/bindings")).await, 200);
+    assert_eq!(bindings_list2["workflow"].as_array().unwrap().len(), 3, "重存不多建：{bindings_list2}");
+
+    // R-B 只准 revenueShare：fixedArea 回 422，revenueShare 回 200。
+    let cycle_path = app.e(org, &format!("/contracts/{contract_id}/rent-cycle"));
+    let fixed_plan = json!({
+        "stationId": station, "anchor": "2026-07-01", "months": 3, "transfer": false,
+        "kind": "fixedArea", "basis": "untaxed", "sharePercent": null, "area": "100",
+        "unitPrice": "50", "unitPeriod": "month", "roundingPlaces": 2,
+    });
+    let mismatch = expect_status!(app.post(&owner, &cycle_path, fixed_plan).await, 422);
+    assert_eq!(mismatch["code"], "rent_kind_mismatch", "{mismatch}");
+    let share_plan = json!({
+        "stationId": station, "anchor": "2026-07-01", "months": 3, "transfer": true,
+        "kind": "revenueShare", "basis": "untaxed", "sharePercent": "10", "area": null,
+        "unitPrice": null, "unitPeriod": "month", "roundingPlaces": 2,
+    });
+    expect_status!(app.post(&owner, &cycle_path, share_plan).await, 200);
+
+    // ── S3：沒有電號先回 noMeter，後補電號自動補綁；案場已有主電號不覆蓋 ──
+    let no_meter_station = expect_status!(app.post(&owner, &format!("{base}/stations"), json!({ "name": "S3 無電號案場" })).await, 200);
+    let no_meter_id = no_meter_station["id"].as_i64().unwrap();
+    let s3_contract = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CCWB-S3", "landownerIds": [lo], "stationIds": [no_meter_id], "validFrom": "2026-01-01", "billCodes": ["E-B"] }),
+        )
+        .await,
+        200
+    );
+    let s3_bindings = s3_contract["workflowBindings"].as_array().unwrap();
+    assert_eq!(s3_bindings.len(), 1, "{s3_contract}");
+    assert_eq!(s3_bindings[0]["result"], "noMeter", "{s3_contract}");
+
+    let meter_added = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/stations/{no_meter_id}/meters"),
+            json!({ "customerNumber": "77-9001", "usage": "wholesale", "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    let added_bindings = meter_added["workflowBindings"].as_array().unwrap();
+    assert_eq!(added_bindings.len(), 1, "後補電號要自動補綁：{meter_added}");
+    assert_eq!(added_bindings[0]["result"], "created", "{meter_added}");
+    assert_eq!(added_bindings[0]["workflowKey"], "utility-bill", "{meter_added}");
+    let overview = expect_status!(app.get(&owner, &format!("{base}/stations/{no_meter_id}/overview")).await, 200);
+    assert_eq!(overview["customerNumber"], "77-9001", "{overview}");
+
+    // 案場原本已有主電號時不覆蓋：對已有電號的案場再加一段新電號。
+    let second_meter = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/stations/{station}/meters"),
+            json!({ "customerNumber": "77-0002", "usage": "wholesale", "validFrom": "2026-06-01" }),
+        )
+        .await,
+        200
+    );
+    assert!(
+        second_meter["workflowBindings"].as_array().unwrap().iter().all(|b| b["result"] == "alreadyBound"),
+        "這個案場的合約代號都已經綁過：{second_meter}"
+    );
+    let overview2 = expect_status!(app.get(&owner, &format!("{base}/stations/{station}/overview")).await, 200);
+    assert_eq!(overview2["customerNumber"], "77-0001", "主電號已有值不覆蓋：{overview2}");
+}
