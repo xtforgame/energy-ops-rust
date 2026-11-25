@@ -290,7 +290,7 @@ const ContractsPage: React.FC = () => {
               onInputChange={(_, v) => setForm({ ...form, contractType: v })}
               renderInput={(params) => <TextField {...params} label={translate('energy.contracts.type')} data-testid="contract-form-type" />}
             />
-            <FormControl fullWidth required data-testid="contract-form-landowner">
+            <FormControl fullWidth data-testid="contract-form-landowner">
               <InputLabel>{translate('energy.contracts.landowners')}</InputLabel>
               <Select
                 multiple
@@ -422,7 +422,7 @@ const ContractsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
-          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || form.landownerIds.length === 0 || !form.validFrom} data-testid="contract-form-save">
+          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || !form.validFrom} data-testid="contract-form-save">
             {translate('ra.action.save')}
           </Button>
         </DialogActions>

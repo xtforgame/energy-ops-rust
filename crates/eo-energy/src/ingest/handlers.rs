@@ -9,6 +9,7 @@ use crate::gates;
 use crate::workflow::mode_for;
 use crate::workflow::model::ExecutionRow;
 use actix_web::{web, HttpRequest, HttpResponse};
+use eo_domain::resolve_mode::{BillMode, ModeReasonCode};
 use eo_domain::schemas::{CorrectBillInput, IngestBillInput, MatchStationInput};
 use eo_platform::auth::CurrentUser;
 use eo_platform::core::CoreRef;
@@ -263,11 +264,18 @@ pub async fn patch_bill(core: Core, user: CurrentUser, meta: RequestMeta, path: 
     // 重新判定模式，只有 intake／revise 放行：前端的唯讀只是體驗，不是防線。
     let verdict = mode_for(&mut tx, &ctx, "energyBill", bill_id).await?;
     if !verdict.verdict.can_edit_subject {
-        return Err(err_d(
-            403,
-            "subject_not_editable",
-            json!({ "mode": verdict.verdict.mode, "modeReason": verdict.verdict.mode_reason }),
-        ));
+        // 流程跑完（readonly＋finished）之後，仍然可以單獨標記已校對：
+        // 只有 body 剛好只有 markReviewed:true 一個鍵才放行，其餘欄位一律照舊 403。
+        let is_finished = verdict.verdict.mode == BillMode::Readonly
+            && verdict.verdict.mode_reason.as_ref().is_some_and(|r| r.code == ModeReasonCode::Finished);
+        let only_mark_reviewed = raw.as_object().is_some_and(|o| o.len() == 1 && o.get("markReviewed") == Some(&Value::Bool(true)));
+        if !(is_finished && only_mark_reviewed) {
+            return Err(err_d(
+                403,
+                "subject_not_editable",
+                json!({ "mode": verdict.verdict.mode, "modeReason": verdict.verdict.mode_reason }),
+            ));
+        }
     }
     bills::correct(&mut tx, &ctx, bill_id, &input).await?;
     tx.commit().await?;

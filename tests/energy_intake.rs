@@ -625,6 +625,47 @@ async fn patch_is_guarded_by_mode() {
     assert_eq!(n, 1, "被擋之後仍然只有一筆");
 }
 
+/// 卡 20261126-0210 S3：流程跑完（readonly＋finished）之後，仍然可以單獨 PATCH `markReviewed:true`；
+/// 其他欄位（連同 finished 時一起帶）一律照舊 403 `subject_not_editable`。
+#[actix_web::test]
+async fn mark_reviewed_after_flow_finished() {
+    let fx = fixture().await;
+    let bill = amount_bill(&fx, 70000).await;
+    // 一般 `/submit` 在這份 fixture 走的是單步自動審核 `bill-data-review`——跑完就直接把
+    // `reviewStatus` 設成 `reviewed`（`workflow/engine/run.rs:123-126`），驗不到「流程跑完、
+    // 仍待校對」這個 S3 要補的缺口。照 `patch_is_guarded_by_mode` 的做法，直接用舊版引擎走
+    // `bill-approval`（七關樣本，完成時不會自動改 reviewStatus）。
+    let exec = fx.start_legacy(bill).await;
+    expect_status!(fx.app.post(&fx.admin, &fx.u(&format!("/executions/{exec}/force-advance")), json!({ "toNodeKey": "end", "reason": "測試：直接推到完成" })).await, 200);
+
+    let v = expect_status!(fx.app.get(&fx.manager, &fx.u(&format!("/bills/{bill}"))).await, 200);
+    assert_eq!((v["mode"].clone(), v["modeReason"]["code"].clone(), v["canEditSubject"].clone()), (json!("readonly"), json!("finished"), json!(false)), "{v}");
+    assert_eq!(v["reviewStatus"], "pendingReview", "{v}");
+
+    // 其他欄位：finished 時一樣照舊 403（即使只帶一個鍵）。
+    let (s, e) = fx.app.patch(&fx.manager, &fx.u(&format!("/bills/{bill}")), json!({ "totalAmount": 1 })).await;
+    assert_eq!((s.as_u16(), e["code"].clone(), e["details"]["mode"].clone()), (403, json!("subject_not_editable"), json!("readonly")));
+
+    // finished 時帶 markReviewed 以外的欄位（即使也帶 markReviewed）一樣 403。
+    let (s, e) = fx.app.patch(&fx.manager, &fx.u(&format!("/bills/{bill}")), json!({ "markReviewed": true, "totalAmount": 1 })).await;
+    assert_eq!((s.as_u16(), e["code"].clone()), (403, json!("subject_not_editable")));
+
+    // 只有 markReviewed:true 一個鍵：放行。
+    let marked = expect_status!(fx.app.patch(&fx.manager, &fx.u(&format!("/bills/{bill}")), json!({ "markReviewed": true })).await, 200);
+    assert_eq!(marked["reviewStatus"], "reviewed", "{marked}");
+    // audit_rows 只選得到 (type, payload, outcome, actor)，稽核的人話 summary 是另一個欄位
+    // （不在這支測試 helper 的查詢裡），用 payload 確認是這一筆「只標記已校對、沒有其他欄位變更」的事件。
+    let audited = fx.audits("energyBill", bill).await;
+    assert!(
+        audited.iter().any(|e| e.0 == "bill.corrected" && e.1["markReviewed"] == true && e.1["changes"] == json!({})),
+        "{audited:?}"
+    );
+
+    // 已校對之後再 PATCH totalAmount 仍然 403（不是因為標記過，是因為流程還是完成狀態）。
+    let (s, e) = fx.app.patch(&fx.manager, &fx.u(&format!("/bills/{bill}")), json!({ "totalAmount": 2 })).await;
+    assert_eq!((s.as_u16(), e["code"].clone()), (403, json!("subject_not_editable")));
+}
+
 /// 來源：executionList.test.ts「「尚未送審」的家在**電費單**：`listBills` 每列帶 `executionId`（null ＝ 沒送）」
 /// ＋ domainModel.test.ts「the exception list is a single indexed query」
 #[actix_web::test]
