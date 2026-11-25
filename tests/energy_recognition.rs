@@ -15,6 +15,48 @@ const NO_SURPLUS: &str = "電費單(無餘電需付款).pdf";
 const DEVICE: &str = "逆變器電費單(僅設備發電使用電費).pdf";
 const RENTAL: &str = "逆變器電費單(含電表租費&設備發電使用電費).pdf";
 
+#[actix_web::test]
+async fn mixed_packet_creates_page_children_once_and_preserves_original_attachment() {
+    let r=rx(0, |_| {}).await;
+    let batch=r.new_batch(1).await;
+    let (_,uploaded)=r.upload(batch,"mixed.pdf","application/pdf").await;
+    let id=uploaded["itemId"].as_i64().unwrap();
+    let raw=json!({"status":"succeeded","sourceFileId":id.to_string(),"sourceFileName":"mixed.pdf","issues":[],"record":{"fields":{},"templateId":"unknown","reviewStatus":"needs_review","extractionMethod":"ocr","sourcePages":[
+        {"pageNumber":1,"text":"租金計算表"},
+        {"pageNumber":2,"text":"台灣電力公司 再生能源電能躉購電費通知單 電號 契約編號 購電度數 購電電費"},
+        {"pageNumber":3,"text":""},
+        {"pageNumber":4,"text":"天能綠電股份有限公司\n售電電費單\n未稅電能費 12000\n轉供度數\n20-72-7017-93-7 2400 5.0000 12000"}
+    ]}});
+    let ctx=eo_energy::common::Ctx::system(&r.fx.app.core,r.fx.org);
+    for _ in 0..2 {
+        let mut tx=r.fx.app.core.pool.begin().await.unwrap();
+        let parent=eo_energy::ingest::service::apply_recognition_to_item(&mut tx,&ctx,id,&raw).await.unwrap();
+        assert!(parent.bill_id.is_none());
+        tx.commit().await.unwrap();
+    }
+    let rows:Vec<(i64,Option<i64>,Value)>=sqlx::query_as("SELECT id,attachment_id,data FROM tbl_energy_ingest_item WHERE batch_id=$1 ORDER BY id").bind(batch).fetch_all(&r.fx.app.core.pool).await.unwrap();
+    assert_eq!(rows.len(),3,"one source packet and two bill children, also after retry");
+    assert_eq!(rows[1].1,rows[0].1);
+    assert_eq!(rows[2].1,rows[0].1);
+    assert_eq!(rows[1].2["sourcePageNumbers"],json!([2]));
+    assert_eq!(rows[2].2["sourcePageNumbers"],json!([4]));
+    assert_eq!(rows[1].2["sourceParentItemId"],id);
+    let mut tx=r.fx.app.core.pool.begin().await.unwrap();
+    let view=eo_energy::ingest::service::get_batch(&mut tx,&ctx.access,batch).await.unwrap();
+    assert_eq!(view["items"][0]["splitDocument"],true);
+    assert_eq!(view["items"][1]["sourcePageNumbers"],json!([2]));
+    assert!(view["items"][1]["originalFilename"].as_str().unwrap().ends_with(".pdf"),"recognition service validates the temporary filename extension");
+    assert_eq!(view["pendingCount"],2);
+    let patch=eo_energy::ingest::service::PatchItem {doc_type:Some("electricityBill".into()),..Default::default()};
+    assert_eq!(eo_energy::ingest::service::patch_item(&mut tx,&ctx,id,&patch).await.err().unwrap().code,"item_is_split_source");
+    assert_eq!(eo_energy::ingest::service::submit_item(&mut tx,&ctx,id,None).await.err().unwrap().code,"item_is_split_source");
+    for row in rows.iter().skip(1) { eo_energy::ingest::service::discard_item(&mut tx,&ctx,row.0,Some("test cleanup")).await.unwrap(); }
+    let view=eo_energy::ingest::service::get_batch(&mut tx,&ctx.access,batch).await.unwrap();
+    assert_eq!(view["pendingCount"],0);
+    assert_eq!(view["status"],"completed");
+    tx.commit().await.unwrap();
+}
+
 struct Rx {
     fx: Fx,
     fake: web::Data<fake_tpr::FakeTprState>,

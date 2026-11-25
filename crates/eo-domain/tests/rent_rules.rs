@@ -1,5 +1,11 @@
 use serde_json::json;
 #[test]
+fn confirmed_known_fixed_formula_is_supported_without_income_bills() {
+ let r=json!({"status":"confirmed","validFrom":"2026-11-01","cycleAnchor":"2026-11-01","cycleMonths":1,"calculationType":"fixed","fixedAmount":"100","fixedUnit":"month","taxPercent":"5","rounding":"total","payee":"Owner","ruleSource":"verified","leaseEvidence":{"status":"missing","attachmentIds":[]}});
+ assert!(eo_domain::rent_rules::validate(&r).is_ok());
+ let p=eo_domain::rent_rules::preview(&r,"2026-11-01",&[]);assert_eq!(p["grossRent"],"105");assert_eq!(p["paymentAllowed"],false);
+}
+#[test]
 fn recurring_cycle_requires_source_coverage_and_never_uses_payable() {
  let rule=json!({"status":"confirmed","validFrom":"2026-10-01","cycleAnchor":"2026-10-01","cycleMonths":1,"basis":"gross","percent":"8","taxPercent":"5","rounding":"total","transfer":false,"payee":"Synthetic owner","ruleSource":"verified","leaseEvidence":{"status":"missing","attachmentIds":[]}});
  let bills=json!([{"id":1,"docType":"renewableSurplus","start":"2026-11-01","end":"2026-11-30","electricityFeeTotal":"1000","payableTotal":"99999","kwh":"20","attachmentId":1}]);
@@ -92,4 +98,27 @@ fn owner_built_not_applicable_rent_is_not_a_zero_payment_or_missing_formula() {
  assert_eq!(eo_domain::rent_rules::source_contributions(&r,&[json!({"docType":"renewableSurplus"})]),json!([]));
  }
  let r=json!({"calculationType":"notApplicable"});assert_ne!(eo_domain::rent_rules::assess(&r,&json!({}))["state"],"notApplicable");
+}
+#[test]
+fn confirmed_extended_formulas_keep_source_and_annual_boundaries() {
+ let mut r=json!({"status":"confirmed","validFrom":"2026-11-01","cycleAnchor":"2026-11-01","cycleMonths":1,"calculationType":"areaRate","area":"10","areaUnit":"ping","rateAreaUnit":"ping","unitRate":"20","ratePeriod":"month","basis":"untaxed","percent":"10","taxPercent":"5","rounding":"total","transfer":false,"payee":"Owner","ruleSource":"verified","leaseEvidence":{"status":"missing","attachmentIds":[]}});
+ assert!(eo_domain::rent_rules::validate(&r).is_ok());assert_eq!(eo_domain::rent_rules::preview(&r,"2026-11-01",&[])["grossRent"],"210");
+ let mut bills=json!([{"id":1,"docType":"renewableSurplus","start":"2026-11-01","end":"2026-11-30","purchaseEnergyFee":"1000","kwh":"20","attachmentId":1}]);
+ r["calculationType"]=json!("percentageFloor");r["minimumRent"]=json!("200");r["minimumUnit"]=json!("cycle");r["minimumBasis"]=json!("untaxed");assert!(eo_domain::rent_rules::validate(&r).is_ok());assert_eq!(eo_domain::rent_rules::preview(&r,"2026-11-01",bills.as_array().unwrap())["grossRent"],"210");assert!(eo_domain::rent_rules::preview(&r,"2026-11-01",&[])["grossRent"].is_null());
+ let duplicate=vec![bills[0].clone(),bills[0].clone()];assert!(eo_domain::rent_rules::preview(&r,"2026-11-01",&duplicate)["grossRent"].is_null());
+ r["status"]=json!("pending");let p=eo_domain::rent_rules::preview(&r,"2026-11-01",bills.as_array().unwrap());assert_eq!(p["status"],"pending");assert_eq!(p["grossRent"],"210");
+ r["status"]=json!("confirmed");r["calculationType"]=json!("annualReference");r["annualRent"]=json!("100");r["tolerancePercent"]=json!("5");r["cycleMonths"]=json!(12);bills[0]["end"]=json!("2027-10-31");assert!(eo_domain::rent_rules::validate(&r).is_ok());assert_eq!(eo_domain::rent_rules::preview(&r,"2026-11-01",bills.as_array().unwrap())["grossRent"],"105");bills[0]["purchaseEnergyFee"]=json!("1050");assert!(eo_domain::rent_rules::preview(&r,"2026-11-01",bills.as_array().unwrap())["grossRent"].is_null());
+}
+#[test]
+fn confirmed_annual_preview_preserves_reference_ratio() {
+ let r=json!({"status":"confirmed","validFrom":"2026-01-01","cycleAnchor":"2026-01-01","cycleMonths":12,"calculationType":"annualReference","annualRent":"100","tolerancePercent":"5","basis":"untaxed","percent":"10","taxPercent":"0","rounding":"total","transfer":false,"payee":"Owner","ruleSource":"verified","leaseEvidence":{"status":"missing","attachmentIds":[]}});
+ let bills=json!([{"id":1,"docType":"renewableSurplus","start":"2026-01-01","end":"2026-12-31","purchaseEnergyFee":"1000","kwh":"20","attachmentId":1}]);
+ let p=eo_domain::rent_rules::preview(&r,"2026-01-01",bills.as_array().unwrap());assert_eq!(p["referenceRatioPercent"],"100");assert_eq!(p["state"],"calculatedDraft");
+}
+#[test]
+fn source_lines_show_actual_percentage_contributions_not_coverage_probe_zero() {
+ let r=json!({"status":"confirmed","validFrom":"2026-11-01","cycleAnchor":"2026-11-01","cycleMonths":1,"calculationType":"percentage","basis":"gross","percent":"8","taxPercent":"5","rounding":"perReceipt","transfer":true,"payee":"麻豆","ruleSource":"verified","leaseEvidence":{"status":"missing","attachmentIds":[]}});
+ let bills=json!([{"id":1,"docType":"renewableSurplus","start":"2026-11-01","end":"2026-11-30","electricityFeeTotal":"5481","kwh":"1","attachmentId":1},{"id":2,"docType":"retailerSale","start":"2026-11-01","end":"2026-11-30","electricityFeeTotal":"149069","kwh":"1","attachmentId":2}]);
+ let p=eo_domain::rent_rules::preview(&r,"2026-11-01",bills.as_array().unwrap());assert_eq!(p["grossRent"],"12982");assert_eq!(p["lines"][0]["proportionalRent"],"438.48");assert_eq!(p["lines"][0]["roundedRent"],"438");assert_eq!(p["lines"][1]["proportionalRent"],"11925.52");assert_eq!(p["lines"][1]["roundedRent"],"11926");
+ for kind in ["percentageFloor","annualReference"] {let mut pending=r.clone();pending["status"]=json!("pending");pending["calculationType"]=json!(kind);let p=eo_domain::rent_rules::preview(&pending,"2026-11-01",bills.as_array().unwrap());assert_eq!(p["lines"][0]["proportionalRent"],"438.48");assert_eq!(p["lines"][0]["contributionOnly"],true);}
 }

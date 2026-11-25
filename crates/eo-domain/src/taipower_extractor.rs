@@ -10,7 +10,7 @@ use serde_json::{json, Map, Value};
 
 use crate::bill_extractor::{mock_bill_extractor, ExtractedBill};
 use crate::document_ingest::{doc_type_to_workflow, mock_classifier, ClassifyResult, EnergyDocType};
-use crate::retailer_bills::{TEMPLATE_RETAILER_APOLLO, TEMPLATE_RETAILER_INVENTEC, TEMPLATE_RETAILER_SUNSHINE_VOLT};
+use crate::retailer_bills::{TEMPLATE_RETAILER_APOLLO, TEMPLATE_RETAILER_GREENET, TEMPLATE_RETAILER_INVENTEC, TEMPLATE_RETAILER_SUNSHINE_VOLT};
 use crate::taipower_canonical::{
     blocking_issues, date_of, number_of, text_of, CanonicalDocument, CanonicalRecord, TEMPLATE_HIGH_VOLTAGE,
     TEMPLATE_UNKNOWN,
@@ -22,19 +22,20 @@ pub fn template_doc_type(template_id: &str) -> Option<EnergyDocType> {
     match template_id {
         "renewable_purchase" | "legacy_renewable_purchase" => Some(EnergyDocType::ElectricityBill),
         "high_voltage" => Some(EnergyDocType::ConsumptionBill),
-        TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC => Some(EnergyDocType::RetailerSale),
+        TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC | TEMPLATE_RETAILER_GREENET => Some(EnergyDocType::RetailerSale),
         _ => None,
     }
 }
 
 /// 所有認得的版型（測試與畫面用）。
-pub const KNOWN_TEMPLATES: [&str; 6] = [
+pub const KNOWN_TEMPLATES: [&str; 7] = [
     "renewable_purchase",
     "legacy_renewable_purchase",
     "high_voltage",
     TEMPLATE_RETAILER_SUNSHINE_VOLT,
     TEMPLATE_RETAILER_APOLLO,
     TEMPLATE_RETAILER_INVENTEC,
+    TEMPLATE_RETAILER_GREENET,
 ];
 
 /// 單別的中文名 —— 畫面與稽核都不可以出現 raw docType。
@@ -59,6 +60,7 @@ pub fn template_label(template_id: &str) -> Option<&'static str> {
         "high_voltage" => Some("繳費通知單（高壓電力用戶）"),
         TEMPLATE_RETAILER_SUNSHINE_VOLT => Some("陽光伏特家電廠電費單"),
         TEMPLATE_RETAILER_APOLLO => Some("阿波羅發票申請單"),
+        TEMPLATE_RETAILER_GREENET => Some("天能售電電費單"),
         TEMPLATE_RETAILER_INVENTEC => Some("英業達電能使用電費通知單"),
         _ => None,
     }
@@ -114,7 +116,7 @@ pub fn doc_type_from_record(record: &CanonicalRecord) -> Option<EnergyDocType> {
 
     // 三家售電版型一律是 RetailerSale，不要落進下面「有沒有賣出去的電」那段判成躉購單——
     // 這三個版型的 purchaseEnergyFee／purchaseKwh 通常是正數，會被誤判成 RenewableSurplus。
-    if matches!(template_id.as_str(), TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC) {
+    if matches!(template_id.as_str(), TEMPLATE_RETAILER_SUNSHINE_VOLT | TEMPLATE_RETAILER_APOLLO | TEMPLATE_RETAILER_INVENTEC | TEMPLATE_RETAILER_GREENET) {
         return Some(EnergyDocType::RetailerSale);
     }
 

@@ -654,6 +654,11 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         false,
     ),
     ev(
+        "station.rent_application_saved", "energyStation",
+        &[req("action", Ty::Enum(&["save","confirm"])), req("before", Ty::Unknown), req("application", Ty::Unknown)],
+        "audit.type.station.rentApplicationSaved", Notable, true,
+    ),
+    ev(
         "station.rent_rule_saved", "energyStation",
         &[req("ruleId", INT), req("version", INT), req("rule", Ty::Unknown)],
         "audit.type.station.rentRuleSaved", Notable, true,

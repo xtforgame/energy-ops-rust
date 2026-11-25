@@ -48,6 +48,9 @@ interface IngestItem {
   attachmentId: number | null;
   billId: number | null;
   rentalWorksheet?: boolean;
+  splitDocument?: boolean;
+  splitChildItemIds?: number[];
+  sourcePageNumbers?: number[];
   rentPayment?: {stationId:number;periodStart:string;periodEnd:string}|null;
   installmentId: number | null;
   executionId: number | null;
@@ -227,9 +230,9 @@ const IngestBatchDetailPage: React.FC = () => {
 
   const items = batch?.items ?? [];
   /** 校對區＝還沒有結論的。已送審／已捨棄的下沉成一行摘要。 */
-  const open = items.filter((i) => !['submitted', 'discarded'].includes(i.status));
+  const open = items.filter((i) => !i.splitDocument && !['submitted', 'discarded'].includes(i.status));
   const closed = items.filter((i) => ['submitted', 'discarded'].includes(i.status));
-  const ready = open.filter((i) => ['extracted', 'classified'].includes(i.status) && !i.rentalWorksheet && !i.duplicateOfItemId);
+  const ready = open.filter((i) => ['extracted', 'classified'].includes(i.status) && !i.rentalWorksheet && !i.splitDocument && !i.duplicateOfItemId);
   const blockedCount = open.length - ready.length;
 
   /**
@@ -507,7 +510,7 @@ const IngestBatchDetailPage: React.FC = () => {
       <Box>
         {item.rentPayment ? <><Alert severity="info">{item.classifyReason}</Alert><RentPaymentPreview base={base} stationId={item.rentPayment.stationId}/></> : item.billId != null ? (
           <>
-            <Box sx={{mb:2}}><EasyFlowApplication base={base} billId={item.billId}/></Box>
+            <Box sx={{mb:2}}><Typography sx={{mb:1}}>本張單據的兩份預覽：已知資料自動帶入；租金依付款週期彙整，缺件不阻擋電費申請。</Typography><EasyFlowApplication base={base} billId={item.billId}/><RentPaymentPreview base={base} billId={item.billId}/></Box>
             {/* 「辨識值 vs 最終值」是**全站唯一一份**（`FieldDiffGrid`）——
                 單據詳情頁 render 的是同一個元件。
                 這一頁與那一頁**不合併**（送件的 item 沒有 execution／流程圖／
@@ -655,6 +658,7 @@ const IngestBatchDetailPage: React.FC = () => {
         />
       )}
 
+      {items.filter(i=>i.splitDocument&&i.status!=='discarded').map(i=><Alert key={i.id} severity="info" sx={{mb:2}}>原始附件「{i.originalFilename}」已拆出 {i.splitChildItemIds?.length??0} 張電費單，請校對下方各單；原檔不重複送審。{i.attachmentId&&<Button href={attachmentDownloadUrl(i.attachmentId,orgId)} target="_blank">查看完整原檔</Button>}</Alert>)}
       {/* ---- 校對區：只有還沒送出去的 ---- */}
       <Card>
         <CardContent>
@@ -750,7 +754,7 @@ const IngestBatchDetailPage: React.FC = () => {
                         </TextField>
                       ) : (
                         <Typography variant="body2">
-                          {i.rentalWorksheet ? '租金計算表' : i.workflowKey
+                          {i.splitDocument ? '原始合併附件（已拆單）' : i.rentalWorksheet ? '租金計算表' : i.workflowKey
                             ? translate(`energy.workflowName.${i.workflowKey}`, { _: i.workflowKey })
                             : '—'}
                         </Typography>
@@ -844,7 +848,7 @@ const IngestBatchDetailPage: React.FC = () => {
                             {translate(expandedId === i.id ? 'energy.ingest.collapse' : 'energy.intake.review')}
                           </Button>
                         )}
-                        {!i.rentalWorksheet && ['extracted', 'classified'].includes(i.status) && (
+                        {!i.rentalWorksheet && !i.splitDocument && ['extracted', 'classified'].includes(i.status) && (
                           <Button
                             size="small" variant="contained"
                             data-testid="intake-submit-one"

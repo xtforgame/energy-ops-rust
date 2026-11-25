@@ -2,6 +2,21 @@ use eo_domain::easyflow::{build_application, application_csv};
 use serde_json::{json, Value};
 
 #[test]
+fn canonical_amounts_fill_absent_details_but_never_replace_explicit_corrections() {
+    let bill=json!({"docType":"renewableSurplus","detailFields":{"businessTax":null},"ocrRaw":{"record":{"fields":{
+        "purchaseEnergyFee":{"value":5220,"status":"extracted"},
+        "businessTax":{"value":261,"status":"extracted"},
+        "electricityFeeTotal":{"value":5481,"status":"extracted"},
+        "payableTotal":{"value":5228,"status":"ocr_extracted"}
+    }}}});
+    let p=build_application(&bill,&json!({}),&json!([]));
+    assert_eq!(value(&p,"purchaseEnergyFee"),"5220");
+    assert_eq!(value(&p,"electricityFeeTotal"),"5481");
+    assert_eq!(value(&p,"payableTotal"),"5228");
+    assert_eq!(value(&p,"businessTax"),Value::Null);
+}
+
+#[test]
 fn handoff_requires_operator_fields_but_invoice_does_not_require_payment_options() {
     use eo_domain::easyflow::missing_handoff_fields;
     let mut p=json!({"applicationType":"invoice","fields":[],"attachments":[{"id":1}]});
@@ -143,4 +158,18 @@ fn retailer_identity_is_independent_of_taipower_and_other_providers(){
  let b=source_bill_key(key.clone(),Some("retailerSale"),Some("retailer_inventec"));
  assert_ne!(tp,a);assert_ne!(a,b);assert_eq!(a,source_bill_key(key,Some("retailerSale"),Some("retailer_apollo")));
  assert_eq!(source_bill_key(None,Some("retailerSale"),None),None);
+}
+
+#[test]
+fn service_team_is_not_the_invoice_counterparty() {
+ let bill=json!({"docType":"renewableSurplus","detailFields":{"serviceDepartment":"服務部門:新營區營業處核算(收費)課"}});
+ let p=build_application(&bill,&json!({}),&json!([]));
+ assert_eq!(value(&p,"counterpartyName"),"台灣電力股份有限公司新營區營業處");
+ assert_eq!(value(&p,"serviceDepartment"),"服務部門:新營區營業處核算(收費)課");
+ let p=build_application(&bill,&json!({"counterpartyName":"已確認買受人"}),&json!([]));
+ assert_eq!(value(&p,"counterpartyName"),"已確認買受人");
+ let mut other=bill.clone();other["docType"]=json!("retailerSale");
+ assert_eq!(value(&build_application(&other,&json!({}),&json!([])),"counterpartyName"),Value::Null);
+ other["docType"]=json!("unclassified");
+ assert_eq!(value(&build_application(&other,&json!({}),&json!([])),"counterpartyName"),Value::Null);
 }

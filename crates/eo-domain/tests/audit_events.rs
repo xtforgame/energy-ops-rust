@@ -73,14 +73,14 @@ fn declares_only_types_that_are_written() {
         "strategy.published",
         "strategy.binding_created", "strategy.binding_switched", "strategy.binding_ended",
         "flow.binding_created", "flow.binding_switched", "flow.binding_ended",
-        "station.geocoded", "station.rent_sources_updated", "station.rent_voucher_updated", "station.rent_worksheet_imported", "station.rent_rule_saved",
+        "station.geocoded", "station.rent_sources_updated", "station.rent_voucher_updated", "station.rent_worksheet_imported", "station.rent_rule_saved", "station.rent_application_saved",
         "ingest.batch_classified",
     ];
     let mut actual = audit_event_types();
     expected.sort();
     actual.sort();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 68);
+    assert_eq!(actual.len(), 69);
 }
 
 /// 來源：auditEvents.test.ts「lookup helpers behave」

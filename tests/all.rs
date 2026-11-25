@@ -27,3 +27,4 @@ mod energy_easyflow;
 mod energy_rent_cycle;
 mod energy_bill_rent_separation;
 mod energy_station_rent_rules;
+mod energy_rent_cases;

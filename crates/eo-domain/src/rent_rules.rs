@@ -12,11 +12,25 @@ pub fn validate(v:&Value)->Result<(),String>{
  if !v["validTo"].is_null(){let end=date(&v["validTo"])?;if !v["validFrom"].is_null()&&end<date(&v["validFrom"])?{return Err("規則生效期間不正確".into())}}
  if v["status"]=="pending"{return Ok(())}
  date(&v["validFrom"])?;
- if v["calculationType"].as_str().unwrap_or("percentage")!="percentage"{return Err("此類型尚待確認，請儲存待確認規則".into())}
+ let kind=v["calculationType"].as_str().unwrap_or("percentage");
+ if !["percentage","fixed","areaRate","percentageFloor","annualReference"].contains(&kind){return Err("此類型尚待確認，請儲存待確認規則".into())}
  let anchor=date(&v["cycleAnchor"])?;
  if anchor.day()>28||!(1..=12).contains(&v["cycleMonths"].as_u64().unwrap_or(0)){return Err("週期須為1至12個月，錨點日期須為1至28日".into())}
  let mut sample=v.clone();sample["periodStart"]=json!(anchor.to_string());sample["periodEnd"]=json!(anchor.to_string());sample["receipts"]=json!([]);
- crate::rent_payment::calculate(&sample)?;Ok(())
+ if kind=="percentage" {crate::rent_payment::calculate(&sample)?;} else {
+  if !["total","perReceipt"].contains(&v["rounding"].as_str().unwrap_or(""))||number(&v["taxPercent"]).is_none_or(|n|n>rust_decimal::Decimal::from(100)){return Err("取整或稅率待確認".into())}
+  for key in ["payee","ruleSource"]{if v[key].as_str().unwrap_or("").trim().is_empty(){return Err(format!("缺少 {key}"))}}
+  let mut probe=v.clone();
+  // Validate annual parameters without inventing adjustment tiers or using actual revenue.
+  if kind=="annualReference" {
+   if number(&v["annualRent"]).is_none_or(|n|n<rust_decimal::Decimal::new(1,2))||number(&v["tolerancePercent"]).is_none_or(|n|n<=rust_decimal::Decimal::ZERO||n>rust_decimal::Decimal::from(100))||v["rounding"]!="total"||v["cycleMonths"]!=12{return Err("年租金、年度週期或調整門檻不正確".into())}
+   probe["calculationType"]=json!("percentage");
+  }
+  let assessment=assess(&probe,&json!({"incomeAmount":"0","periodMonths":v["cycleMonths"]}));
+  if let Some(issue)=assessment["missingInputs"].as_array().and_then(|a|a.first()){return Err(issue.as_str().unwrap_or("公式參數未完整").into())}
+  if assessment["baseRentRaw"].is_null(){return Err("公式仍有分攤或分期條件待確認".into())}
+  if ["percentageFloor","annualReference"].contains(&kind)&&!v["transfer"].is_boolean(){return Err("未指定轉供狀態".into())}
+ }Ok(())
 }
 pub fn cycle(v:&Value,day:&str)->Result<(NaiveDate,NaiveDate),String>{
  let anchor=date(&v["cycleAnchor"])?;let day=date(&json!(day))?;
@@ -118,7 +132,13 @@ pub fn assess(v:&Value,input:&Value)->Value{
 pub fn preview(v:&Value,day:&str,bills:&[Value])->Value {
  let mut assessment=assess(v,&json!({}));
  if assessment["state"]=="notApplicable"{assessment["inputMode"]=json!("autoBills");assessment["inputMethod"]=json!("autoBills");return assessment;}
- if v["status"]=="confirmed" {let mut result=strict_preview(v,day,bills);for key in ["formulaSummary","knownInputs","status"]{result[key]=assessment[key].clone();}result["inputMode"]=json!("autoBills");result["baseRentRaw"]=result["baseRent"].clone();return result;}
+ if v["status"]=="confirmed" {
+  if let Err(e)=validate(v){return pending(&e)}
+  match cycle(v,day){Ok((a,b)) if a>=date(&v["validFrom"]).unwrap()&&(v["validTo"].is_null()||b<=date(&v["validTo"]).unwrap())=>{assessment["periodStart"]=json!(a.to_string());assessment["periodEnd"]=json!(b.to_string());},_=>return pending("規則未涵蓋完整計算週期")}
+ }
+ for key in ["payee","basis","percent","taxPercent","taxMode","rounding","calculationType","paymentDeadline","ruleSource","leaseEvidence"]{assessment[key]=v[key].clone();}
+ assessment["evidenceStatus"]=v["leaseEvidence"]["status"].clone();
+ if v["status"]=="confirmed"&&!assessment["grossRent"].is_null(){assessment["state"]=json!("calculatedDraft");}
  assessment["inputMode"]=json!("autoBills");assessment["inputMethod"]=json!("autoBills");
  if ["fixed","areaRate"].contains(&v["calculationType"].as_str().unwrap_or("")){return assessment;}
  let (a,b)=match cycle(v,day){Ok(c)=>c,Err(_)=>{assessment["sourceBlockers"]=json!(["缺少可用週期或錨點，無法自動組成整期"]);return assessment}};
@@ -131,7 +151,14 @@ pub fn preview(v:&Value,day:&str,bills:&[Value])->Value {
  if v["validFrom"].is_null(){blockers.push(json!("適用起日待確認，不能認定整期適用"));}
  if v["transfer"].is_null(){blockers.push(json!("轉供來源範圍待確認"));}
  let mut calculated=assess(v,&json!({"incomeAmount":checked["income"],"periodMonths":v["cycleMonths"]}));
- let lines=checked["lines"].as_array().cloned().unwrap_or_default();
+ let mut lines=checked["lines"].as_array().cloned().unwrap_or_default();
+ // Coverage uses a zero-rate surrogate; expose only actual rule contributions in source lines.
+ for line in &mut lines {
+  use rust_decimal::{Decimal,RoundingStrategy};
+  let contribution=number(&line["income"]).zip(number(&v["percent"]).filter(|rate|*rate<=Decimal::from(100))).filter(|_|["percentage","percentageFloor","annualReference"].contains(&v["calculationType"].as_str().unwrap_or("percentage"))).map(|(income,rate)|income*rate/Decimal::from(100));
+  line["proportionalRent"]=amount(contribution);line["roundedRent"]=amount(contribution.map(|n|n.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero)));
+  line["contributionOnly"]=json!(true);line["note"]=json!("單筆收入的比例租金貢獻，非整期應付；最低額及年度調整須按完整週期計算");
+ }
  if !blockers.is_empty(){calculated["partialSourceBase"]=if blockers.iter().any(|b|b.as_str().is_some_and(|s|s.contains("重複")||s.contains("重疊"))){Value::Null}else{calculated["referenceRent"].clone()};for key in ["baseRentRaw","baseRent","tax","grossRent","taxRaw","grossRentRaw"]{calculated[key]=Value::Null;}calculated["state"]=json!("missingOrConflictingSources");}
  else if !calculated["baseRentRaw"].is_null()&&v["rounding"]=="perReceipt"&&["percentage","percentageFloor"].contains(&v["calculationType"].as_str().unwrap_or("percentage")){
    use rust_decimal::{Decimal,RoundingStrategy};
@@ -142,7 +169,14 @@ pub fn preview(v:&Value,day:&str,bills:&[Value])->Value {
    calculated["baseRent"]=amount(base);calculated["taxRaw"]=amount(tax_raw);calculated["grossRentRaw"]=amount(base.zip(tax_raw).map(|(n,t)|if v["taxMode"]=="included"{n}else{n+t}));calculated["tax"]=amount(tax);calculated["grossRent"]=amount(base.zip(tax).map(|(n,t)|if v["taxMode"]=="included"{n}else{n+t}));
    if let Some(warnings)=calculated["warnings"].as_array_mut(){warnings.retain(|w|!w.as_str().is_some_and(|s|s.starts_with("逐筆取整須")));}}
  }
- calculated["sourceBlockers"]=json!(blockers);calculated["issues"]=json!(blockers);calculated["lines"]=json!(lines);calculated["sourceBillIds"]=checked["sourceBillIds"].clone();calculated["periodStart"]=json!(a.to_string());calculated["periodEnd"]=json!(b.to_string());calculated["inputMode"]=json!("autoBills");calculated["inputMethod"]=json!("autoBills");calculated
+ for key in ["payee","basis","percent","taxPercent","taxMode","rounding","calculationType","paymentDeadline","minimumRent","minimumUnit","minimumBasis","tolerancePercent","ruleSource","leaseEvidence"]{calculated[key]=v[key].clone();}
+ calculated["evidenceStatus"]=v["leaseEvidence"]["status"].clone();
+ if v["calculationType"]=="annualReference" {
+  use rust_decimal::{Decimal,RoundingStrategy};
+  calculated["referenceRatioPercent"]=amount(number(&calculated["referenceRent"]).zip(number(&v["annualRent"]).filter(|n|*n>Decimal::ZERO)).map(|(r,a)|(r.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero)*Decimal::from(100)/a).round_dp_with_strategy(2,RoundingStrategy::MidpointAwayFromZero)));
+ }
+ if v["status"]=="confirmed"&&!calculated["grossRent"].is_null(){calculated["state"]=json!("calculatedDraft");}
+ calculated["sourceBlockers"]=json!(blockers);let mut issues=calculated["missingInputs"].as_array().cloned().unwrap_or_default();issues.extend(blockers);calculated["issues"]=json!(issues);calculated["lines"]=json!(lines);calculated["sourceBillIds"]=checked["sourceBillIds"].clone();calculated["periodStart"]=json!(a.to_string());calculated["periodEnd"]=json!(b.to_string());calculated["inputMode"]=json!("autoBills");calculated["inputMethod"]=json!("autoBills");calculated
 }
 
 /// Contributions are individually identified; they must never be summed as a full cycle.
@@ -154,6 +188,6 @@ pub fn source_contributions(v:&Value,bills:&[Value])->Value {
  if !["percentage","percentageFloor","annualReference"].contains(&v["calculationType"].as_str().unwrap_or("percentage")){result["baseRentRaw"]=Value::Null;result["baseRent"]=Value::Null;}
  // Floors and annual adjustments apply to a whole period, never to one bill.
  let contribution=if ["percentage","percentageFloor","annualReference"].contains(&v["calculationType"].as_str().unwrap_or("percentage")){result["referenceRent"].clone()}else{Value::Null};
- json!({"billId":b["id"],"start":b["start"],"end":b["end"],"income":b[key],"sourceContributionRaw":contribution,"inputMode":"actualBillContribution","paymentAllowed":false,"note":"單筆來源貢獻，非整期租金；重複單據不可加總"})
+ json!({"source":if b["docType"]=="retailerSale"{"transfer"}else{"taipower"},"billId":b["id"],"attachmentId":b["attachmentId"],"page":b["page"],"start":b["start"],"end":b["end"],"income":b[key],"sourceContributionRaw":contribution,"inputMode":"actualBillContribution","paymentAllowed":false,"note":"單筆來源貢獻，非整期租金；重複單據不可加總"})
  }).collect::<Vec<_>>())
 }

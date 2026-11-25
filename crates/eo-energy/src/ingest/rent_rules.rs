@@ -40,7 +40,7 @@ pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i6
 /// Auto candidates never merge into manual historical worksheets.
 pub async fn append(core:&CoreRef,org:i64,sid:i64,station:&Value,items:&mut Vec<Value>,filter:Option<(chrono::NaiveDate,chrono::NaiveDate)>)->ApiResult<()>{
  let rules=load(core,org,sid).await?;
- let bills:Vec<BillRow>=sqlx::query_as(&format!("SELECT {BILL_COLS} FROM tbl_energy_bill WHERE organization_id=$1 AND station_id=$2 AND deleted_at IS NULL ORDER BY billing_period_start,id")).bind(org).bind(sid).fetch_all(&core.pool).await?;
+ let bills:Vec<BillRow>=sqlx::query_as(&format!("SELECT {BILL_COLS} FROM tbl_energy_bill b WHERE organization_id=$1 AND station_id=$2 AND deleted_at IS NULL AND (NOT EXISTS(SELECT 1 FROM tbl_energy_ingest_item i WHERE i.organization_id=b.organization_id AND i.bill_id=b.id) OR EXISTS(SELECT 1 FROM tbl_energy_ingest_item i WHERE i.organization_id=b.organization_id AND i.bill_id=b.id AND i.deleted_at IS NULL AND i.status<>'discarded')) ORDER BY billing_period_start,id")).bind(org).bind(sid).fetch_all(&core.pool).await?;
  let mut sources=Vec::new();
  for b in &bills{
   let attached=if let Some(id)=b.source_attachment_id{let mut tx=core.pool.begin().await?;crate::attachments::service::attachment_in_org(&mut tx,org,id).await.is_ok()}else{false};
@@ -48,10 +48,8 @@ pub async fn append(core:&CoreRef,org:i64,sid:i64,station:&Value,items:&mut Vec<
   sources.push(json!({"id":b.id,"page":page,"docType":b.effective_doc_type().as_str(),"start":b.billing_period_start,"end":b.billing_period_end,"electricityFeeTotal":b.field_value("electricityFeeTotal"),"purchaseEnergyFee":b.field_value("purchaseEnergyFee"),"kwh":if b.generation_kwh.is_some(){b.field_value("generationKwh")}else{b.field_value("purchaseKwh")},"attachmentId":if attached{b.source_attachment_id}else{None}}));
  }
  for row in &rules{
- let rule=&row["rule"];let mut cycles=std::collections::BTreeSet::new();
- for bill in &bills{if let Some(day)=bill.billing_period_start{if let Ok((a,b))=eo_domain::rent_rules::cycle(rule,&day.to_string()){
- if rule["validFrom"].as_str().is_some_and(|x|b.to_string().as_str()<x)||rule["validTo"].as_str().is_some_and(|x|a.to_string().as_str()>x){continue}
- if filter.is_some_and(|(x,y)|a>y||b<x){continue}cycles.insert((a,b));}}}
+ let rule=&row["rule"];let saved_dates=station["data"]["rentApplications"].as_array().into_iter().flatten().filter(|app|app["ruleId"]==row["id"]).filter_map(|app|app["periodStart"].as_str().and_then(|day|chrono::NaiveDate::parse_from_str(day,"%Y-%m-%d").ok()));
+ let cycles=candidate_cycles(rule,bills.iter().filter_map(|bill|bill.billing_period_start).chain(saved_dates),filter);
  if cycles.is_empty(){let mut item=eo_domain::rent_rules::assess(rule,&json!({}));item["inputMode"]=json!("autoBills");item["inputMethod"]=json!("autoBills");item["sourceBlockers"]=if ["fixed","areaRate"].contains(&rule["calculationType"].as_str().unwrap_or("")){json!([])}else{json!(["尚無可組成完整週期的來源或週期錨點待確認"])};item["sourceContributions"]=eo_domain::rent_rules::source_contributions(rule,&sources.iter().filter(|s|filter.is_none_or(|(a,b)|s["start"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&s["end"].as_str().is_some_and(|x|x>=a.to_string().as_str()))).cloned().collect::<Vec<_>>());decorate(&mut item,row,sid,station);items.push(item);continue}
  for(a,b)in cycles{
  let manual=station["data"]["rentPaymentDrafts"].as_array().is_some_and(|drafts|drafts.iter().any(|d|d["periodStart"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&d["periodEnd"].as_str().is_some_and(|x|x>=a.to_string().as_str())));
@@ -60,7 +58,46 @@ pub async fn append(core:&CoreRef,org:i64,sid:i64,station:&Value,items:&mut Vec<
  item["sourceContributions"]=eo_domain::rent_rules::source_contributions(rule,&sources.iter().filter(|s|s["start"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&s["end"].as_str().is_some_and(|x|x>=a.to_string().as_str())).cloned().collect::<Vec<_>>());item["periodStart"]=json!(a.to_string());item["periodEnd"]=json!(b.to_string());decorate(&mut item,row,sid,station);items.push(item);
  }}Ok(())
 }
-fn decorate(item:&mut Value,row:&Value,sid:i64,station:&Value){item["assessment"]=eo_domain::rent_rules::assess(&row["rule"],&json!({}));item["status"]=row["rule"]["status"].clone();item["ruleId"]=row["id"].clone();item["ruleVersion"]=row["version"].clone();item["stationId"]=json!(sid);item["stationName"]=station["name"].clone();item["evidenceStatus"]=row["rule"]["leaseEvidence"]["status"].clone();item["leaseEvidence"]=row["rule"]["leaseEvidence"].clone();}
+fn candidate_cycles(rule:&Value,dates:impl IntoIterator<Item=chrono::NaiveDate>,filter:Option<(chrono::NaiveDate,chrono::NaiveDate)>)->std::collections::BTreeSet<(chrono::NaiveDate,chrono::NaiveDate)> {
+ let mut cycles=std::collections::BTreeSet::new();
+ let selected=filter.filter(|_|["fixed","areaRate"].contains(&rule["calculationType"].as_str().unwrap_or(""))).map(|(start,_)|start);
+ for day in dates.into_iter().chain(selected) {if let Ok((a,b))=eo_domain::rent_rules::cycle(rule,&day.to_string()){
+  if rule["validFrom"].as_str().is_some_and(|x|b.to_string().as_str()<x)||rule["validTo"].as_str().is_some_and(|x|a.to_string().as_str()>x){continue}
+  if filter.is_some_and(|(x,y)|a>y||b<x){continue}cycles.insert((a,b));
+ }}cycles
+}
+
+fn decorate(item:&mut Value,row:&Value,sid:i64,station:&Value){
+ let rule=&row["rule"];
+ for key in ["payee","basis","percent","taxPercent","taxMode","rounding","ruleSource","invoiceTiming","paymentDeadline","calculationType","notes","rentRequired"] {
+  if item[key].is_null(){item[key]=rule[key].clone();}
+ }
+ if item["lines"].is_null(){item["lines"]=json!([]);}
+ if item["issues"].is_null(){item["issues"]=json!([]);}
+ item["customerNumber"]=station["customerNumber"].clone();
+ item["assessment"]=eo_domain::rent_rules::assess(rule,&json!({}));item["status"]=rule["status"].clone();item["ruleId"]=row["id"].clone();item["ruleVersion"]=row["version"].clone();item["stationId"]=json!(sid);item["stationName"]=station["name"].clone();item["evidenceStatus"]=rule["leaseEvidence"]["status"].clone();item["leaseEvidence"]=rule["leaseEvidence"].clone();
+}
+
+#[cfg(test)] mod preview_metadata_tests {
+ use super::*;
+ #[test] fn selected_fixed_period_needs_no_electricity_bill(){
+  let day=chrono::NaiveDate::from_ymd_opt(2026,11,15).unwrap();
+  for kind in ["fixed","areaRate"] {
+   let rule=json!({"calculationType":kind,"cycleAnchor":"2026-01-01","cycleMonths":3,"validFrom":"2026-01-01"});
+   let cycles=candidate_cycles(&rule,[],Some((day,day)));
+   assert_eq!(cycles.len(),1);let (a,b)=cycles.first().unwrap();assert_eq!(a.to_string(),"2026-10-01");assert_eq!(b.to_string(),"2026-12-31");
+   assert!(candidate_cycles(&rule,[],None).is_empty());
+  }
+  let rule=json!({"calculationType":"percentage","cycleAnchor":"2026-01-01","cycleMonths":1});assert!(candidate_cycles(&rule,[],Some((day,day))).is_empty());
+  let expired=json!({"calculationType":"fixed","cycleAnchor":"2026-01-01","cycleMonths":1,"validTo":"2026-09-30"});assert!(candidate_cycles(&expired,[],Some((day,day))).is_empty());
+ }
+ #[test] fn pending_cycle_keeps_known_rule_values_and_lease_evidence(){
+  let row=json!({"id":16,"version":2,"rule":{"payee":"力寶","percent":"8","invoiceTiming":"later","leaseEvidence":{"status":"excerpt","attachmentIds":[42]}}});
+  let mut item=json!({"grossRent":null});
+  decorate(&mut item,&row,70,&json!({"name":"麻豆","customerNumber":"20-72-7017-93-7"}));
+  assert_eq!(item["payee"],"力寶");assert_eq!(item["percent"],"8");assert_eq!(item["invoiceTiming"],"later");assert_eq!(item["customerNumber"],"20-72-7017-93-7");assert!(item["grossRent"].is_null());assert_eq!(item["leaseEvidence"]["attachmentIds"][0],42);
+ }
+}
 
 /// Stateless trial: does not create a bill, worksheet or payment instruction.
 pub async fn trial(core:Core,user:CurrentUser,path:web::Path<(i64,i64,i64)>,body:web::Json<Value>)->ApiResult<HttpResponse>{

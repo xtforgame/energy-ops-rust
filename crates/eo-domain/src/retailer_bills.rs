@@ -25,6 +25,80 @@ use crate::taipower_canonical::{
 pub const TEMPLATE_RETAILER_SUNSHINE_VOLT: &str = "retailer_sunshine_volt";
 pub const TEMPLATE_RETAILER_APOLLO: &str = "retailer_apollo";
 pub const TEMPLATE_RETAILER_INVENTEC: &str = "retailer_inventec";
+pub const TEMPLATE_RETAILER_GREENET: &str = "retailer_greenet";
+
+/// Only self-contained bill pages qualify; a mixed packet must never inherit its aggregate fields.
+pub fn split_bill_pages(raw: &Value) -> Vec<Value> {
+    let Some(pages)=raw.pointer("/record/sourcePages").and_then(Value::as_array) else { return Vec::new(); };
+    if pages.len()<2 { return Vec::new(); }
+    let mut parts=Vec::new();
+    for page in pages {
+        let Some(number)=page["pageNumber"].as_u64().filter(|n|*n>0) else { continue; };
+        let text:String=page["text"].as_str().unwrap_or("").nfkc().filter(|c|!c.is_whitespace()).collect();
+        let greenet=all_hit(&text,&["天能綠電股份有限公司","售電電費單","未稅電能費","轉供度數"]);
+        let taipower=all_hit(&text,&["台灣電力公司","電號","購電度數","購電電費"])
+            && (text.contains("再生能源電能躉購電費通知單") || text.contains("再生能源購售電通知單"));
+        if !greenet && !taipower { continue; }
+        let mut part=raw.clone();
+        part["record"]["sourcePages"]=serde_json::json!([page]);
+        part["record"]["fields"]=serde_json::json!({});
+        part["record"]["templateId"]=serde_json::json!("unknown");
+        part["issues"]=serde_json::json!([]);
+        part["sourcePageNumbers"]=serde_json::json!([number]);
+        parts.push(part);
+    }
+    // Do not split a conventional multipage single bill. Require distinct bill types.
+    let greenet_count=parts.iter().filter(|p|p.pointer("/record/sourcePages/0/text").and_then(Value::as_str).is_some_and(|s|s.contains("售電電費單"))).count();
+    if greenet_count==0 || greenet_count==parts.len() { return Vec::new(); }
+    parts
+}
+
+/// Produce recognition input only; the persisted attachment remains the complete original.
+pub fn select_pdf_pages(bytes: &[u8], selected: &[u32]) -> Option<Vec<u8>> {
+    let mut doc=pdf_extract::Document::load_mem(bytes).ok()?;
+    let pages=doc.get_pages();
+    if selected.is_empty() || selected.iter().any(|p|!pages.contains_key(p)) { return None; }
+    let remove:Vec<u32>=pages.keys().filter(|p|!selected.contains(p)).copied().collect();
+    doc.delete_pages(&remove);
+    let mut out=Vec::new();
+    doc.save_to(&mut out).ok()?;
+    Some(out)
+}
+
+/// 天能原頁已被讀出文字時，將明確標籤與電號明細對應到共同欄位。
+/// 只處理單一電號主單；不把合併 PDF 的其他單據金額混進來。
+pub fn recognize_greenet_source(raw: &Value) -> Option<Value> {
+    let pages = raw.pointer("/record/sourcePages")?.as_array()?;
+    if pages.len() != 1 { return None; }
+    let text: String = pages[0].get("text")?.as_str()?.nfkc().collect();
+    if !all_hit(&text, &["天能綠電股份有限公司", "售電電費單", "未稅電能費", "轉供度數"]) { return None; }
+    let meter_re = Regex::new(r"(?m)^\s*(\d{2}-\d{2}-\d{4}-\d{2}-\d)\s+([\d,]+(?:\.\d+)?)\s+([\d,.]+)\s+([\d,.]+)\s*$").ok()?;
+    let rows: Vec<_> = meter_re.captures_iter(&text).collect();
+    if rows.len() != 1 { return None; }
+    let row = &rows[0];
+    let tokens: PageTokens = text.lines().enumerate().map(|(i,s)| PageRow { page:1, y:i as f64, text:s.to_string() }).collect();
+    let period = value_after(&tokens, 1..=1, "計費期間").map(parse_date_range).unwrap_or_default();
+    let mut out = raw.clone();
+    let fields = out.pointer_mut("/record/fields")?.as_object_mut()?;
+    for (key, field) in [
+        ("accountNumber",field_text(Some(row[1].to_string()))),
+        ("purchaseKwh",field_number(first_number(&row[2]))),
+        ("purchaseEnergyFee",field_number(value_after(&tokens,1..=1,"未稅電能費").and_then(first_number))),
+        ("businessTax",field_number(value_after(&tokens,1..=1,"營業稅").and_then(first_number))),
+        ("electricityFeeTotal",field_number(value_after(&tokens,1..=1,"總計電費(含稅)").and_then(first_number))),
+        ("payableTotal",field_number(value_after(&tokens,1..=1,"應付總金額(含稅)").and_then(first_number))),
+        ("billingStartDate",field_text(period.0)),
+        ("billingEndDate",field_text(period.1)),
+        ("companyTaxId",field_text(value_after(&tokens,1..=1,"統一編號").and_then(first_tax_id))),
+        ("buyerName",field_text(Some("天能綠電股份有限公司".into()))),
+    ] {
+        let mut value = serde_json::to_value(field).ok()?;
+        value["evidence"] = serde_json::json!({"pageNumber":pages[0].get("pageNumber").cloned().unwrap_or(serde_json::json!(1)),"source":"greenet_label_mapping","rawText":text});
+        fields.insert(key.to_string(),value);
+    }
+    out["record"]["templateId"] = serde_json::json!(TEMPLATE_RETAILER_GREENET);
+    Some(out)
+}
 
 // ---------------------------------------------------------------------------
 // 抽字：OutputDev 收每個字的座標，重建「視覺列」
@@ -568,6 +642,51 @@ pub fn recognize_retailer_pdf(bytes: &[u8], source_file_id: &str, source_file_na
 mod tests {
     use super::*;
     use crate::taipower_extractor::as_canonical_document;
+
+    #[test]
+    fn mixed_packet_selects_bill_pages_without_cover_or_calculation_and_keeps_provenance() {
+        let raw=serde_json::json!({"status":"succeeded","sourceFileId":"9","sourceFileName":"mixed.pdf","record":{"fields":{"payableTotal":{"value":999999}},"sourcePages":[
+            {"pageNumber":1,"text":"租金計算表 台灣電力公司 天能綠電股份有限公司"},
+            {"pageNumber":2,"text":"台灣電力公司 再生能源電能躉購電費通知單 電號 契約編號 購電度數 購電電費"},
+            {"pageNumber":3,"text":""},
+            {"pageNumber":4,"text":"天能綠電股份有限公司 售電電費單 未稅電能費 轉供度數"},
+            {"pageNumber":5,"text":"天能綠電股份有限公司 計算明細 轉供度數 未稅電能費"}
+        ]},"issues":[]});
+        let parts=split_bill_pages(&raw);
+        assert_eq!(parts.len(),2);
+        assert_eq!(parts[0].pointer("/record/sourcePages/0/pageNumber"),Some(&serde_json::json!(2)));
+        assert_eq!(parts[1].pointer("/record/sourcePages/0/pageNumber"),Some(&serde_json::json!(4)));
+        assert_eq!(parts[0]["sourceFileId"],"9");
+        assert_eq!(parts[0]["record"]["fields"],serde_json::json!({}));
+        assert!(split_bill_pages(&parts[0]).is_empty());
+    }
+
+    #[test]
+    fn selected_pdf_pages_are_valid_and_out_of_range_is_rejected() {
+        let pdf=include_bytes!("../../../tests/fixtures/samples/電費單(有餘電需開發票).pdf");
+        let selected=select_pdf_pages(pdf,&[1]).unwrap();
+        assert_eq!(pdf_page_count(&selected),Some(1));
+        assert!(select_pdf_pages(pdf,&[999]).is_none());
+        assert!(select_pdf_pages(pdf,&[]).is_none());
+    }
+
+    #[test]
+    fn greenet_maps_source_labels_and_rejects_ambiguous_meter_rows() {
+        let text="天能綠電股份有限公司\n售電電費單\n未稅電能費 12,000\n營業稅 600\n總計電費(含稅) 12,600\n應付總金額(含稅) 12,600\n統一編號 12345678\n計費期間 2026/10/01~2026/10/31\n電號 轉供度數 購售電費率 未稅電能費\n20-72-7017-93-7 2,400 5.0000 12,000";
+        let raw=serde_json::json!({"status":"succeeded","sourceFileId":"1","sourceFileName":"test.pdf","issues":[],"record":{"fields":{},"sourcePages":[{"pageNumber":1,"text":text}],"reviewStatus":"needs_review","templateId":"unknown","extractionMethod":"pdf_text"}});
+        let result=recognize_greenet_source(&raw).unwrap();
+        assert_eq!(result.pointer("/record/fields/purchaseEnergyFee/value"),Some(&serde_json::json!(12000.0)));
+        assert_eq!(result.pointer("/record/fields/businessTax/value"),Some(&serde_json::json!(600.0)));
+        assert_eq!(result.pointer("/record/fields/purchaseKwh/value"),Some(&serde_json::json!(2400.0)));
+        assert_eq!(result.pointer("/record/fields/billingEndDate/value"),Some(&serde_json::json!("2026-10-31")));
+        assert_eq!(crate::taipower_extractor::template_doc_type(TEMPLATE_RETAILER_GREENET),Some(crate::document_ingest::EnergyDocType::RetailerSale));
+        let mut multiple=raw.clone();
+        multiple["record"]["sourcePages"][0]["text"]=serde_json::json!(format!("{text}\n03-43-2888-88-6 1,000 5.0000 5,000"));
+        assert!(recognize_greenet_source(&multiple).is_none());
+        let mut missing=raw;
+        missing["record"]["sourcePages"][0]["text"]=serde_json::json!(text.replace("營業稅 600", "營業稅"));
+        assert!(recognize_greenet_source(&missing).unwrap().pointer("/record/fields/businessTax/value").unwrap().is_null());
+    }
 
     fn row(page: u32, y: f64, text: &str) -> PageRow {
         PageRow { page, y, text: text.to_string() }

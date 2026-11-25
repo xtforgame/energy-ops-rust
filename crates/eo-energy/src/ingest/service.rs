@@ -122,7 +122,7 @@ pub async fn create_batch(tx: &mut Tx<'_>, ctx: &Ctx, file_count: i32, note: Opt
 /// 批次狀態是推導出來的。必須在每次 item 變動的同一個交易內重算，否則會有人看到中間態。
 pub async fn recompute_batch_status(tx: &mut Tx<'_>, batch_id: i64) -> ApiResult<String> {
     let statuses: Vec<String> =
-        sqlx::query_scalar("SELECT status FROM tbl_energy_ingest_item WHERE batch_id = $1 AND deleted_at IS NULL ORDER BY id")
+        sqlx::query_scalar("SELECT status FROM tbl_energy_ingest_item WHERE batch_id = $1 AND deleted_at IS NULL AND data->'splitDocument' IS DISTINCT FROM 'true'::jsonb ORDER BY id")
             .bind(batch_id)
             .fetch_all(&mut **tx)
             .await?;
@@ -272,6 +272,8 @@ async fn find_installment(tx: &mut Tx<'_>, org_id: i64, ex: &ExtractedDepositReq
 /// 分類 → 抽取 → 寫回某一筆 item（新建或既有）。抽取失敗時那一份標 `failed`，不讓整批倒。
 async fn classify_into_item(tx: &mut Tx<'_>, ctx: &Ctx, item: &ItemRow, ocr_raw: &Value) -> ApiResult<ItemRow> {
     if let Some(row) = try_rent_worksheet(tx, ctx, item, ocr_raw).await? { return Ok(row); }
+    let mapped = eo_domain::retailer_bills::recognize_greenet_source(ocr_raw);
+    let ocr_raw = mapped.as_ref().unwrap_or(ocr_raw);
     let cls = energy_document_classifier(ocr_raw);
     let workflow_key = cls.workflow_key.clone().or_else(|| doc_type_to_workflow(cls.doc_type).map(String::from));
     let data = merge(
@@ -432,6 +434,39 @@ pub async fn mark_items_recognizing(tx: &mut Tx<'_>, ids: &[i64]) -> ApiResult<(
 /// 辨識結果回來了 → 分類、抽取、寫回既有的 item（與開批帶辨識結果走同一份抽取）。
 pub async fn apply_recognition_to_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, ocr_raw: &Value) -> ApiResult<ItemRow> {
     let item = item_in_org(tx, ctx.org_id(), item_id).await?;
+    // Parent is locked above: consuming a result twice must not create duplicate children.
+    if item.data["splitDocument"].as_bool()==Some(true) { return Ok(item); }
+    let parts=if item.data.get("sourceParentItemId").is_none() {
+        eo_domain::retailer_bills::split_bill_pages(ocr_raw)
+    } else { Vec::new() };
+    if !parts.is_empty() && item.bill_id.is_none() {
+        let mut children=Vec::new();
+        for mut part in parts {
+            let page_numbers=part["sourcePageNumbers"].clone();
+            let number=page_numbers[0].as_u64().unwrap_or(1);
+            let original=item.original_filename.as_deref().unwrap_or("原始文件.pdf");
+            let stem=std::path::Path::new(original).file_stem().and_then(|s|s.to_str()).unwrap_or("原始文件");
+            let name=format!("{stem}-第{number}頁.pdf");
+            let child=insert_item(tx,ctx,item.batch_id,item.attachment_id,&name,"recognizing").await?;
+            let provenance=json!({"sourceParentItemId":item.id,"sourceAttachmentId":item.attachment_id,"sourcePageNumbers":page_numbers,"sourceOriginalFilename":item.original_filename});
+            sqlx::query("UPDATE tbl_energy_ingest_item SET data=$2 WHERE id=$1").bind(child.id).bind(provenance).execute(&mut **tx).await?;
+            part["sourceFileId"]=json!(child.id.to_string());
+            part["sourceFileName"]=json!(name);
+            if let Some(mapped)=eo_domain::retailer_bills::recognize_greenet_source(&part) {
+                let child=item_in_org(tx,ctx.org_id(),child.id).await?;
+                classify_into_item(tx,ctx,&child,&mapped).await?;
+            }
+            // Other pages remain recognizing: the driver sends their selected original PDF pages
+            // in the next chunk, never the mixed document's aggregate fields.
+            children.push(child.id);
+        }
+        let data=merge(&item.data,json!({"ocrRaw":ocr_raw,"splitDocument":true,"splitChildItemIds":children,"classifyReason":"原始合併文件已拆出獨立電費單；封面、計算表與其他附件保留於原檔，不重複建單。"}));
+        let parent:ItemRow=sqlx::query_as(&format!("UPDATE tbl_energy_ingest_item SET status='classified',doc_type='unclassified',workflow_key=NULL,error_message=NULL,data=$2 WHERE id=$1 RETURNING {ITEM_COLS}"))
+            .bind(item.id).bind(data).fetch_one(&mut **tx).await?;
+        audit::record(tx,ctx,AuditInput::new("ingest.recognition_supplied",item.id,"由原始合併 PDF 拆出獨立電費單").payload(json!({"itemId":item.id,"batchId":item.batch_id,"docType":"unclassified","billId":null,"status":"classified"}))).await?;
+        recompute_batch_status(tx,item.batch_id).await?;
+        return Ok(parent);
+    }
     classify_into_item(tx, ctx, &item, ocr_raw).await
 }
 
@@ -461,6 +496,7 @@ pub struct PatchItem {
 /// 收件台改 item：手動指定單別／流程（`unclassified` 的出口）、人工指認期數。
 pub async fn patch_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, input: &PatchItem) -> ApiResult<ItemRow> {
     let item = item_in_org(tx, ctx.org_id(), item_id).await?;
+    if item.data["splitDocument"].as_bool()==Some(true) { return Err(err(409,"item_is_split_source")); }
     let mut doc_type = item.doc_type.clone();
     let mut workflow_key = item.workflow_key.clone();
     let mut status = item.status.clone();
@@ -776,6 +812,7 @@ async fn mark_item_submitted(tx: &mut Tx<'_>, item: &ItemRow, executions: &[Exec
 /// 送審：依綁定開流程、接上原檔、item 標 submitted。去重與開流程同一個交易。
 pub async fn submit_item(tx: &mut Tx<'_>, ctx: &Ctx, item_id: i64, business_date: Option<NaiveDate>) -> ApiResult<Vec<ExecutionRow>> {
     let item = item_in_org(tx, ctx.org_id(), item_id).await?;
+    if item.data["splitDocument"].as_bool()==Some(true) { return Err(err(409,"item_is_split_source")); }
     match item.status.as_str() {
         "unclassified" => return Err(err(409, "item_needs_doc_type")),
         "unmatched" => return Err(err(409, "item_needs_source_match")),
@@ -905,6 +942,11 @@ pub fn item_view(i: &ItemRow) -> Value {
         "classifyConfidence": i.classify_confidence.map(|c| c.to_string()),
         "classifyReason": d.get("classifyReason").cloned().unwrap_or(Value::Null),
         "rentalWorksheet": d.get("rentalWorksheet").cloned().unwrap_or(json!(false)),
+        "splitDocument": d.get("splitDocument").cloned().unwrap_or(json!(false)),
+        "splitChildItemIds": d.get("splitChildItemIds").cloned().unwrap_or(json!([])),
+        "sourceParentItemId": d.get("sourceParentItemId").cloned().unwrap_or(Value::Null),
+        "sourcePageNumbers": d.get("sourcePageNumbers").cloned().unwrap_or(json!([])),
+        "sourceOriginalFilename": d.get("sourceOriginalFilename").cloned().unwrap_or(Value::Null),
         "rentPayment": d.get("rentPayment").cloned().unwrap_or(Value::Null),
         "attachmentId": i.attachment_id,
         "billId": i.bill_id,
@@ -923,7 +965,7 @@ pub fn item_view(i: &ItemRow) -> Value {
 }
 
 fn counts_of(items: &[&ItemRow]) -> Value {
-    let by = |st: &str| items.iter().filter(|i| i.status == st).count();
+    let by = |st: &str| items.iter().filter(|i| i.status == st && i.data["splitDocument"].as_bool()!=Some(true)).count();
     json!({
         "submitted": by("submitted"),
         "classified": by("classified"),
@@ -961,9 +1003,10 @@ pub async fn list_batches(tx: &mut Tx<'_>, access: &OrgAccess, limit: Option<i64
         .iter()
         .map(|r| {
             let mine: Vec<&ItemRow> = items.iter().filter(|i| i.batch_id == r.id).collect();
-            let pending = mine.iter().filter(|i| !is_closed(&i.status)).count();
+            let pending = mine.iter().filter(|i| !is_closed(&i.status) && i.data["splitDocument"].as_bool()!=Some(true)).count();
             let mut wf = Map::new();
             for i in &mine {
+                if i.data["splitDocument"].as_bool()==Some(true) { continue; }
                 let k = i.workflow_key.clone().filter(|k| !k.is_empty()).unwrap_or_else(|| "unclassified".into());
                 let n = wf.get(&k).and_then(Value::as_u64).unwrap_or(0) + 1;
                 wf.insert(k, json!(n));
@@ -997,7 +1040,7 @@ pub async fn get_batch(tx: &mut Tx<'_>, access: &OrgAccess, batch_id: i64) -> Ap
         Some(u) => crate::common::user_name(tx, u).await?,
         None => None,
     };
-    let pending = items.iter().filter(|i| !is_closed(&i.status)).count();
+    let pending = items.iter().filter(|i| !is_closed(&i.status) && i.data["splitDocument"].as_bool()!=Some(true)).count();
     Ok(json!({
         "id": row.id,
         "submittedAt": row.submitted_at,

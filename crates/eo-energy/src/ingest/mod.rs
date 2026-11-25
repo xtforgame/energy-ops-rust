@@ -5,6 +5,7 @@ pub mod bills;
 pub mod handlers;
 pub mod recognition;
 pub mod rent_payment;
+pub mod rent_cases;
 pub mod rent_rules;
 pub mod route;
 pub mod service;
@@ -47,6 +48,7 @@ impl AppPlugin for IngestPlugin {
     fn configure_routes(&self, cfg: &mut RouteRegistrar<'_>, _self_arc: &Arc<dyn AppPlugin>) {
         cfg.post(&path("/bills/ingest"), web::post().to(h::ingest_bill));
         cfg.get(&path("/stations/{stationId}/rent-payment"), web::get().to(rent_payment::get_station));
+        cfg.post(&path("/stations/{stationId}/rent-payment/application"), web::post().to(rent_cases::save));
         cfg.get(&path("/stations/{stationId}/rent-rules"), web::get().to(rent_rules::list));
         cfg.post(&path("/stations/{stationId}/rent-rules"), web::post().to(rent_rules::save));
         cfg.post(&path("/stations/{stationId}/rent-rules/{ruleId}/preview"), web::post().to(rent_rules::trial));

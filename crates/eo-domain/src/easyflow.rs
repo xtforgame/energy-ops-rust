@@ -28,6 +28,16 @@ fn text(v: &Value) -> Option<String> {
 fn amount(v: &Value) -> Option<String> {
     Decimal::from_str(&text(v)?.replace(',', "")).ok().map(|d| d.normalize().to_string())
 }
+// Only a known Taipower bill may use its printed service district as a fallback.
+// Keep the original department separately; internal teams are not invoice entities.
+fn taipower_counterparty(v: &Value) -> Option<String> {
+    let raw = text(v)?;
+    let district = raw.trim_start_matches("服務部門").trim_start_matches([':', '：']).trim();
+    let end = district.find("區營業處")? + "區營業處".len();
+    let district = district[..end].trim();
+    Some(if district.starts_with("台灣電力") { district.to_string() }
+        else { format!("台灣電力股份有限公司{district}") })
+}
 fn field(fields: &mut Vec<Value>, key: &str, label: &str, value: Option<String>, source: &str) {
     fields.push(json!({"key":key,"label":label,"status":if value.is_some(){"available"}else{"pending"},"value":value,"source":source}));
 }
@@ -49,7 +59,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     if rental_from_subtotal { detail["meterRentalFee"] = subtotal["value"].clone(); }
     // Old bills predate these detail mappings. Preserve explicit corrections, including null.
     let mut canonical_sources = Vec::new();
-    for key in ["meterReadingDiscount", "taxBeforeAmount"] {
+    for key in ["purchaseEnergyFee", "businessTax", "electricityFeeTotal", "payableTotal", "usageEnergyFee", "baseEnergyFee", "flowEnergyFee", "powerFactorAdjustmentFee", "electricityAdjustmentAmount", "meterReadingDiscount", "taxBeforeAmount"] {
         let original=&bill["ocrRaw"]["record"]["fields"][key];
         if detail.get(key).is_none() && matches!(original["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")) && amount(&original["value"]).is_some() {
             detail[key]=original["value"].clone();canonical_sources.push(key);
@@ -76,8 +86,9 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("dueDate","單據繳費期限",&bill["dueDate"],"bill.dueDate"),
     ] { field(&mut fields,key,label,text(v),source); }
     let counterparty = if retailer {text(&bill["ocrRaw"]["record"]["fields"]["buyerName"]["value"])}else{text(&station["counterpartyName"])};
-    field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer {None}else{text(&detail["serviceDepartment"])}),
-        if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
+    field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer || kind=="unconfirmed" {None}else{taipower_counterparty(&detail["serviceDepartment"])}),
+        if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"依台電原單服務區處整理名稱；已設定的對象主檔優先"});
+    field(&mut fields,"serviceDepartment","原單服務部門",text(&detail["serviceDepartment"]),"bill.detailFields.serviceDepartment（保留原文）");
     for (key,label) in [("purchaseEnergyFee","購電電費（未稅）"),("businessTax","營業稅"),("electricityFeeTotal","電費合計"),
         ("meterRentalFee","電表租費（原始正負號）"),("usageEnergyFee","設備發電使用電費"),("payableTotal","應付總金額（明細）"),
         ("baseEnergyFee","基本電費（約定）"),("flowEnergyFee","流動電費"),("powerFactorAdjustmentFee","功率因數調整費"),

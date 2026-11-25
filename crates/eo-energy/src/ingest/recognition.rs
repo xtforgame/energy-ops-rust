@@ -218,7 +218,25 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
     let mut local_hits = 0usize;
     for c in chunk {
         match attachments::read_bytes(ctx, c.attachment_id).await {
-            Ok((row, bytes)) => {
+            Ok((row, mut bytes)) => {
+                let mut upload_file_name=c.file_name.clone();
+                let data:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_ingest_item WHERE id=$1 AND organization_id=$2")
+                    .bind(c.item_id).bind(ctx.org_id()).fetch_one(&ctx.core.pool).await.map_err(|e|internal(e.into()))?;
+                if let Some(pages)=data["sourcePageNumbers"].as_array() {
+                    let selected:Vec<u32>=pages.iter().filter_map(|p|p.as_u64().and_then(|n|u32::try_from(n).ok())).collect();
+                    let Some(page_bytes)=eo_domain::retailer_bills::select_pdf_pages(&bytes,&selected) else {
+                        let mut tx=ctx.core.pool.begin().await.map_err(|e|internal(e.into()))?;
+                        service::mark_item_failed(&mut tx,ctx,c.item_id,"無法從原始 PDF 讀取指定單據頁；請檢查原檔。",Some("source_page_unreadable")).await.map_err(internal)?;
+                        tx.commit().await.map_err(|e|internal(e.into()))?;
+                        continue;
+                    };
+                    bytes=page_bytes.into();
+                    // Older split items were named "original.pdf（第 2 頁）". Keep those
+                    // retryable: the recognition service validates the multipart extension.
+                    if !upload_file_name.to_ascii_lowercase().ends_with(".pdf") {
+                        upload_file_name.push_str(".pdf");
+                    }
+                }
                 let local = (row.mime_type == "application/pdf")
                     .then(|| eo_domain::retailer_bills::recognize_retailer_pdf(&bytes, &c.item_id.to_string(), &c.file_name))
                     .flatten();
@@ -250,7 +268,7 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
                 files.push(TprUploadFile {
                     // 來歷直接穿透：sourceFileId ＝ 我們的 item id。
                     source_file_id: c.item_id.to_string(),
-                    file_name: c.file_name.clone(),
+                    file_name: upload_file_name,
                     bytes,
                     content_type: row.mime_type,
                     password: c.password.clone().filter(|p| !p.is_empty()),
@@ -317,6 +335,38 @@ async fn send_chunk(ctx: &Ctx, tpr: &TprClient, batch_id: i64, chunk: &[Candidat
     Ok(Some(job_id))
 }
 
+/// Recognition sees a temporary page-only PDF; persisted evidence refers to the original attachment.
+fn restore_source_page_numbers(raw:&Value,data:&Value)->Value {
+    fn visit(value:&mut Value,pages:&[Value]) {
+        match value {
+            Value::Object(map)=>{
+                if let Some(index)=map.get("pageNumber").and_then(Value::as_u64).and_then(|n|n.checked_sub(1)) {
+                    if let Some(original)=pages.get(index as usize) {map.insert("pageNumber".into(),original.clone());}
+                }
+                for value in map.values_mut() {visit(value,pages);}
+            }
+            Value::Array(values)=>for value in values {visit(value,pages);},
+            _=>{}
+        }
+    }
+    let mut out=raw.clone();
+    if let Some(pages)=data["sourcePageNumbers"].as_array() {visit(&mut out,pages);}
+    out
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+    #[test]
+    fn page_only_ocr_restores_original_page_in_text_and_field_evidence() {
+        let raw=json!({"record":{"sourcePages":[{"pageNumber":1,"text":"bill"}],"fields":{"total":{"evidence":{"pageNumber":1}}}}});
+        let result=restore_source_page_numbers(&raw,&json!({"sourcePageNumbers":[4]}));
+        assert_eq!(result["record"]["sourcePages"][0]["pageNumber"],4);
+        assert_eq!(result["record"]["fields"]["total"]["evidence"]["pageNumber"],4);
+        assert_eq!(restore_source_page_numbers(&raw,&json!({})),raw);
+    }
+}
+
 /// 取結果 → 逐份寫回 → 刪掉服務那一側的副本。
 async fn consume(ctx: &Ctx, tpr: &TprClient, batch_id: i64, job_id: &str, elapsed_ms: i64) -> ApiResult<()> {
     let result = match tpr.get_result_raw(job_id).await {
@@ -345,7 +395,10 @@ async fn consume(ctx: &Ctx, tpr: &TprClient, batch_id: i64, job_id: &str, elapse
                 let t = s.record.template_id.clone().unwrap_or_else(|| "unknown".into());
                 *by_template.entry(t).or_insert(0) += 1;
                 blocking += s.issues.iter().filter(|i| i.blocking).count();
-                service::apply_recognition_to_item(&mut tx, ctx, item_id, raw).await.map(|_| ())
+                let data:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_ingest_item WHERE id=$1 AND organization_id=$2")
+                    .bind(item_id).bind(ctx.org_id()).fetch_one(&mut *tx).await?;
+                let mapped=restore_source_page_numbers(raw,&data);
+                service::apply_recognition_to_item(&mut tx, ctx, item_id, &mapped).await.map(|_| ())
             }
             None => {
                 failed += 1;
