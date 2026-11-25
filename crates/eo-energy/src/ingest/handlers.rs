@@ -244,7 +244,20 @@ pub async fn save_easyflow_application(core: Core,user: CurrentUser,meta: Reques
     if body["sourceRevision"]!=current["sourceRevision"]{return Err(err(409,"application_source_changed"));}
     if body["draftRevision"]!=current["draftRevision"]{return Err(err(409,"application_draft_changed"));}
     let before=bill.data["easyflowApplication"].clone();
-    let mut merged=before["values"].as_object().cloned().unwrap_or_default();
+    // confirm：把「當下畫面上」的 10 個可編輯欄位（含案場預設值、申請日期這類自動帶入的）全部凍結進 saved.values，
+    // 不然確認過的日期隔天重開又會被 fill_date_defaults 重算成新的一天（卡 20261126-0214）。
+    // save：只累積使用者明確存過的值，不連帶凍結預設值。
+    let mut merged = if action=="confirm" {
+        let mut m = serde_json::Map::new();
+        for key in allowed {
+            if let Some(f)=current["fields"].as_array().and_then(|fs|fs.iter().find(|f|f["key"]==*key)) {
+                if let Some(v)=f["value"].as_str() { m.insert((*key).to_string(), json!(v)); }
+            }
+        }
+        m
+    } else {
+        before["values"].as_object().cloned().unwrap_or_default()
+    };
     merged.extend(values.clone());
     if action=="confirm" {
         let mut proposed=current.clone();
