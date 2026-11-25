@@ -251,7 +251,9 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
     let base=if issues.is_empty() {base.map(|v|v.to_string())}else{None};
     Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
         "plan":p,"receipts":rows,"sources":sources,"issues":issues,"baseRent":base,"lines":lines,
-        "referenceRent":reference_rent.map(|v|v.to_string()),"ratioPercent":ratio_percent.map(|v|v.normalize().to_string()),
+        "referenceRent":reference_rent.map(|v|v.to_string()),
+        // 比值只取 2 位小數給畫面顯示；級距判斷(tier_percent)用的是取位前的原始比值，避免邊界值判錯。
+        "ratioPercent":ratio_percent.map(|v|format!("{:.2}",v.round_dp_with_strategy(2,RoundingStrategy::MidpointAwayFromZero))),
         "tierPercent":tier_percent_out.map(|v|v.to_string()),
         "monthlyBreakdown":monthly,"feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"calculating",
         "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,
