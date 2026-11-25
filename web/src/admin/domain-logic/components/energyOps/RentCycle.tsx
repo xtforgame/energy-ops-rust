@@ -14,19 +14,39 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
   const [plan,setPlan]=React.useState<Plan>({stationId,anchor:'',months:3,transfer:false,kind:'revenueShare',basis:'untaxed',sharePercent:null,area:null,unitPrice:null,unitPeriod:'month',roundingPlaces:2});
   const [transferChoice,setTransferChoice]=React.useState('');
   const [start,setStart]=React.useState(''),[rows,setRows]=React.useState<Row[]>([]),[result,setResult]=React.useState<any>(null),[dirty,setDirty]=React.useState(true);
+  // 合約改綁到別的案場時，試算原本設在哪個案場；null＝沒有衝突。確認過才能覆蓋存檔。
+  const [rebindFrom,setRebindFrom]=React.useState<{id:number;name:string}|null>(null);
+  const [confirmRebind,setConfirmRebind]=React.useState(false);
   const endpoint=`${base}/contracts/${contractId}/rent-cycle`;
   const change=(key:keyof Plan,value:any)=>{setPlan(p=>({...p,[key]:value}));setDirty(true);setResult(null);};
+  const nameOfStation=async(id:number)=>{
+    try {const list=(await energyHttp.get(`${base}/station-list`)).data;
+      return (Array.isArray(list)?list:[]).find((s:any)=>s.id===id)?.name ?? `#${id}`;
+    }catch{return `#${id}`;}
+  };
   const load=async()=>{
-    setOpen(true);setBusy(true);setError('');setResult(null);setRows([]);setDirty(true);
+    setOpen(true);setBusy(true);setError('');setResult(null);setRows([]);setDirty(true);setRebindFrom(null);setConfirmRebind(false);
     try {const p=(await energyHttp.get(endpoint)).data.plan;
-      if(p && p.stationId!==stationId) {setError('此合約已為另一案場設定試算。請先拆分或確認跨案場合約規則，不可覆蓋。');return;}
+      if(p && p.stationId!==stationId) {setRebindFrom({id:p.stationId,name:await nameOfStation(p.stationId)});return;}
       if(p){setPlan(p);setTransferChoice(String(p.transfer));setStart(p.anchor);setDirty(false);}
     }catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const loadBills=async()=>{
     setBusy(true);setError('');setResult(null);setRows([]);
     try {
-      if(dirty) {await energyHttp.post(endpoint,plan);setDirty(false);}
+      if(dirty) {
+        const url=confirmRebind?`${endpoint}?confirmStationChange=true`:endpoint;
+        try {await energyHttp.post(url,plan);}
+        catch(e:any){
+          const code=e?.response?.data?.code || e?.response?.data?.error?.code;
+          const from=e?.response?.data?.details?.fromStationId ?? e?.response?.data?.error?.details?.fromStationId;
+          if(code==='rent_multisite_contract_requires_confirmation' && from!=null) {setRebindFrom({id:from,name:await nameOfStation(from)});return;}
+          throw e;
+        }
+        setDirty(false);
+        // 存檔成功＝衝突已經解決（已經改用本案場的試算）：警告與確認鈕收起來，不要留著誤導。
+        setRebindFrom(null);setConfirmRebind(false);
+      }
       const v=(await energyHttp.get(`${endpoint}/bills?start=${encodeURIComponent(start)}`)).data;
       setRows(v.items.map((b:any)=>({billId:b.billId,start:b.start,end:b.end,documentNo:b.documentNo,attachmentId:b.attachmentId,
         source:['renewableSurplus','renewableNoSurplus'].includes(b.docType)?'taipower':b.docType==='retailerSale'?'transfer':'',
@@ -53,6 +73,15 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
           <Alert severity="info">依合約付款週期彙整。這裡收取地主發票；與電費售電開票分開。設定僅供試算，不啟用既有逐單租金流程，也不產生付款。</Alert>
           <Alert severity="warning">稅費、扣繳與補充保費待實際範例確認，目前只算租金基底。面積與單價必須使用相同單位。轉供案場須收齊台電與轉供單據，零元也須有單據。</Alert>
           {error&&<Alert severity="error">{error}</Alert>}
+          {rebindFrom&&(
+            <Alert severity="warning" action={
+              <Button color="inherit" size="small" data-testid="rent-cycle-confirm-rebind" onClick={()=>{setConfirmRebind(true);setDirty(true);}}>
+                確認改用本案場試算
+              </Button>
+            }>
+              這份合約的試算原本設在 {rebindFrom.name}。確認後會改用本案場試算，覆蓋原本的設定。
+            </Alert>
+          )}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <TextField select label="費用性質" value={plan.feeKind??'rent'} onChange={e=>change('feeKind',e.target.value)}><MenuItem value="rent">租金</MenuItem><MenuItem value="management">管理費</MenuItem></TextField>
             <TextField label="第一期起日（每月一日）" type="date" InputLabelProps={{shrink:true}} value={plan.anchor} onChange={e=>{change('anchor',e.target.value);setStart(e.target.value);}}/>
@@ -74,7 +103,7 @@ export default function RentCycle({base,contractId,stationId}:{base:string;contr
           {plan.monthlyMinimum!=null&&<Alert severity="warning">每月保底需明確月別收入及正式併聯日期；先逐月取「收入 × 比例」與保底的較大值，再合計並依設定進位。整期併聯前不計費；首期不足月、跨月收入拆分及正式進位方式待確認，不自動推算。</Alert>}
           <Stack direction="row" spacing={2}>
             <TextField label="本次計算起日" type="date" InputLabelProps={{shrink:true}} value={start} onChange={e=>{setStart(e.target.value);setRows([]);setResult(null);}}/>
-            <Button disabled={busy||!transferChoice||!start||!plan.anchor||Boolean(error.includes('另一案場'))} onClick={loadBills}>儲存試算設定並載入單據</Button>
+            <Button disabled={busy||!transferChoice||!start||!plan.anchor||(rebindFrom!=null&&!confirmRebind)} onClick={loadBills}>儲存試算設定並載入單據</Button>
           </Stack>
           <Typography variant="body2">請勾選本期收入單據並確認來源。收入使用購電電費／電費合計，不使用扣除電表租費後的淨額。缺值保持空白；可在此補入已確認數字，原始 OCR 不會被覆寫。跨期、重疊或多電號情況需先釐清，不自動分攤。</Typography>
           <Table size="small"><TableHead><TableRow>{['選用','單據／原檔','帳期','來源','未稅收入','含稅收入','度數'].map(x=><TableCell key={x}>{x}</TableCell>)}</TableRow></TableHead>

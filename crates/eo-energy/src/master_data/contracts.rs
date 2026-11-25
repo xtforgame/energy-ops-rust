@@ -142,13 +142,10 @@ pub async fn sync_contract_landowners(tx: &mut Tx<'_>, ctx: &Ctx, contract_id: i
     Ok(())
 }
 
-/// `landownerIds`（新）優先；沒帶就退回相容舊的單一 `landownerId`。至少要有一位，空清單回 400。
+/// `landownerIds`（新）優先；沒帶就退回相容舊的單一 `landownerId`。可以先不帶，之後再補（資源順序：合約→案場→地主）。
 fn landowner_ids_of(b: &Value) -> ApiResult<Vec<i64>> {
     let arr = vi64_array(b, "landownerIds");
     let ids = if !arr.is_empty() { uniq(arr.into_iter()) } else { vi64(b, "landownerId").into_iter().collect() };
-    if ids.is_empty() {
-        return Err(err(400, "landowner_id_required"));
-    }
     Ok(ids)
 }
 
@@ -224,7 +221,7 @@ pub async fn create_contract(tx: &mut Tx<'_>, ctx: &Ctx, b: &Value) -> ApiResult
     for &lid in &landowner_ids {
         landowner_in_org(tx, org, lid).await?;
     }
-    let primary_landowner_id = landowner_ids[0];
+    let primary_landowner_id = landowner_ids.first().copied();
 
     let sign_method = vstr(b, "signMethod");
     let stage = vstr(b, "stage").unwrap_or_else(|| "operating".into());
@@ -305,7 +302,7 @@ pub async fn update_contract(tx: &mut Tx<'_>, ctx: &Ctx, id: i64, b: &Value) -> 
     for &lid in &landowner_ids {
         landowner_in_org(tx, org, lid).await?;
     }
-    let primary_landowner_id = landowner_ids[0];
+    let primary_landowner_id = landowner_ids.first().copied();
 
     let sign_method = vstr(b, "signMethod");
     let stage = vstr(b, "stage").unwrap_or_else(|| existing.stage.clone());

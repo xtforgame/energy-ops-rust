@@ -963,3 +963,46 @@ async fn contract_codes_workflow_bind() {
     let overview2 = expect_status!(app.get(&owner, &format!("{base}/stations/{station}/overview")).await, 200);
     assert_eq!(overview2["customerNumber"], "77-0001", "主電號已有值不覆蓋：{overview2}");
 }
+
+/// 卡 20261126-0210 S1：資源順序「合約→案場→地主」，地主可以後補。
+/// 不帶 `landownerIds` 建合約回 200、`landowners: []`；之後 PATCH 補地主，清單出現該地主。
+#[actix_web::test]
+async fn contract_first_landowner_later() {
+    let app = TestApp::new().await;
+    let (owner, org) = app.energy_org("cfl-org").await;
+    let base = app.e(org, "");
+    let station = expect_status!(app.post(&owner, &format!("{base}/stations"), json!({ "name": "先建案場" })).await, 200);
+    let station_id = station["id"].as_i64().unwrap();
+
+    // 不帶 landownerIds／landownerId：200，landowners 是空清單。
+    let created = expect_status!(
+        app.post(
+            &owner,
+            &format!("{base}/contracts"),
+            json!({ "contractNo": "CT-CFL-001", "stationIds": [station_id], "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    let contract_id = created["id"].as_i64().unwrap();
+    assert_eq!(created["landowners"], json!([]), "{created}");
+    assert_eq!(created["landownerId"], Value::Null, "{created}");
+
+    let listed = expect_status!(app.get(&owner, &format!("{base}/contracts/{contract_id}")).await, 200);
+    assert_eq!(listed["landowners"], json!([]), "{listed}");
+
+    // 之後編輯補上地主：清單顯示該地主。
+    let lo = app.landowner(org, "後補地主").await;
+    let updated = expect_status!(
+        app.patch(
+            &owner,
+            &format!("{base}/contracts/{contract_id}"),
+            json!({ "contractNo": "CT-CFL-001", "landownerIds": [lo], "stationIds": [station_id], "validFrom": "2026-01-01" }),
+        )
+        .await,
+        200
+    );
+    let landowners = updated["landowners"].as_array().unwrap();
+    assert_eq!(landowners.len(), 1, "{updated}");
+    assert_eq!(landowners[0]["id"], lo, "{updated}");
+}

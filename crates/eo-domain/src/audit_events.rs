@@ -148,7 +148,8 @@ const DEPARTMENT_MEMBER: &[Field] = &[
 /// 合約新增／編輯同一形狀（卡 20261118-0810-a2）。
 const CONTRACT: &[Field] = &[
     req("contractNo", STR),
-    req("landownerId", INT),
+    // 卡 20261126-0210 S1：合約可以先建、之後再補地主，稽核這裡跟著允許 landownerId 是 null。
+    opt("landownerId", INT),
     opt("landownerName", STR),
     opt("changes", CHANGES),
 ];

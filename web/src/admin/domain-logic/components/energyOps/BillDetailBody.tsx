@@ -1198,7 +1198,7 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                 <Button
                   size="small"
                   variant="outlined"
-                  disabled={!bill?.canEditSubject || !bill?.stationId || bill?.reviewStatus === 'reviewed'}
+                  disabled={(!bill?.canEditSubject && !(bill?.mode === 'readonly' && bill?.modeReason?.code === 'finished')) || !bill?.stationId || bill?.reviewStatus === 'reviewed'}
                   onClick={markReviewed}
                   data-testid="review-mark"
                 >

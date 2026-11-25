@@ -36,8 +36,12 @@ pub async fn get(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResul
     let data:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_contract WHERE id=$1").bind(id).fetch_one(&mut *tx).await?;
     Ok(HttpResponse::Ok().json(json!({"plan":data["rentCycleDraft"],"state":"draft","paymentAllowed":false})))
 }
-pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i64,i64)>,body:web::Json<Plan>)->ApiResult<HttpResponse> {
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+pub struct SaveQuery {confirm_station_change:Option<bool>}
+pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i64,i64)>,q:web::Query<SaveQuery>,body:web::Json<Plan>)->ApiResult<HttpResponse> {
     let (org,id)=path.into_inner();let access=core.rbac.authorize_org(&user,org,gates::MASTER_MANAGE).await?;
+    let confirm=q.confirm_station_change.unwrap_or(false);
     let ctx=Ctx::new(&core,access,&meta);let mut tx=core.pool.begin().await?;
     let c=contract_in_org(&mut tx,org,id).await?;
     rent_cycle::validate(&body).map_err(invalid)?;
@@ -54,8 +58,11 @@ pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i6
     check_station(&mut tx,org,id,body.station_id).await?;
     check_dates(&c,&body,&body.anchor)?;
     let before:Value=sqlx::query_scalar("SELECT data FROM tbl_energy_contract WHERE id=$1 FOR UPDATE").bind(id).fetch_one(&mut *tx).await?;
-    if before["rentCycleDraft"]["stationId"].as_i64().is_some_and(|s|s!=body.station_id) {
-        return Err(err(422,"rent_multisite_contract_requires_confirmation"));
+    if let Some(from_station_id)=before["rentCycleDraft"]["stationId"].as_i64() {
+        if from_station_id!=body.station_id && !confirm {
+            return Err(err_d(422,"rent_multisite_contract_requires_confirmation",
+                json!({"fromStationId":from_station_id,"toStationId":body.station_id})));
+        }
     }
     let plan=serde_json::to_value(body.into_inner()).map_err(|_|err(400,"invalid_rent_plan"))?;
     sqlx::query("UPDATE tbl_energy_contract SET data=jsonb_set(data,'{rentCycleDraft}',$1,true),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3")
