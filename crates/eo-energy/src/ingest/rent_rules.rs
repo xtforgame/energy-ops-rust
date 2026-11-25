@@ -7,7 +7,8 @@ type Core=web::Data<CoreRef>;
 pub async fn list(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse>{
  let(org,sid)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
  let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tbl_energy_station WHERE id=$1 AND organization_id=$2 AND deleted_at IS NULL)").bind(sid).bind(org).fetch_one(&core.pool).await?;if !exists{return Err(err(404,"station_not_found"))}
- let items=load(&core,org,sid).await?;
+ let mut items=load(&core,org,sid).await?;
+ for row in &mut items {row["assessment"]=eo_domain::rent_rules::assess(&row["rule"],&json!({}));}
  let can_manage=core.rbac.authorize_org(&user,org,gates::MASTER_MANAGE).await.is_ok();
  Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(json!({"items":items,"canManage":can_manage})))
 }
@@ -51,12 +52,21 @@ pub async fn append(core:&CoreRef,org:i64,sid:i64,station:&Value,items:&mut Vec<
  for bill in &bills{if let Some(day)=bill.billing_period_start{if let Ok((a,b))=eo_domain::rent_rules::cycle(rule,&day.to_string()){
  if rule["validFrom"].as_str().is_some_and(|x|b.to_string().as_str()<x)||rule["validTo"].as_str().is_some_and(|x|a.to_string().as_str()>x){continue}
  if filter.is_some_and(|(x,y)|a>y||b<x){continue}cycles.insert((a,b));}}}
- if cycles.is_empty(){let mut item=eo_domain::rent_rules::pending(if rule["status"]=="confirmed"{"尚無此規則適用期間的電費單"}else{"租金規則待確認"});decorate(&mut item,row,sid,station);items.push(item);continue}
+ if cycles.is_empty(){let mut item=eo_domain::rent_rules::assess(rule,&json!({}));item["inputMode"]=json!("autoBills");item["inputMethod"]=json!("autoBills");item["sourceBlockers"]=if ["fixed","areaRate"].contains(&rule["calculationType"].as_str().unwrap_or("")){json!([])}else{json!(["尚無可組成完整週期的來源或週期錨點待確認"])};item["sourceContributions"]=eo_domain::rent_rules::source_contributions(rule,&sources.iter().filter(|s|filter.is_none_or(|(a,b)|s["start"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&s["end"].as_str().is_some_and(|x|x>=a.to_string().as_str()))).cloned().collect::<Vec<_>>());decorate(&mut item,row,sid,station);items.push(item);continue}
  for(a,b)in cycles{
  let manual=station["data"]["rentPaymentDrafts"].as_array().is_some_and(|drafts|drafts.iter().any(|d|d["periodStart"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&d["periodEnd"].as_str().is_some_and(|x|x>=a.to_string().as_str())));
  let overlap=rules.iter().any(|other|other["id"]!=row["id"]&&other["rule"]["status"]=="confirmed"&&other["rule"]["validFrom"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&other["rule"]["validTo"].as_str().is_none_or(|x|x>=a.to_string().as_str()));
  let mut item=if manual{eo_domain::rent_rules::pending("此期間已有人工歷史草稿，未合併自動來源")}else if overlap{eo_domain::rent_rules::pending("同期間規則衝突") }else{eo_domain::rent_rules::preview(rule,&a.to_string(),&sources)};
- item["periodStart"]=json!(a.to_string());item["periodEnd"]=json!(b.to_string());decorate(&mut item,row,sid,station);items.push(item);
+ item["sourceContributions"]=eo_domain::rent_rules::source_contributions(rule,&sources.iter().filter(|s|s["start"].as_str().is_some_and(|x|x<=b.to_string().as_str())&&s["end"].as_str().is_some_and(|x|x>=a.to_string().as_str())).cloned().collect::<Vec<_>>());item["periodStart"]=json!(a.to_string());item["periodEnd"]=json!(b.to_string());decorate(&mut item,row,sid,station);items.push(item);
  }}Ok(())
 }
-fn decorate(item:&mut Value,row:&Value,sid:i64,station:&Value){item["ruleId"]=row["id"].clone();item["ruleVersion"]=row["version"].clone();item["stationId"]=json!(sid);item["stationName"]=station["name"].clone();item["evidenceStatus"]=row["rule"]["leaseEvidence"]["status"].clone();item["leaseEvidence"]=row["rule"]["leaseEvidence"].clone();}
+fn decorate(item:&mut Value,row:&Value,sid:i64,station:&Value){item["assessment"]=eo_domain::rent_rules::assess(&row["rule"],&json!({}));item["status"]=row["rule"]["status"].clone();item["ruleId"]=row["id"].clone();item["ruleVersion"]=row["version"].clone();item["stationId"]=json!(sid);item["stationName"]=station["name"].clone();item["evidenceStatus"]=row["rule"]["leaseEvidence"]["status"].clone();item["leaseEvidence"]=row["rule"]["leaseEvidence"].clone();}
+
+/// Stateless trial: does not create a bill, worksheet or payment instruction.
+pub async fn trial(core:Core,user:CurrentUser,path:web::Path<(i64,i64,i64)>,body:web::Json<Value>)->ApiResult<HttpResponse>{
+ let(org,sid,rid)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
+ let rule:Option<Value>=sqlx::query_scalar("SELECT r.rule FROM tbl_energy_station_rent_rule r JOIN tbl_energy_station s ON s.id=r.station_id AND s.organization_id=r.organization_id WHERE r.id=$1 AND r.station_id=$2 AND r.organization_id=$3 AND s.deleted_at IS NULL").bind(rid).bind(sid).bind(org).fetch_optional(&core.pool).await?;
+ let rule=rule.ok_or_else(||err(404,"rent_rule_not_found"))?;
+ let mut result=eo_domain::rent_rules::assess(&rule,&body.into_inner());result["ruleId"]=json!(rid);result["stationId"]=json!(sid);
+ Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(result))
+}

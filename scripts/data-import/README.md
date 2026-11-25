@@ -1,5 +1,18 @@
 # 既有平台資料匯入（不重建資料庫）
 
+## 已匯入規則補齊來源條件
+
+`refresh-rent-rules.mjs` 用於補齊已存在規則，不另建重複紀錄。資料包每筆包含 `expectedVersion` 與完整新 `rule`；以唯一電號及來源 sourceKey 找既有規則，先核對全部版本與來源雜湊，才可套用。
+
+```powershell
+# 先產出含 before/after 的私有更新清單，不寫入
+node refresh-rent-rules.mjs --base http://127.0.0.1:11951 --org 1 --package rules.json --env-file 平台私有.env --out planned.json
+# 確認清單後執行；既有版本若已變更則拒絕覆寫
+node refresh-rent-rules.mjs --base http://127.0.0.1:11951 --org 1 --package rules.json --env-file 平台私有.env --out applied.json --apply
+```
+
+公式可試算與確認紀錄分開。原表已載的比例／年租金可供試算；未提供進位方式時顯示未取整值，未知稅務不偽填 0%。共同地主保留群組及來源分配，不自動平均分攤。
+
 ## 2026-11-25：可重用租金規則
 
 新增 migration `0111_station_rent_rules.sql`。案場電號仍沿用既有主檔；租金規則保存於 `tbl_energy_station_rent_rule`，修改版本留存於 revision 表。完整租約是否已附，與規則是否可用分開記錄。

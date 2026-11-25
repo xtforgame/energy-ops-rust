@@ -49,6 +49,7 @@ impl AppPlugin for IngestPlugin {
         cfg.get(&path("/stations/{stationId}/rent-payment"), web::get().to(rent_payment::get_station));
         cfg.get(&path("/stations/{stationId}/rent-rules"), web::get().to(rent_rules::list));
         cfg.post(&path("/stations/{stationId}/rent-rules"), web::post().to(rent_rules::save));
+        cfg.post(&path("/stations/{stationId}/rent-rules/{ruleId}/preview"), web::post().to(rent_rules::trial));
         cfg.post(&path("/stations/{stationId}/rent-payment/voucher"), web::post().to(rent_payment::save_voucher));
         cfg.get(&path("/bills"), web::get().to(h::list_bills));
         // 要排在 /bills/{billId} 之前，否則 'unmatched' 會被當成 id。

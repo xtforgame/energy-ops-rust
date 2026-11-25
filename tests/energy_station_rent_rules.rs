@@ -39,3 +39,19 @@ async fn reusable_rules_are_scoped_versioned_and_lease_independent() {
  let(_,other)=app.energy_org("other-rules").await;
  expect_status!(app.get(&admin,&app.e(other,&format!("/stations/{sid}/rent-rules"))).await,403);
 }
+
+#[actix_web::test]
+async fn provisional_trial_is_scoped_and_does_not_write_bills() {
+ let app=TestApp::new().await;let(admin,org)=app.energy_org("provisional-trial").await;
+ let lo=app.landowner(org,"Synthetic owner").await;let sid=app.station(org,lo,"TRIAL-TEST","Synthetic station").await;
+ let path=app.e(org,&format!("/stations/{sid}/rent-rules"));
+ let rule=json!({"status":"pending","calculationType":"percentage","basis":"untaxed","percent":"11.5","leaseEvidence":{"status":"missing","attachmentIds":[]}});
+ let saved=expect_status!(app.post(&admin,&path,rule).await,200);let id=saved["id"].as_i64().unwrap();
+ let preview=app.e(org,&format!("/stations/{sid}/rent-rules/{id}/preview"));
+ let trial=expect_status!(app.post(&admin,&preview,json!({"incomeAmount":"16874"})).await,200);
+ assert_eq!(trial["baseRentRaw"],"1940.51");assert_eq!(trial["inputMode"],"manualTrial");assert_eq!(trial["status"],"pending");assert_eq!(trial["paymentAllowed"],false);assert!(trial["grossRent"].is_null());
+ let read=expect_status!(app.get(&admin,&path).await,200);assert!(read["items"][0]["assessment"]["formulaSummary"].as_str().unwrap().contains("11.5"));
+ let count:i64=sqlx::query_scalar("SELECT count(*) FROM tbl_energy_bill WHERE station_id=$1").bind(sid).fetch_one(&app.core.pool).await.unwrap();assert_eq!(count,0);
+ let wrong=app.e(org,&format!("/stations/{}/rent-rules/{id}/preview",sid+100000));expect_status!(app.post(&admin,&wrong,json!({})).await,404);
+ let outsider=app.member(org,"trial-no-role",None).await;expect_status!(app.post(&outsider,&preview,json!({})).await,403);
+}
