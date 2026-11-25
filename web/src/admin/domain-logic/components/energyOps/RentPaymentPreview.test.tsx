@@ -25,3 +25,9 @@ it('shows automatic rule provenance and never saves its invoice choice through t
  await screen.findByText(/規則 #7 · 第 3 版/);expect(screen.getByText('單筆帳單比例租金貢獻（未進位）：674.96 元')).toBeTruthy();expect(screen.getByText('此筆貢獻不是完整付款週期')).toBeTruthy();expect(screen.getAllByText('缺少轉供單')).toHaveLength(1);expect(screen.getByText('待確認帳期')).toBeTruthy();expect(screen.getByRole('link',{name:'來源電費單 #42'}).getAttribute('href')).toBe('/energyBillConsole/42/show');expect(screen.getByRole('link',{name:'租約附件 #12'}).getAttribute('href')).toBe('/api/test/attachments/12/download');expect(screen.getByText('已有租金頁摘錄（完整合約待補）')).toBeTruthy();
  fireEvent.mouseDown(screen.getByRole('combobox'));fireEvent.click(await screen.findByRole('option',{name:'發票後補'}));await screen.findByText('發票待後補（尚未收到）');expect(energyHttp.post).not.toHaveBeenCalled();
 });
+
+it('renders the known shared amount without treating it as this station payable',async()=>{
+ vi.mocked(energyHttp.get).mockResolvedValue({data:{items:[{stationId:70,stationName:'埔心一',groupReferenceRent:'213549',sharedGroupLabel:'埔心兩案共用',sharedGroupMembers:['埔心一','埔心二'],baseRent:null,tax:null,grossRent:null,issues:[],notes:[],lines:[],note:'整組租金參考',inputMethod:'autoBills'}]}} as any);
+ render(<MemoryRouter><RentPaymentPreview base="/api/test" stationId={70}/></MemoryRouter>);fireEvent.click(screen.getByText('預覽地主租金付款'));
+ expect(await screen.findByText('共用租金（整組，只計一次）')).toBeTruthy();expect(screen.getByText('213549')).toBeTruthy();expect(screen.getByText('尚未提供個別分攤；整組金額只計一次，不列為本案場應付')).toBeTruthy();expect(screen.getByText('埔心一、埔心二')).toBeTruthy();
+});

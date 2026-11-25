@@ -1,10 +1,11 @@
 import * as React from 'react';
+import {rentReferenceFields,type RentReferenceData} from './rentPreviewFields';
 import {Accordion, AccordionSummary, AccordionDetails, Alert, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Table, TableBody, TableCell, TableRow, TextField, Typography} from '@mui/material';
 import {energyHttp} from '@/api/energy';
 import {apiErrorPayload} from '../../../dataProvider/apiError';
 
-type Assessment = {referenceRent?:string|null;formulaSummary?:string;readiness?:string;missingInputs?:string[];warnings?:string[];baseRentRaw?:string|null;baseRent?:string|null;taxRaw?:string|null;grossRentRaw?:string|null;tax?:string|null;grossRent?:string|null};
-type Rule = {taxMode?:string|null;fixedAmount?:string|null;fixedUnit?:string|null;area?:string|null;areaUnit?:string|null;rateUnit?:string|null;rateAreaUnit?:string|null;minimumBasis?:string|null;unitRate?:string|null;ratePeriod?:string|null;minimumRent?:string|null;minimumUnit?:string|null;annualRent?:string|null;tolerancePercent?:string|null;partyGroup?:{label:string;count:number|null;members:{name:string;share?:string|null}[];allocationStatus:string};calculationType?:string;sourceValues?:Record<string,unknown>;sourceRow?:number;sourceProjectCode?:string;notes?:string[];payee?:string|null;basis?:string|null;percent?:string|null;taxPercent?:string|null;rounding?:string|null;transfer?:boolean|null;cycleMonths?:number|null;cycleAnchor?:string|null;validFrom?:string|null;validTo:string|null;status:string;ruleSource:string;leaseEvidence:{status:string;attachmentIds:number[]}};
+type Assessment = RentReferenceData & {referenceRent?:string|null;formulaSummary?:string;readiness?:string;missingInputs?:string[];warnings?:string[];baseRentRaw?:string|null;baseRent?:string|null;taxRaw?:string|null;grossRentRaw?:string|null;tax?:string|null;grossRent?:string|null};
+type Rule = RentReferenceData & {sourceOwnerEvidence?:{name:string|null;amount?:string|number|null;paymentSchedule?:string|null;sourceSheet?:string;sourceRow?:number;noRent?:boolean}[];taxMode?:string|null;fixedAmount?:string|null;fixedUnit?:string|null;area?:string|null;areaUnit?:string|null;rateUnit?:string|null;rateAreaUnit?:string|null;minimumBasis?:string|null;unitRate?:string|null;ratePeriod?:string|null;minimumRent?:string|null;minimumUnit?:string|null;annualRent?:string|null;tolerancePercent?:string|null;partyGroup?:{label:string;count:number|null;members:{name:string;share?:string|null}[];allocationStatus:string};calculationType?:string;sourceValues?:Record<string,unknown>;sourceRow?:number;sourceProjectCode?:string;notes?:string[];payee?:string|null;basis?:string|null;percent?:string|null;taxPercent?:string|null;rounding?:string|null;transfer?:boolean|null;cycleMonths?:number|null;cycleAnchor?:string|null;validFrom?:string|null;validTo:string|null;status:string;ruleSource:string;leaseEvidence:{status:string;attachmentIds:number[]}};
 type Entry = {id:number;version:number;rule:Rule;assessment?:Assessment};
 const evidenceLabels:Record<string,string> = {missing:'合約尚缺',excerpt:'已有租金頁摘錄',complete:'完整合約已備'};
 const sourceTerms:Record<string,string> = {AS:'面積',AT:'申報地價',AU:'年租率',AV:'稅額',AW:'固定金額',AY:'收入含稅',AZ:'稅額處理',BA:'比例',BB:'金額',BC:'週期',BD:'付款時點'};
@@ -25,7 +26,7 @@ export default function StationRentRules({base,stationId}:{base:string;stationId
   React.useEffect(()=>{void load();},[load]);
   const edit=(entry:Entry|null)=>{setEditing(entry);setForm(entry?{...entry.rule,leaseEvidence:{...entry.rule.leaseEvidence}}:emptyRule());setAttachments(entry?.rule.leaseEvidence.attachmentIds.join('、')??'');setError('');setOpen(true);};
   const change=(key:keyof Rule,value:unknown)=>setForm(f=>({...f,[key]:value}));
-  const unsupported=!!form.calculationType&&!['percentage','fixed','areaRate','percentageFloor','annualReference'].includes(form.calculationType);
+  const unsupported=!!form.calculationType&&!['percentage','fixed','areaRate','percentageFloor','annualReference','notApplicable'].includes(form.calculationType);
   const confirmationUnsupported=!!form.calculationType&&form.calculationType!=='percentage';
   const isPercentage=!form.calculationType||['percentage','percentageFloor','annualReference'].includes(form.calculationType);
   const save=async()=>{
@@ -47,11 +48,13 @@ export default function StationRentRules({base,stationId}:{base:string;stationId
     {items.map(entry=><Card key={entry.id} variant="outlined" sx={{mt:2}}><CardContent><Stack direction="row" spacing={1} alignItems="center"><Typography fontWeight={600}>{entry.rule.payee}｜規則 #{entry.id} · 第 {entry.version} 版</Typography><Chip size="small" label={entry.rule.status==='confirmed'?'規則已確認':'來源條件已整理'}/><Chip size="small" variant="outlined" label={evidenceLabels[entry.rule.leaseEvidence.status]??'租約待確認'}/></Stack>
       <Typography sx={{mt:1}}>計算方式：{formulaText(entry.assessment?.formulaSummary||fallbackFormula(entry.rule))}</Typography>
       {entry.rule.partyGroup&&<Alert severity="info" sx={{my:1}}>收款群組：{entry.rule.partyGroup.label}（{entry.rule.partyGroup.count??'人數待確認'} 人）；成員：{entry.rule.partyGroup.members?.length?entry.rule.partyGroup.members.map(m=>`${m.name}${m.share?`（份額 ${m.share}）`:''}`).join('、'):'姓名待補'}。分配方式：{entry.rule.partyGroup.allocationStatus==='confirmed'?'已確認':'待確認，不推定均分'}。</Alert>}
+      {!!entry.rule.sourceOwnerEvidence?.length&&<Typography variant="body2">土地所有權人來源：{entry.rule.sourceOwnerEvidence.map(o=>`${o.name??'姓名未提供'}${o.noRent?'（無付租金）':''}`).join('、')}</Typography>}
+      {rentReferenceFields({...entry.rule,...entry.assessment}).map(([label,value])=><Typography key={label} fontWeight={600}>{label}：{value}</Typography>)}
       <Typography variant="body2">已知條件：{knownConditions(entry.rule)}</Typography>
       {!!entry.assessment?.missingInputs?.length&&<Typography variant="body2" color="text.secondary">仍待補：{entry.assessment.missingInputs.map(conditionText).join('；')}</Typography>}
-      <RuleTrial key={`${entry.id}-${entry.version}`} entry={entry} endpoint={endpoint}/>
-      <Typography>每 {entry.rule.cycleMonths??'待確認'} 個月一期，起算日 {entry.rule.cycleAnchor??'來源未載'}{['fixed','areaRate'].includes(entry.rule.calculationType??'')?'':`；${entry.rule.transfer==null?'帳單來源範圍未載':entry.rule.transfer?'彙整台電與轉供單':'彙整台電單'}`}。</Typography><Typography>效期：{entry.rule.validFrom??'來源未載'} ～ {entry.rule.validTo||'未設迄日'}</Typography><Typography>規則來源：{entry.rule.ruleSource||'待補'}</Typography>
-      {entry.rule.status!=='confirmed'&&<Typography variant="caption" color="text.secondary">正式確認尚未完成；已知公式仍可手動試算。</Typography>}
+      {entry.rule.rentRequired!==false&&<RuleTrial key={`${entry.id}-${entry.version}`} entry={entry} endpoint={endpoint}/>}
+      {entry.rule.rentRequired!==false&&<Typography>每 {entry.rule.cycleMonths??'待確認'} 個月一期，起算日 {entry.rule.cycleAnchor??'來源未載'}{['fixed','areaRate'].includes(entry.rule.calculationType??'')?'':`；${entry.rule.transfer==null?'帳單來源範圍未載':entry.rule.transfer?'彙整台電與轉供單':'彙整台電單'}`}。</Typography>}<Typography>效期：{entry.rule.validFrom??'來源未載'} ～ {entry.rule.validTo||'未設迄日'}</Typography><Typography>規則來源：{entry.rule.ruleSource||'待補'}</Typography>
+      {entry.rule.status!=='confirmed'&&entry.rule.rentRequired!==false&&<Typography variant="caption" color="text.secondary">正式確認尚未完成；已知公式仍可手動試算。</Typography>}
       {entry.rule.notes?.map((note,i)=><Typography key={i} variant="body2" color="text.secondary">{note}</Typography>)}
       {entry.rule.sourceValues&&<Accordion variant="outlined" disableGutters sx={{mt:1}}><AccordionSummary expandIcon={<span aria-hidden="true">⌄</span>}><Typography>查看資產總表原始租金條件</Typography></AccordionSummary><AccordionDetails>
         <Typography variant="body2">來源專案：{entry.rule.sourceProjectCode??String(entry.rule.sourceValues.C??'待確認')}；來源列：{entry.rule.sourceRow??'待確認'}</Typography>
@@ -86,8 +89,9 @@ export default function StationRentRules({base,stationId}:{base:string;stationId
   </CardContent></Card>;
 }
 
-const calculationLabels:Record<string,string>={percentage:'收入比例',fixed:'固定租金',areaRate:'面積計租',percentageFloor:'收入比例與保底比較',annualReference:'年租金參考比較'};
+const calculationLabels:Record<string,string>={notApplicable:'不需付租金',percentage:'收入比例',fixed:'固定租金',areaRate:'面積計租',percentageFloor:'收入比例與保底比較',annualReference:'年租金參考比較'};
 function fallbackFormula(r:Rule){
+ if(r.calculationType==='notApplicable'&&r.rentRequired===false)return '業主自建案，不需付租金；不影響電費流程';
  if(r.calculationType==='fixed')return `固定租金 ${r.fixedAmount??'金額待補'} 元／${r.fixedUnit??'時間單位待補'}`;
  if(r.calculationType==='areaRate')return `${r.area??'面積待補'} ${r.areaUnit??'單位待補'} × ${r.unitRate??'單價待補'} 元／${r.ratePeriod??'時間單位待補'}`;
  if(r.calculationType&&r.calculationType!=='percentage')return calculationLabels[r.calculationType]??'來源公式尚待釐清';
@@ -104,6 +108,7 @@ function RuleTrial({entry,endpoint}:{entry:Entry;endpoint:string}){
   <Stack direction={{xs:'column',sm:'row'}} spacing={2} sx={{my:2}}><TextField disabled={loading} label={`手動收入（元）#${entry.id}`} value={income} onChange={e=>{setIncome(e.target.value);invalidate();}} helperText="依上方收入基底填寫；固定或面積租金可留空"/><TextField disabled={loading} label={`試算期間（月）#${entry.id}`} type="number" value={months} inputProps={{min:1,step:1}} onChange={e=>{setMonths(e.target.value);invalidate();}} helperText="依實際欲比較的期間輸入"/><Button disabled={loading} onClick={preview}>{loading?'試算中…':'手動試算'}</Button></Stack>
   {error&&<Alert severity="error">{error}</Alert>}
   {result&&<Typography>本次手動公式：{formulaText(result.formulaSummary??'')}</Typography>}
+  {result&&rentReferenceFields({...entry.rule,...result}).map(([label,value])=><Typography key={label} fontWeight={600}>{label}：{value}</Typography>)}
   {a?.baseRentRaw==null&&a?.referenceRent!=null&&<Typography fontWeight={600}>比例計算參考額（尚未套用最低額／年度調整）：{a.referenceRent} 元</Typography>}
   {a?.baseRentRaw!=null&&<Typography fontWeight={600}>租金基額（未進位）：{a.baseRentRaw} 元</Typography>}
   {a?.baseRent!=null&&<Typography>租金基額（試算）：{a.baseRent} 元</Typography>}
@@ -122,7 +127,7 @@ function knownConditions(r:Rule){
 }
 
 function conditionText(text:string){
- const labels:Record<string,string>={taxPercent:'租金稅率',cycleMonths:'付款週期',minimumBasis:'保底金額稅基',areaUnitConversion:'面積單位換算依據',annualAdjustmentMethod:'年度調整方式',annualAndPercentageRelationship:'年額與收入比例的關係',sharedGroupAllocation:'整組金額的案場分配',formula:'計算公式',incomeAmount:'試算收入',periodMonths:'試算月數',percent:'租金比例',fixedAmount:'固定租金金額',fixedUnit:'固定租金時間單位',area:'面積',areaUnit:'面積單位',rateAreaUnit:'單價面積單位',rateUnit:'單價面積單位',unitRate:'面積單價',ratePeriod:'單價期間',minimumRent:'保底租金',minimumUnit:'保底期間',annualRent:'契約年租金',tolerancePercent:'年租金比較門檻',basis:'收入基底'};
+ const labels:Record<string,string>={monthlyComponentFormula:'每月款計算公式',monthlyComponentBasis:'每月款計算基底',paymentDeductions:'付款扣項',taxPercent:'租金稅率',cycleMonths:'付款週期',minimumBasis:'保底金額稅基',areaUnitConversion:'面積單位換算依據',annualAdjustmentMethod:'年度調整方式',annualAndPercentageRelationship:'年額與收入比例的關係',sharedGroupAllocation:'整組金額的案場分配',formula:'計算公式',incomeAmount:'試算收入',periodMonths:'試算月數',percent:'租金比例',fixedAmount:'固定租金金額',fixedUnit:'固定租金時間單位',area:'面積',areaUnit:'面積單位',rateAreaUnit:'單價面積單位',rateUnit:'單價面積單位',unitRate:'面積單價',ratePeriod:'單價期間',minimumRent:'保底租金',minimumUnit:'保底期間',annualRent:'契約年租金',tolerancePercent:'年租金比較門檻',basis:'收入基底'};
  if(/^缺少[\u4e00-\u9fff]/.test(text))return text.replace(/\s+[A-Za-z][A-Za-z /]*$/, '');
  return text.replace(/\b[A-Za-z]+\b/g,key=>labels[key]??key);
 }

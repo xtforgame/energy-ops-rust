@@ -24,6 +24,10 @@ def annual_amount(v):
 
 def extract_formula(raw, annual_header=False, owners=()):
     """Extract evidence, never silently infer tax rates, area conversions or approval."""
+    if raw.get('H')=='業主自建案':
+        known={'calculationType':'notApplicable','rentRequired':False,
+               'reason':'資產表H欄「業主自建案」；客戶2026-11-25確認為業主自有、我方僅建置，無須支付租金。'}
+        return {**known,'sourceMissing':[],'sourceWarnings':[],'sourceKnown':dict(known)}
     missing=[]; warnings=[]
     r={'calculationType':'pendingUnknown','basis':{'V':'gross','X':'untaxed'}.get(raw.get('AY')),
        'percent':None,'cycleMonths':{'一個月':1,'二個月':2,'兩個月':2,'三個月':3,'四個月':4,'六個月':6,'一年':12}.get(raw.get('BC'))}
@@ -82,20 +86,43 @@ def extract_formula(raw, annual_header=False, owners=()):
              sourceKnown={k:v for k,v in r.items() if v is not None and k not in ('sourceMissing','sourceWarnings')})
     return r
 
+def identity_name(value):
+    """Only normalize typography; never fuzzy-match unrelated project names."""
+    return re.sub(r'\s+', '', str(value or '')).replace('（','(').replace('）',')')
+
 def owner_evidence(workbook):
-    """Forward-fill project only over adjacent continuation rows; exclude bank/contact data."""
-    out={}; project=None
+    """Index named project blocks, not reused project codes. Exclude contact/bank data."""
+    out=[]; project=None; names=set()
     if '1. 土地所有權人清單' not in workbook.sheetnames: return out
     ws=workbook['1. 土地所有權人清單']
     for row in range(4,ws.max_row+1):
         code=ws.cell(row,3).value
-        if code: project=str(code).strip()
+        row_names={identity_name(ws.cell(row,c).value) for c in (4,5,12)}-{''}
+        if code or row_names:
+            project=str(code or '').strip(); names=row_names
+        elif not any(ws.cell(row,c).value is not None for c in range(1,30)):
+            project=None; names=set()
         name=ws.cell(row,18).value
-        if not name or not project: continue
-        out.setdefault(project,[]).append({'name':name,'amount':scalar(ws.cell(row,28).value),
+        if not names: continue
+        out.append({'name':name,'amount':scalar(ws.cell(row,28).value),
             'unitRate':scalar(ws.cell(row,27).value),'paymentSchedule':scalar(ws.cell(row,29).value),
-            'sourceSheet':ws.title,'sourceRow':row,'noRent':ws.cell(row,28).value=='無付租金'})
+            'sourceSheet':ws.title,'sourceRow':row,'sourceProjectCode':project,
+            'projectNames':sorted(names),'payeeInstruction':scalar(ws.cell(row,22).value),
+            'noRent':ws.cell(row,28).value=='無付租金'})
     return out
+
+def match_owners(evidence, raw):
+    """Names/explicit aliases identify the site; a code alone never authorizes a join."""
+    aliases={identity_name(raw.get(c)) for c in ('D','E')} - {''}
+    aliases.update(identity_name(v) for v in raw.get('identityAliases',[]) if v)
+    matches=[dict(o) for o in evidence if aliases.intersection(o['projectNames'])]
+    payee=identity_name(raw.get('W'))
+    for o in matches:
+        o['matchEvidence']={'method':'exactProjectNameOrAlias',
+            'matchedNames':sorted(aliases.intersection(o['projectNames'])),
+            'projectCodeMatches':o['sourceProjectCode']==raw.get('C'),
+            'payeeCorroborated':bool(payee and (payee==identity_name(o['name']) or payee in identity_name(o['payeeInstruction'])))}
+    return matches
 
 def prepare(source, stations, overrides):
     import openpyxl
@@ -107,17 +134,19 @@ def prepare(source, stations, overrides):
     for r in range(4,ws.max_row+1):
         c=lambda col:scalar(ws[f'{col}{r}'].value)
         project=str(c('C') or '').strip(); key=meter(c('R'))
-        if not project or project=='#N/A': continue
-        raw={col:c(col) for col in ['C','D','R','W','Y','AA','AB','AC','AF','AS','AT','AU','AV','AW','AY','AZ','BA','BB','BC','BD']}
+        self_built=c('H')=='業主自建案'
+        if (not project or project=='#N/A') and not self_built: continue
+        raw={col:c(col) for col in ['C','D','E','H','R','W','Y','AA','AB','AC','AF','AS','AT','AU','AV','AW','AY','AZ','BA','BB','BC','BD']}
+        matched_owners=match_owners(owners,raw)
         all_source_rows.append({'sourceRow':r,'projectCode':project,'meterKey':key,'sourceValues':raw,
-            'formula':extract_formula(raw,annual_header,owners.get(project,[])),'ownerEvidence':owners.get(project,[])})
+            'formula':extract_formula(raw,annual_header,matched_owners),'ownerEvidence':matched_owners})
         if not key:
             unmatched.append({'projectCode':project,'meterKey':key,'row':r,'reason':'來源缺完整電號；公式仍保留在 allSourceRows'});continue
         hits=[s for s in stations if meter(s.get('customerNumber'))==key or key in s.get('meterKeys',[])]
         # A shared meter is insufficient to uniquely select one project/rule.
         if len(hits)!=1 or sum(1 for rr in range(4,ws.max_row+1) if meter(ws[f'R{rr}'].value)==key)!=1:
             unmatched.append({'projectCode':project,'meterKey':key,'row':r,'reason':'電號未唯一對應；不可猜測案場'});continue
-        source_key=f'asset-rent:{project}'
+        source_key=f'asset-rent:meter:{key}' if self_built and (not project or project=='#N/A') else f'asset-rent:{project}'
         if source_key in seen: raise ValueError('duplicate project '+project)
         seen.add(source_key)
         rule={'status':'pending','calculationType':'percentage' if isinstance(c('BA'),(int,float)) else 'pendingUnknown','payee':c('W'),
@@ -129,14 +158,14 @@ def prepare(source, stations, overrides):
               'sourceKey':source_key,'sourceSha256':digest,'sourceRow':r,'sourceProjectCode':project,
               'sourceValues':raw,'leaseEvidence':{'status':'missing','attachmentIds':[]},
               'notes':['資產總表來源已建檔；未確認參數保留待確認，不自動啟用。','簽署日期不是計算規則生效日期；原值保留於來源。']}
-        rule.update(extract_formula(raw,annual_header,owners.get(project,[])))
-        rule['sourceOwnerEvidence']=owners.get(project,[])
+        rule.update(extract_formula(raw,annual_header,matched_owners))
+        rule['sourceOwnerEvidence']=matched_owners
         label=str(c('W') or '')
         group=re.search(r'([二兩三四五六七八九十\d]+)人',label)
         if group:
             rule['payeeGroupLabel']=label
             rule['payeeGroupCount']={'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10}.get(group[1],int(group[1]) if group[1].isdigit() else None)
-            paid=[o for o in owners.get(project,[]) if not o.get('noRent') and number(o.get('amount')) is not None]
+            paid=[o for o in matched_owners if not o.get('noRent') and number(o.get('amount')) is not None]
             # Only expose an allocation when every named member is sourced and the
             # per-payment total reconciles exactly to the source annual amount.
             months=rule.get('cycleMonths')

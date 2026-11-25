@@ -12,3 +12,19 @@ it('keeps unrounded rent visible while rounding and tax remain unknown',()=>{
  expect(f['稅額（未進位）']).toBe('6.172835');expect(f['含稅試算合計（未進位）']).toBe('129.629535');
  expect(f['收入基底']).toBe('收入基底待確認');expect(rentCalculationDescription(r)).toContain('進位方式待確認');
 });
+
+it('shows a shared group once as reference and preserves unknown installment limits',()=>{
+ const f=Object.fromEntries(rentPreviewFields({stationName:'埔心',groupReferenceRent:'213549',sharedGroupKey:'puxin',sharedGroupMembers:['一場','二場'],baseRent:null,grossRent:null} as any));
+ expect(f['共用租金（整組，只計一次）']).toBe('213549');expect(f['共用金額說明']).toContain('尚未提供個別分攤');expect(f['共用案場']).toBe('一場、二場');expect(f['應付租金總額']).toBeNull();
+ const annual=Object.fromEntries(rentPreviewFields({stationName:'矽品',annualRentReference:'1700000',periodAllocationUnknown:true,baseRent:null} as any));expect(annual['已知年租金']).toBe('1700000');expect(annual['分期說明']).toContain('不推定平均分期');expect(annual['租金基額（外加稅前）']).toBeNull();
+});
+
+it('shows separate annual reference and variable history from API known inputs without inventing payable',()=>{
+ const fields=Object.fromEntries(rentPreviewFields({stationName:'佳南',baseRent:null,grossRent:null,knownInputs:{paymentComponents:[{payee:'陳雲清',cycleMonths:12,annualAmountReference:18000,sourceSheet:'2-1.租金付款紀錄',sourceRow:105},{payee:'陳琬瑜',cycleMonths:1,fixedAmount:null,observedAmounts:[12250,12500],sourceSheet:'2-1.租金付款紀錄',sourceRow:106}],sourceMissing:['monthlyComponentFormula','monthlyComponentBasis','paymentDeductions']}} as any));
+ expect(fields['付款組成 1｜陳雲清']).toContain('年付來源參考金額 18000 元');expect(fields['付款組成 1｜陳雲清']).not.toContain('每月款計算公式');
+ expect(fields['付款組成 2｜陳琬瑜']).toContain('12250、12500 元（不是固定月租）');expect(fields['付款組成 2｜陳琬瑜']).toContain('每月款計算公式待確認');expect(fields['付款組成 2｜陳琬瑜']).toContain('每月款計算基底待確認');expect(fields['付款組成 2｜陳琬瑜']).toContain('付款扣項待確認');expect(fields['應付租金總額']).toBeNull();
+});
+
+it('describes non applicable rent without a missing calculation formula',()=>{
+ const r:any={stationName:'業主自建',calculationType:'notApplicable',rentRequired:false,baseRent:null,grossRent:null};expect(rentCalculationDescription(r)).toBe('業主自建案，不需付租金；不影響電費流程');const fields=Object.fromEntries(rentPreviewFields(r));expect(fields['租金適用狀態']).toContain('不需付租金');expect(fields['應付租金總額']).toBeNull();
+});

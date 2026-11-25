@@ -9,6 +9,52 @@ rent = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rent)
 
 class SourceFormulaTests(unittest.TestCase):
+    def test_owner_self_built_requires_no_rent(self):
+        r=rent.extract_formula({'H':'業主自建案'})
+        self.assertEqual(r['calculationType'],'notApplicable')
+        self.assertFalse(r['rentRequired'])
+        self.assertEqual(r['sourceMissing'],[])
+        self.assertEqual(r['sourceKnown']['rentRequired'],False)
+
+    def test_self_built_classification_must_be_exact(self):
+        for value in ('業主自建案待確認','業主自建',' 業主自建案',None):
+            r=rent.extract_formula({'H':value})
+            self.assertEqual(r['calculationType'],'pendingUnknown')
+            self.assertIn('formula',r['sourceMissing'])
+
+    def test_self_built_without_project_uses_unique_meter_and_preserves_unmatched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w=openpyxl.Workbook();s=w.active;s.title='0. 資產及義務項目清單'
+            for row,code,key in [(4,None,'10000000004'),(5,'#N/A','10000000005'),(6,None,None)]:
+                s[f'C{row}']=code;s[f'H{row}']='業主自建案';s[f'R{row}']=key
+            path=Path(tmp)/'asset.xlsx';w.save(path)
+            result=rent.prepare(path,[{'id':4,'name':'自建','customerNumber':'10000000004'}],{})
+            self.assertEqual(len(result['allSourceRows']),3)
+            self.assertEqual(len(result['items']),1)
+            self.assertEqual(result['items'][0]['rule']['sourceKey'],'asset-rent:meter:10000000004')
+            self.assertEqual(result['items'][0]['rule']['calculationType'],'notApplicable')
+            self.assertEqual(len(result['unmatched']),2)
+
+    def test_owner_join_rejects_reused_code_and_accepts_name_with_changed_code(self):
+        w=openpyxl.Workbook();s=w.active;s.title='1. 土地所有權人清單'
+        for row,code,name,owner,amount in [(4,'A','學校','校方',None),(5,'A','工廠','工廠方',2350000),(6,'B','大豐一期','地主',154800)]:
+            for col,value in {3:code,4:name,18:owner,28:amount}.items():s.cell(row,col,value)
+        evidence=rent.owner_evidence(w)
+        self.assertEqual([o['sourceRow'] for o in rent.match_owners(evidence,{'C':'A','D':'學校'})],[4])
+        matched=rent.match_owners(evidence,{'C':'A','D':'大豐一期'})
+        self.assertEqual([o['sourceRow'] for o in matched],[6])
+        self.assertFalse(matched[0]['matchEvidence']['projectCodeMatches'])
+        self.assertEqual(rent.match_owners(evidence,{'C':'A','D':'未知'}),[])
+
+    def test_blank_owner_row_is_evidence_not_previous_project(self):
+        w=openpyxl.Workbook();s=w.active;s.title='1. 土地所有權人清單'
+        s['C4']='A';s['D4']='前案';s['R4']='前地主';s['AB4']=90000
+        s['C5']='B';s['D5']='空白案'
+        matched=rent.match_owners(rent.owner_evidence(w),{'C':'A','D':'空白案'})
+        self.assertEqual(len(matched),1)
+        self.assertIsNone(matched[0]['name'])
+        self.assertIsNone(matched[0]['amount'])
+
     def test_fixed_annual_header_is_not_cycle(self):
         r = rent.extract_formula({'AW':120000,'BC':'六個月'}, annual_header=True)
         self.assertEqual((r['fixedAmount'],r['fixedUnit']), (120000,'year'))

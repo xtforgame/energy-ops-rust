@@ -86,3 +86,21 @@ it('retains the percentage reference when a floor comparison still needs its tax
  expect(await screen.findByText('比例計算參考額（尚未套用最低額／年度調整）：800 元')).toBeTruthy();
  expect(screen.getByText('・最低額稅基待確認')).toBeTruthy();
 });
+
+it('displays shared reference and sourced owner names without station payable allocation',async()=>{
+ vi.mocked(energyHttp.get).mockResolvedValue({data:{items:[{...entry,rule:{...entry.rule,sourceOwnerEvidence:[{name:'來源地主甲'},{name:'來源地主乙',noRent:true}]},assessment:{groupReferenceRent:'213549',sharedGroupKey:'puxin',sharedGroupMembers:['埔心一','埔心二'],baseRent:null,grossRent:null,missingInputs:[]}}],canManage:false}} as any);
+ render(<StationRentRules base="/api/test" stationId={70}/>);
+ expect(await screen.findByText('共用租金（整組，只計一次）：213549')).toBeTruthy();expect(screen.getByText(/尚未提供個別分攤/)).toBeTruthy();expect(screen.getByText(/土地所有權人來源：來源地主甲、來源地主乙（無付租金）/)).toBeTruthy();expect(screen.queryByText(/租金基額（試算）/)).toBeNull();
+});
+
+it('exposes mixed payment components with actual unknowns per component',async()=>{
+ vi.mocked(energyHttp.get).mockResolvedValue({data:{items:[{...entry,rule:{...entry.rule,calculationType:'pendingUnknown',paymentComponents:[{payee:'陳雲清',cycleMonths:12,annualAmountReference:18000},{payee:'陳琬瑜',cycleMonths:1,fixedAmount:null,observedAmounts:[12250,12500]}],sourceMissing:['monthlyComponentFormula','monthlyComponentBasis','paymentDeductions']}}],canManage:false}} as any);
+ render(<StationRentRules base="/api/test" stationId={70}/>);
+ expect(await screen.findByText(/付款組成 1｜陳雲清：每 12 個月一期；年付來源參考金額 18000 元/)).toBeTruthy();expect(screen.getByText(/付款組成 2｜陳琬瑜：每 1 個月一期/)).toHaveTextContent('每月款計算公式待確認');expect(screen.getByText(/付款組成 2｜陳琬瑜：每 1 個月一期/)).toHaveTextContent('不是固定月租');expect(screen.getByText(/未合計為正式付款/)).toBeTruthy();
+});
+
+it('labels owner built stations as no rent without a missing formula',async()=>{
+ vi.mocked(energyHttp.get).mockResolvedValue({data:{items:[{...entry,rule:{...entry.rule,calculationType:'notApplicable',rentRequired:false}}],canManage:false}} as any);
+ render(<StationRentRules base="/api/test" stationId={70}/>);
+ expect(await screen.findByText('計算方式：業主自建案，不需付租金；不影響電費流程')).toBeTruthy();expect(screen.queryByText(/來源公式尚待釐清/)).toBeNull();expect(screen.getByText('租金適用狀態：不需付租金；不影響電費流程')).toBeTruthy();
+});

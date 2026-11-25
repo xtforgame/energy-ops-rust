@@ -54,6 +54,9 @@ fn number(v:&Value)->Option<rust_decimal::Decimal>{use std::str::FromStr;let s=i
 fn amount(v:Option<rust_decimal::Decimal>)->Value{v.map(|d|json!(d.normalize().to_string())).unwrap_or(Value::Null)}
 pub fn assess(v:&Value,input:&Value)->Value{
  use rust_decimal::{Decimal,RoundingStrategy};
+ if v["calculationType"]=="notApplicable"&&v["rentRequired"]==false {
+ return json!({"status":v["status"],"state":"notApplicable","readiness":"notApplicable","formulaSummary":"業主自建案，不需付租金；不影響電費流程","rentRequired":false,"knownInputs":v,"missingInputs":[],"requirements":[],"issues":[],"warnings":[],"baseRentRaw":null,"baseRent":null,"taxRaw":null,"tax":null,"grossRentRaw":null,"grossRent":null,"paymentAllowed":false,"inputMode":"manualTrial","inputMethod":"manualTrial","lines":[]});
+ }
  let mut missing:Vec<String>=Vec::new();let mut warnings:Vec<String>=Vec::new();
  let kind=v["calculationType"].as_str().unwrap_or("percentage");
  let mut get=|key:&str|{let n=number(&v[key]);if n.is_none(){missing.push(format!("缺少 {key}"));}n};
@@ -78,7 +81,20 @@ pub fn assess(v:&Value,input:&Value)->Value{
  "percentageFloor"=>{if !["gross","untaxed"].contains(&v["minimumBasis"].as_str().unwrap_or("")){missing.push("最低額收入基底 minimumBasis 待確認".into());None}else if v["minimumBasis"].as_str().is_some_and(|b|Some(b)!=v["basis"].as_str()){missing.push("最低額與比例租金稅基不同，待確認稅務及比較方式".into());None}else{if factor(&v["minimumUnit"]).is_none(){missing.push("缺少最低額期間或試算月數 minimumUnit / periodMonths".into())}proportional.zip(minimum.zip(factor(&v["minimumUnit"]))).map(|(p,(m,f))|p.max(m*f))}},
  "annualReference"=>{match (proportional,annual,tolerance){(Some(p),Some(a),Some(t)) if a>=Decimal::new(1,2)&&t>Decimal::ZERO&&t<=Decimal::from(100)=>{if v["rounding"]!="total"{missing.push("年度調整需確認總額取整方式".into());None}else if (p.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero)*Decimal::from(100)/a-Decimal::from(100)).abs()<t{Some(a)}else{missing.push("年度調整級距及邊界適用方式待確認".into());None}},_=>None}},
  _=>{missing.push("計算類型尚未支援".into());None}};
- if v["groupAllocationMissing"]==true {missing.push("共同地主整組金額，個別案場分配待確認".into());raw=None;}
+ let cycle_reference=if kind=="fixed"&&v["fixedUnit"]=="cycle"{fixed}else{None};
+ if cycle_reference.is_some()&&input.get("periodMonths").is_some_and(|m|!m.is_null())&&number(&input["periodMonths"])!=number(&v["cycleMonths"]) {
+ missing.push("試算月數與付款週期不同；每期金額僅供參考，請依原付款週期試算，不推定跨期加總或比例分攤".into());raw=None;
+ }
+ let annual_reference=if kind=="fixed"&&v["fixedUnit"]=="year"{fixed}else{None};
+ if v["periodAllocationUnknown"]==true&&annual_reference.is_some()&&number(&input["periodMonths"])!=Some(Decimal::from(12)) {
+ missing.push("分期算法待確認；已知年額不推定平均分期".into());raw=None;
+ }
+ let group_reference=if v["groupAllocationMissing"]==true&&kind=="fixed"{raw}else{None};
+ if v["groupAllocationMissing"]==true {
+ if group_reference.is_some(){warnings.push("尚未提供個別分攤；整組金額只計一次，不列為本案場應付".into());}
+ else if kind!="fixed"{missing.push("共同地主整組金額，個別案場分配待確認".into());}
+ raw=None;
+ }
  let rounding=v["rounding"].as_str().unwrap_or("");
  let rounded=if rounding=="total"{raw.map(|n|n.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero))}else if rounding=="perReceipt"&&rate.is_some(){warnings.push("逐筆取整須提供逐筆收入；目前顯示未取整基數".into());None}else{if rounding!="perReceipt"{warnings.push("取整方式待確認；先顯示未取整基數".into())}raw};
  let base=rounded.or(raw);
@@ -96,11 +112,12 @@ pub fn assess(v:&Value,input:&Value)->Value{
  let summary=match kind{"percentage"=>format!("{}收入 × {}%",if v["basis"]=="untaxed"{"未稅"}else if v["basis"]=="gross"{"含稅"}else{"基底待確認"},val("percent")),"fixed"=>format!("固定租金 {} / {}",val("fixedAmount"),val("fixedUnit")),"areaRate"=>format!("{} {} × {} / {}",val("area"),val("areaUnit"),val("unitRate"),val("ratePeriod")),"percentageFloor"=>format!("收入 × {}%，最低 {} / {}",val("percent"),val("minimumRent"),val("minimumUnit")),"annualReference"=>format!("收入 × {}%，參考年租金 {}，調整門檻 {}%",val("percent"),val("annualRent"),val("tolerancePercent")),_=>"公式待確認".into()};
  for x in v["sourceMissing"].as_array().into_iter().flatten(){if let Some(t)=x.as_str(){warnings.push(format!("來源待補：{t}"));}}
  for x in v["sourceWarnings"].as_array().into_iter().flatten(){if let Some(t)=x.as_str(){warnings.push(t.to_owned());}}
- json!({"status":v["status"],"state":if raw.is_some(){"provisionalCalculation"}else{"pending"},"formulaSummary":summary,"readiness":if raw.is_some(){"calculable"}else{"missingInputs"},"knownInputs":v,"missingInputs":missing,"requirements":missing,"issues":missing,"warnings":warnings,"baseRentRaw":amount(raw.take()),"baseRent":amount(base),"tax":amount(tax),"grossRent":amount(base.zip(tax).map(|(a,b)|if v["taxMode"]=="included"{a}else{a+b})),"taxRaw":amount(tax_raw),"grossRentRaw":amount(gross_raw),"referenceRent":amount(proportional),"annualRent":v["annualRent"],"partyGroup":v["partyGroup"],"paymentAllowed":false,"inputMode":"manualTrial","inputMethod":"manualTrial","lines":[],"income":amount(income),"periodMonths":input["periodMonths"]})
+ json!({"status":v["status"],"state":if raw.is_some(){"provisionalCalculation"}else if group_reference.is_some(){"groupReference"}else{"pending"},"formulaSummary":summary,"readiness":if raw.is_some(){"calculable"}else if group_reference.is_some(){"groupReference"}else if annual_reference.is_some()&&v["periodAllocationUnknown"]==true{"annualReference"}else{"missingInputs"},"knownInputs":v,"missingInputs":missing,"requirements":missing,"issues":missing,"warnings":warnings,"baseRentRaw":amount(raw.take()),"baseRent":amount(base),"tax":amount(tax),"grossRent":amount(base.zip(tax).map(|(a,b)|if v["taxMode"]=="included"{a}else{a+b})),"taxRaw":amount(tax_raw),"grossRentRaw":amount(gross_raw),"referenceRent":amount(proportional),"annualRent":v["annualRent"],"partyGroup":v["partyGroup"],"groupReferenceRent":amount(group_reference),"annualRentReference":amount(annual_reference),"cycleRentReference":amount(cycle_reference),"groupAllocationMissing":v["groupAllocationMissing"],"periodAllocationUnknown":v["periodAllocationUnknown"],"sharedGroupKey":v["sharedGroupKey"],"sharedGroupLabel":v["sharedGroupLabel"],"sharedGroupMembers":v["sharedGroupMembers"],"paymentAllowed":false,"inputMode":"manualTrial","inputMethod":"manualTrial","lines":[],"income":amount(income),"periodMonths":input["periodMonths"]})
 }
 
 pub fn preview(v:&Value,day:&str,bills:&[Value])->Value {
  let mut assessment=assess(v,&json!({}));
+ if assessment["state"]=="notApplicable"{assessment["inputMode"]=json!("autoBills");assessment["inputMethod"]=json!("autoBills");return assessment;}
  if v["status"]=="confirmed" {let mut result=strict_preview(v,day,bills);for key in ["formulaSummary","knownInputs","status"]{result[key]=assessment[key].clone();}result["inputMode"]=json!("autoBills");result["baseRentRaw"]=result["baseRent"].clone();return result;}
  assessment["inputMode"]=json!("autoBills");assessment["inputMethod"]=json!("autoBills");
  if ["fixed","areaRate"].contains(&v["calculationType"].as_str().unwrap_or("")){return assessment;}
@@ -130,6 +147,7 @@ pub fn preview(v:&Value,day:&str,bills:&[Value])->Value {
 
 /// Contributions are individually identified; they must never be summed as a full cycle.
 pub fn source_contributions(v:&Value,bills:&[Value])->Value {
+ if !["percentage","percentageFloor","annualReference"].contains(&v["calculationType"].as_str().unwrap_or("percentage")){return json!([]);}
  json!(bills.iter().filter(|b|["renewableSurplus","renewableNoSurplus","retailerSale"].contains(&b["docType"].as_str().unwrap_or(""))).map(|b|{
  let key=if v["basis"]=="untaxed"{"purchaseEnergyFee"}else{"electricityFeeTotal"};
  let mut result=assess(v,&json!({"incomeAmount":b[key]}));

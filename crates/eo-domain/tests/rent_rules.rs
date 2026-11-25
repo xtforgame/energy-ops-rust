@@ -47,3 +47,49 @@ fn provisional_per_receipt_respects_tax_and_formula_guards() {
  r["percent"]=json!("101");assert!(run(&r)["baseRent"].is_null());r["percent"]=json!("100");r["groupAllocationMissing"]=json!(true);assert!(run(&r)["baseRent"].is_null());r["groupAllocationMissing"]=json!(false);
  r["calculationType"]=json!("percentageFloor");r["minimumRent"]=json!("0");r["minimumUnit"]=json!("cycle");assert!(run(&r)["baseRent"].is_null());r["minimumBasis"]=json!("untaxed");assert_eq!(run(&r)["baseRent"],"100");r["minimumRent"]=json!("120");assert_eq!(run(&r)["baseRent"],"120");
 }
+
+#[test]
+fn known_group_rent_is_a_single_reference_never_station_payable() {
+ let mut r=json!({"status":"pending","calculationType":"fixed","fixedAmount":"213549","fixedUnit":"year","cycleMonths":12,"groupAllocationMissing":true,"sharedGroupKey":"puxin","sharedGroupLabel":"埔心墓","sharedGroupMembers":["A","B"],"taxPercent":"5","rounding":"total"});
+ let p=eo_domain::rent_rules::preview(&r,"2026-11-01",&[]);
+ assert_eq!(p["groupReferenceRent"],"213549");assert_eq!(p["readiness"],"groupReference");assert_eq!(p["sharedGroupMembers"],r["sharedGroupMembers"]);assert_eq!(p["sharedGroupKey"],"puxin");
+ for key in ["baseRent","baseRentRaw","tax","grossRent","grossRentRaw"]{assert!(p[key].is_null(),"{key}");}
+ assert_eq!(p["paymentAllowed"],false);assert_eq!(p["missingInputs"],json!([]));
+ assert_eq!(eo_domain::rent_rules::assess(&r,&json!({"periodMonths":6}))["groupReferenceRent"],"106774.5");
+ r["fixedAmount"]=json!("200000");assert_eq!(eo_domain::rent_rules::preview(&r,"2026-11-01",&[])["groupReferenceRent"],"200000");
+ r["fixedUnit"]=json!("month");r["fixedAmount"]=json!("100");assert_eq!(eo_domain::rent_rules::assess(&r,&json!({"periodMonths":6}))["groupReferenceRent"],"600");
+ r["fixedUnit"]=json!("cycle");r["cycleMonths"]=json!(6);assert_eq!(eo_domain::rent_rules::assess(&r,&json!({"periodMonths":6}))["groupReferenceRent"],"100");
+}
+#[test]
+fn unequal_installments_preserve_annual_amount_without_inventing_half_year_amount() {
+ let r=json!({"status":"pending","calculationType":"fixed","fixedAmount":"1700000","fixedUnit":"year","cycleMonths":6,"periodAllocationUnknown":true});
+ for input in [json!({}),json!({"periodMonths":6}),json!({"periodMonths":1})]{let p=eo_domain::rent_rules::assess(&r,&input);assert_eq!(p["annualRentReference"],"1700000");assert!(p["baseRent"].is_null());assert_eq!(p["missingInputs"],json!(["分期算法待確認；已知年額不推定平均分期"]));assert_eq!(p["paymentAllowed"],false);}
+ assert!(eo_domain::rent_rules::preview(&r,"2026-11-01",&[])["baseRent"].is_null());
+ let p=eo_domain::rent_rules::assess(&r,&json!({"periodMonths":12}));assert_eq!(p["baseRent"],"1700000");assert_eq!(p["missingInputs"],json!([]));
+}
+
+#[test]
+fn non_percentage_rent_has_no_per_bill_contribution_rows() {
+ let bills=json!([{"id":1,"docType":"renewableSurplus","purchaseEnergyFee":"1000"}]);
+ for kind in ["fixed","areaRate","pendingUnknown"] {assert_eq!(eo_domain::rent_rules::source_contributions(&json!({"calculationType":kind}),bills.as_array().unwrap()),json!([]));}
+ let p=eo_domain::rent_rules::source_contributions(&json!({"calculationType":"percentageFloor","basis":"untaxed","percent":"8"}),bills.as_array().unwrap());assert_eq!(p[0]["sourceContributionRaw"],"80");
+}
+
+#[test]
+fn fixed_cycle_rent_does_not_mislabel_a_different_trial_period() {
+ let r=json!({"status":"pending","calculationType":"fixed","fixedAmount":"37500","fixedUnit":"cycle","cycleMonths":3});
+ for input in [json!({}),json!({"periodMonths":3})]{let p=eo_domain::rent_rules::assess(&r,&input);assert_eq!(p["baseRent"],"37500");assert_eq!(p["missingInputs"],json!([]));}
+ for months in [1,6,12]{let p=eo_domain::rent_rules::assess(&r,&json!({"periodMonths":months}));assert!(p["baseRent"].is_null());assert!(p["baseRentRaw"].is_null());assert!(p["grossRent"].is_null());assert_eq!(p["cycleRentReference"],"37500");assert!(p["missingInputs"][0].as_str().unwrap().contains("試算月數與付款週期不同"));assert_eq!(p["paymentAllowed"],false);}
+}
+
+#[test]
+fn owner_built_not_applicable_rent_is_not_a_zero_payment_or_missing_formula() {
+ for status in ["pending","confirmed"] {
+ let r=json!({"status":status,"calculationType":"notApplicable","rentRequired":false});
+ for p in [eo_domain::rent_rules::assess(&r,&json!({"incomeAmount":"10000"})),eo_domain::rent_rules::preview(&r,"2026-11-01",&[])] {
+ assert_eq!(p["state"],"notApplicable");assert_eq!(p["readiness"],"notApplicable");assert!(p["baseRent"].is_null());assert!(p["grossRent"].is_null());assert_eq!(p["missingInputs"],json!([]));assert_eq!(p["paymentAllowed"],false);assert!(p["formulaSummary"].as_str().unwrap().contains("不需付租金"));
+ }
+ assert_eq!(eo_domain::rent_rules::source_contributions(&r,&[json!({"docType":"renewableSurplus"})]),json!([]));
+ }
+ let r=json!({"calculationType":"notApplicable"});assert_ne!(eo_domain::rent_rules::assess(&r,&json!({}))["state"],"notApplicable");
+}
