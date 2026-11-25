@@ -967,6 +967,18 @@ const customChineseTWMessages: TranslationMessages = {
       by: '操作人：%{who}',
       methodType: { ratio: '比例', fixed: '固定金額', land_area: '依土地面積' },
     },
+    easyflowDefaults: {
+      title: 'EasyFlow 預設值',
+      companyName: '公司名稱',
+      companyCode: '公司代碼',
+      applicant: '申請人',
+      department: '申請部門',
+      expectedReceiptDays: '預計收款天數',
+      paymentMethod: '付款方式',
+      paymentTerms: '付款條件',
+      voucherStatus: '憑證狀態',
+      contractOption: '有合約／簽呈選項',
+    },
     contracts: {
       no: '合約編號',
       period: '生效期間',

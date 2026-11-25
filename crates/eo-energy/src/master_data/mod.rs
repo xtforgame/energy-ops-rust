@@ -52,6 +52,8 @@ impl AppPlugin for MasterDataPlugin {
         cfg.get(&path("/station-list"), web::get().to(station_list));
         cfg.patch(&path("/stations/{stationId}"), web::patch().to(update_station_handler));
         cfg.get(&path("/stations/{stationId}/overview"), web::get().to(station_overview_handler));
+        cfg.get(&path("/stations/{stationId}/easyflow-defaults"), web::get().to(get_easyflow_defaults));
+        cfg.put(&path("/stations/{stationId}/easyflow-defaults"), web::put().to(put_easyflow_defaults));
         cfg.get(&path("/stations/{stationId}/geocode"), web::get().to(geocode_suggest));
         cfg.post(&path("/stations/{stationId}/geocode"), web::post().to(geocode_apply));
         cfg.get(&path("/stations/{stationId}/meters"), web::get().to(meters::list_handler));
@@ -983,6 +985,79 @@ async fn station_overview_handler(core: Core, user: CurrentUser, meta: RequestMe
     let ctx = Ctx::new(&core, access, &meta);
     let mut tx = core.pool.begin().await?;
     Ok(HttpResponse::Ok().json(station_overview(&mut tx, &ctx, id).await?))
+}
+
+/// EasyFlow 預設值只收這 9 個 key（卡 20261126-0214）：其他鍵一律 400，避免 `data.easyflowDefaults` 被塞進無關雜物。
+const EASYFLOW_DEFAULTS_KEYS: &[&str] = &[
+    "companyName", "companyCode", "applicant", "department", "expectedReceiptDays",
+    "paymentMethod", "paymentTerms", "voucherStatus", "contractOption",
+];
+
+/// 讀案場的 EasyFlow 預設值（`data.easyflowDefaults`）。`canManage` 讓前端決定要不要顯示儲存鈕。
+async fn get_easyflow_defaults(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>) -> ApiResult<HttpResponse> {
+    let (org, id) = path.into_inner();
+    let access = core.rbac.authorize_org(&user, org, gates::FLOW_VIEW).await?;
+    let ctx = Ctx::new(&core, access, &meta);
+    let mut tx = core.pool.begin().await?;
+    station_in_org(&mut tx, &ctx.access, id).await?;
+    let defaults: Value = sqlx::query_scalar(
+        "SELECT COALESCE(data->'easyflowDefaults','{}'::jsonb) FROM tbl_energy_station WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_one(&mut *tx)
+    .await?;
+    let can_manage = ctx.has("energy:master:manage").await?;
+    Ok(HttpResponse::Ok().json(json!({ "stationId": id, "easyflowDefaults": defaults, "canManage": can_manage })))
+}
+
+/// 寫案場的 EasyFlow 預設值。整包取代（PUT），不是逐欄 patch——畫面一次送出全部 9 欄。
+async fn put_easyflow_defaults(core: Core, user: CurrentUser, meta: RequestMeta, path: web::Path<(i64, i64)>, body: web::Json<Value>) -> ApiResult<HttpResponse> {
+    let (org, id) = path.into_inner();
+    let access = core.rbac.authorize_org(&user, org, gates::MASTER_MANAGE).await?;
+    let ctx = Ctx::new(&core, access, &meta);
+    let values = body.as_object().ok_or_else(|| err(400, "invalid_easyflow_defaults"))?;
+    for (k, v) in values.iter() {
+        if !EASYFLOW_DEFAULTS_KEYS.contains(&k.as_str()) {
+            return Err(err_d(400, "invalid_easyflow_defaults_key", json!({ "key": k })));
+        }
+        if v.is_null() {
+            continue;
+        }
+        if k == "expectedReceiptDays" {
+            let days = v.as_i64().ok_or_else(|| err_d(400, "invalid_easyflow_defaults_value", json!({ "key": k })))?;
+            if !(0..=365).contains(&days) {
+                return Err(err_d(400, "invalid_easyflow_defaults_value", json!({ "key": k })));
+            }
+        } else {
+            let s = v.as_str().ok_or_else(|| err_d(400, "invalid_easyflow_defaults_value", json!({ "key": k })))?;
+            if s.len() > 200 {
+                return Err(err_d(400, "invalid_easyflow_defaults_value", json!({ "key": k })));
+            }
+        }
+    }
+    let mut tx = core.pool.begin().await?;
+    station_in_org(&mut tx, &ctx.access, id).await?;
+    let before: Value = sqlx::query_scalar(
+        "SELECT COALESCE(data->'easyflowDefaults','{}'::jsonb) FROM tbl_energy_station WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_one(&mut *tx)
+    .await?;
+    let to = json!(values);
+    sqlx::query(
+        "UPDATE tbl_energy_station SET data = jsonb_set(COALESCE(data,'{}'::jsonb),'{easyflowDefaults}',$1,true), updated_at = clock_timestamp()
+         WHERE id = $2 AND organization_id = $3",
+    )
+    .bind(&to)
+    .bind(id)
+    .bind(org)
+    .execute(&mut *tx)
+    .await?;
+    audit::record(&mut tx, &ctx, AuditInput::new("station.easyflow_defaults_updated", id, "更新 EasyFlow 預設值").payload(json!({ "before": before, "to": to }))).await?;
+    tx.commit().await?;
+    Ok(HttpResponse::Ok().json(json!({ "stationId": id, "easyflowDefaults": to, "canManage": true })))
 }
 
 async fn geocode_suggest(core: Core, user: CurrentUser, path: web::Path<(i64, i64)>) -> ApiResult<HttpResponse> {

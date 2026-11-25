@@ -179,6 +179,10 @@ impl TestApp {
         Self::send(self.req(Some(user), Method::PATCH, path).json(&body)).await
     }
 
+    pub async fn put(&self, user: &TestUser, path: &str, body: Value) -> (StatusCode, Value) {
+        Self::send(self.req(Some(user), Method::PUT, path).json(&body)).await
+    }
+
     pub async fn delete(&self, user: &TestUser, path: &str) -> (StatusCode, Value) {
         Self::send(self.req(Some(user), Method::DELETE, path)).await
     }

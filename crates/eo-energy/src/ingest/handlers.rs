@@ -189,12 +189,20 @@ async fn application_snapshot(tx: &mut Tx<'_>,ctx:&Ctx,bill_id:i64)->ApiResult<V
           "hash":row.hash,"hashAlgorithm":row.hash_algo,"category":row.category,
           "downloadPath":format!("/api/v1/orgs/{org}/energy/attachments/{id}/download")}));
     }
+    // 卡 20261126-0214：天數在 station 被 build_application 吃掉之前先拿出來，給雜湊算完之後的 fill_date_defaults 用。
+    let expected_receipt_days = station.as_ref().and_then(|s| s["easyflowDefaults"]["expectedReceiptDays"].as_i64());
     let mut result = eo_domain::easyflow::build_application(&view,&station.unwrap_or(Value::Null),&json!(source));
     result["organizationId"] = json!(org);
 
 
     use sha2::{Digest, Sha256};
-    let revision = format!("{:x}", Sha256::digest(serde_json::to_vec(&result).unwrap()));
+    // 雜湊排除 reviewStatus／approvalState：那是流程狀態，不是來源資料；否則審核一推進，草稿就全部變 stale（卡 20261126-0214）。
+    let mut for_hash = result.clone();
+    if let Some(obj) = for_hash.as_object_mut() {
+        obj.remove("reviewStatus");
+        obj.remove("approvalState");
+    }
+    let revision = format!("{:x}", Sha256::digest(serde_json::to_vec(&for_hash).unwrap()));
     let saved = &bill.data["easyflowApplication"];
     result["draftRevision"] = json!(format!("{:x}", Sha256::digest(serde_json::to_vec(saved).unwrap())));
     let stale = saved.is_object() && saved["sourceRevision"] != revision;
@@ -207,9 +215,13 @@ async fn application_snapshot(tx: &mut Tx<'_>,ctx:&Ctx,bill_id:i64)->ApiResult<V
             }
         }
     }
+    // 雜湊算完、saved 值套用之後才補日期預設：只補還是空的 applicationDate／expectedReceiptDate，已存的值不覆蓋。
+    eo_domain::easyflow::fill_date_defaults(&mut result, ctx.today(), expected_receipt_days);
     result["sourceRevision"] = json!(revision);
     result["missingHandoffFields"] = json!(eo_domain::easyflow::missing_handoff_fields(&result));
-    result["canReview"] = json!(ctx.has("energy:flow:act").await? && mode_for(tx,ctx,"energyBill",bill_id).await?.verdict.can_edit_subject);
+    let verdict = mode_for(tx,ctx,"energyBill",bill_id).await?.verdict;
+    let finished = verdict.mode_reason.as_ref().is_some_and(|r| r.code == eo_domain::resolve_mode::ModeReasonCode::Finished);
+    result["canReview"] = json!(ctx.has("energy:flow:act").await? && (verdict.can_edit_subject || finished));
     result["applicationReview"] = json!({"state":if stale {"needs_recheck"} else if saved["state"]=="confirmed_for_handoff" && result["missingHandoffFields"].as_array().is_some_and(|a|!a.is_empty()) {"needs_completion"} else {saved["state"].as_str().unwrap_or("draft")},
        "stale":stale,"reviewedAt":saved["reviewedAt"],"reviewedBy":saved["reviewedBy"]});
     result["generatedAt"] = json!(ctx.now());
