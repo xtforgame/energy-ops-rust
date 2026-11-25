@@ -119,6 +119,9 @@ async fn easyflow_defaults_fill_draft_and_stay_confirmable_after_approval() {
         .unwrap();
     let def = app.install_def(&owner, org, &default_bill_approval(), None).await;
     app.wf_binding(org, Some(&station_key), None, None, def, "2000-01-01", None).await;
+    // calc 節點要算應付，沒綁策略會 404（no_strategy_binding_for_business_date）。
+    let strategy = app.strategy(org, "station-payout", "revenueShare", json!({ "sharePercent": 10 }), "售電分潤 10%").await;
+    app.strategy_binding(org, station, strategy, "2000-01-01", None).await;
 
     let bill = app.bill(org, Some(station), "2026-01-01", "2026-01-31", Some("50000"), None).await;
     sqlx::query("UPDATE tbl_energy_bill SET doc_type = 'renewableSurplus', detail_fields = $1 WHERE id = $2")
@@ -192,7 +195,8 @@ async fn easyflow_defaults_fill_draft_and_stay_confirmable_after_approval() {
     let field = |p: &serde_json::Value, key: &str| p["fields"].as_array().unwrap().iter().find(|f| f["key"] == key).unwrap()["value"].clone();
     assert_eq!(field(&preview, "companyName"), "測試填值-備援公司");
     assert_eq!(field(&preview, "companyCode"), "測試填值-0001");
-    let today = (chrono::Utc::now() + chrono::Duration::hours(8)).date_naive().format("%Y-%m-%d").to_string();
+    // 測試用固定時鐘（TestApp::new 設在 2026-11-04），不是真實時間；今天要跟 ctx.today() 同一個來源。
+    let today = app.core.clock.today().format("%Y-%m-%d").to_string();
     assert_eq!(field(&preview, "applicationDate"), today);
     assert!(field(&preview, "expectedReceiptDate").as_str().is_some(), "預計收款日要算出來");
 
