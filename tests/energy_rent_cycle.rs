@@ -22,7 +22,7 @@ async fn rent_cycle_persists_draft_and_validates_org_station_and_contract_dates(
         {"billId":b2,"source":"transfer","untaxed":"0","gross":"0","kwh":"0"}]);
     let preview_url=format!("{path}/preview");
     let v=expect_status!(app.post(&admin,&preview_url,json!({"start":"2026-07-01","receipts":rows})).await,200);
-    assert_eq!(v["baseRent"],"100.00");
+    assert_eq!(v["baseRent"],"100");
     assert_eq!(v["paymentAllowed"],false);
     let count:i64=sqlx::query_scalar("SELECT count(*) FROM tbl_energy_payout_record WHERE organization_id=$1").bind(org).fetch_one(&app.core.pool).await.unwrap();
     assert_eq!(count,0);
@@ -48,7 +48,7 @@ async fn rent_cycle_persists_draft_and_validates_org_station_and_contract_dates(
         monthly.push(json!({"billId":bill,"source":"taipower","untaxed":amount,"gross":null,"kwh":"0"}));
     }
     let v=expect_status!(app.post(&admin,&preview_url,json!({"start":"2026-07-01","receipts":monthly})).await,200);
-    assert_eq!(v["baseRent"],"32000.00");assert_eq!(v["monthlyBreakdown"].as_array().unwrap().len(),3);
+    assert_eq!(v["baseRent"],"32000");assert_eq!(v["monthlyBreakdown"].as_array().unwrap().len(),3);
     assert_eq!(v["feeKind"],"management");assert_eq!(v["paymentAllowed"],false);
     let mut invalid=management;invalid["commercialOperationDate"]=json!(null);
     expect_status!(app.post(&admin,&path,invalid).await,422);

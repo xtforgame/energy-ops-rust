@@ -45,11 +45,15 @@ pub async fn save(core:Core,user:CurrentUser,meta:RequestMeta,path:web::Path<(i6
     let ctx=Ctx::new(&core,access,&meta);let mut tx=core.pool.begin().await?;
     let c=contract_in_org(&mut tx,org,id).await?;
     rent_cycle::validate(&body).map_err(invalid)?;
-    // 合約租金算法代號對租金試算的 kind：R-A 只准 fixedArea、R-B 只准 revenueShare，R-0/R-C/R-D 一律不合（還沒有對應算法），代號空的放行。
+    // 合約租金算法代號對租金試算的 kind：R-A 准 fixedArea（面積×單價）或 fixedAnnual（整組年額）、
+    // R-B 只准 revenueShare、R-C 准 annualTiered（年度基準＋級距調整）、R-D 准 kwhRate（度數×費率×比例），
+    // R-0 一律不合（還沒有對應算法），代號空的放行。
     let kind_ok=match c.rent_calc_code.as_deref() {
         None=>true,
-        Some("R-A")=>body.kind=="fixedArea",
+        Some("R-A")=>body.kind=="fixedArea" || body.kind=="fixedAnnual",
         Some("R-B")=>body.kind=="revenueShare",
+        Some("R-C")=>body.kind=="annualTiered",
+        Some("R-D")=>body.kind=="kwhRate",
         Some(_)=>false,
     };
     if !kind_ok {
