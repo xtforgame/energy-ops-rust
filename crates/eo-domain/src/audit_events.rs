@@ -660,6 +660,12 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
           req("invoiceTiming", Ty::Enum(&["unknown","before","later"]))],
         "audit.type.station.rentVoucherUpdated", Notable, true,
     ),
+    // 卡 20261126-0214：案場層 EasyFlow 預設值（GET/PUT /stations/{id}/easyflow-defaults）。
+    ev(
+        "station.easyflow_defaults_updated", "energyStation",
+        &[req("before", Ty::Unknown), req("to", Ty::Unknown)],
+        "audit.type.station.easyflowDefaultsUpdated", Notable, true,
+    ),
     // ── 案場座標：要記從哪來，換 geocoder 時才知道哪些該重跑 ──
     ev(
         "station.rent_worksheet_imported", "energyStation",

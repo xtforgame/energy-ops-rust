@@ -65,7 +65,6 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("customerNumber","電號",&bill["customerNumberRaw"],"bill.customerNumberRaw"),
         ("siteCode","案場編號",&station["projectCode"],"station.projectCode / imported plantNo"),
         ("siteName","案場名稱",&station["name"],"station.name"),
-        ("companyName","公司名稱",&station["companyName"],"station.spvPayee.name"),
         ("counterpartyTaxId","對象統一編號",counterparty_tax,if retailer {"原單發票買受人統編"}else{"station.invoice.counterpartyTaxId"}),
         // 售電業購售電單：買方是收受發票的購電方，非電廠企業。
         ("buyerTaxId","買方統一編號",&bill["ocrRaw"]["record"]["fields"]["buyerTaxId"]["value"],"bill.ocrRaw.record.fields.buyerTaxId"),
@@ -75,6 +74,10 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("nextReadingDate","下期抄表日",&detail["nextReadingDate"],"bill.detailFields.nextReadingDate"),
         ("dueDate","單據繳費期限",&bill["dueDate"],"bill.dueDate"),
     ] { field(&mut fields,key,label,text(v),source); }
+    // 卡 20261126-0214：spv 名字優先；沒有才用案場層設定的 easyflowDefaults.companyName（例如沒帶 spvPayee 的舊案場）。
+    let company_name = text(&station["companyName"]);
+    field(&mut fields,"companyName","公司名稱",company_name.clone().or_else(|| text(&station["easyflowDefaults"]["companyName"])),
+        if company_name.is_some() {"station.spvPayee.name"} else {"station.data.easyflowDefaults.companyName（未設 spvPayee 時備援）"});
     let counterparty = if retailer {text(&bill["ocrRaw"]["record"]["fields"]["buyerName"]["value"])}else{text(&station["counterpartyName"])};
     field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer {None}else{text(&detail["serviceDepartment"])}),
         if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"bill.detailFields.serviceDepartment（原單台電服務部門，正式名稱請核對）"});
@@ -157,6 +160,38 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         "billId":bill["id"],"reviewStatus":bill["reviewStatus"],"approvalState":bill["approvalState"],
         "applicationType":kind,"fields":fields,"lineItems":line_items,"lineItemsReconciled":reconciled,"reconciliation":reconciliation,
         "attachments":attachments,"pending":pending})
+}
+
+/// 卡 20261126-0214：只補還是空的 `applicationDate`／`expectedReceiptDate`，已有值（手填或草稿存過）的不覆蓋。
+/// 呼叫端要在 `sourceRevision` 雜湊算完之後才叫這支——否則每天換日都會把既有草稿變成 stale。
+pub fn fill_date_defaults(result: &mut Value, today: chrono::NaiveDate, expected_receipt_days: Option<i64>) {
+    let today_str = today.format("%Y-%m-%d").to_string();
+    let Some(fields) = result["fields"].as_array_mut() else { return };
+    let mut application_date = None;
+    for f in fields.iter_mut() {
+        if f["key"]=="applicationDate" {
+            if f["value"].is_null() {
+                f["value"] = json!(today_str);
+                f["status"] = json!("available");
+                f["source"] = json!("今天（系統預設，台北時區）");
+            }
+            application_date = f["value"].as_str().map(String::from);
+        }
+    }
+    let Some(application_date) = application_date else { return };
+    if result["applicationType"] != "invoice" { return }
+    let Some(days) = expected_receipt_days else { return };
+    let Ok(base) = chrono::NaiveDate::parse_from_str(&application_date, "%Y-%m-%d") else { return };
+    let receipt = (base + chrono::Duration::days(days)).format("%Y-%m-%d").to_string();
+    if let Some(fields) = result["fields"].as_array_mut() {
+        for f in fields.iter_mut() {
+            if f["key"]=="expectedReceiptDate" && f["value"].is_null() {
+                f["value"] = json!(receipt);
+                f["status"] = json!("available");
+                f["source"] = json!(format!("申請日期 + {days} 天（station.data.easyflowDefaults.expectedReceiptDays）"));
+            }
+        }
+    }
 }
 
 /// UTF-8 BOM for Excel. All cells quoted; untrusted text cannot become spreadsheet formulas.
