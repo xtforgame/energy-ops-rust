@@ -24,13 +24,24 @@ describe('landlord rent cycle preparation',()=>{
     fireEvent.change(screen.getByLabelText('7 untaxed'),{target:{value:'100'}});
     expect(screen.queryByRole('button',{name:'匯出試算 JSON（含來源與待確認事項）'})).toBeNull();
   });
-  it('does not overwrite another site plan',async()=>{
-    vi.mocked(energyHttp.get).mockResolvedValue(response({plan:{...plan,stationId:99}}));
+  it('needs confirmation before overwriting another site plan, then saves with the confirm query',async()=>{
+    vi.mocked(energyHttp.get)
+      .mockResolvedValueOnce(response({plan:{...plan,stationId:99}}))
+      .mockResolvedValueOnce(response([{id:99,name:'另一案場'}]))
+      .mockResolvedValueOnce(response({items:[]}));
+    vi.mocked(energyHttp.post).mockResolvedValue(response({}));
     render(<RentCycle base="/api/test" contractId={2} stationId={1}/>);
     fireEvent.click(screen.getByRole('button',{name:'租金週期試算'}));
-    await screen.findByText(/此合約已為另一案場設定試算/);
+    await screen.findByText(/這份合約的試算原本設在 另一案場/);
     expect((screen.getByRole('button',{name:'儲存試算設定並載入單據'}) as HTMLButtonElement).disabled).toBe(true);
     expect(energyHttp.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('rent-cycle-confirm-rebind'));
+    fireEvent.change(screen.getByLabelText('第一期起日（每月一日）'),{target:{value:'2026-07-01'}});
+    fireEvent.mouseDown(screen.getByLabelText('此期間是否已轉供'));
+    fireEvent.click(await screen.findByRole('option',{name:'未轉供'}));
+    fireEvent.change(screen.getByLabelText('租金比例（%）'),{target:{value:'10'}});
+    fireEvent.click(screen.getByRole('button',{name:'儲存試算設定並載入單據'}));
+    await waitFor(()=>expect(energyHttp.post).toHaveBeenCalledWith('/api/test/contracts/2/rent-cycle?confirmStationChange=true',expect.objectContaining({stationId:1})));
   });
   it('persists monthly floor and operation date while presenting management fee separately',async()=>{
     const management={...plan,feeKind:'management',monthlyMinimum:'8000',commercialOperationDate:'2026-01-01'};

@@ -27,7 +27,15 @@ pub async fn station_items(core:&CoreRef,org:i64,id:i64,s:&Value,filter:Option<(
  let company:Option<String>=sqlx::query_scalar("SELECT p.name FROM tbl_energy_station s JOIN tbl_energy_landowner p ON p.id=s.spv_payee_id AND p.organization_id=s.organization_id AND p.deleted_at IS NULL WHERE s.id=$1 AND s.organization_id=$2").bind(id).bind(org).fetch_optional(&core.pool).await?;
  for item in &mut items {
   item["companyName"]=json!(company);
-  if let (Some(name),Some(start),Some(end))=(item["stationName"].as_str(),item["periodStart"].as_str(),item["periodEnd"].as_str()){item["summary"]=json!(format!("支付{name}租金（{start}～{end}）"));}
+  let tax_ids:Vec<Option<String>>=sqlx::query_scalar("SELECT tax_id FROM tbl_energy_landowner WHERE organization_id=$1 AND name=$2 AND deleted_at IS NULL").bind(org).bind(item["payee"].as_str().unwrap_or("")).fetch_all(&core.pool).await?;
+  let payee_kind=if tax_ids.len()==1 {tax_ids[0].as_deref().map(str::trim).filter(|s|!s.is_empty()).map(|t|if t.len()==8&&t.chars().all(|c|c.is_ascii_digit()){"company"}else if t.len()==10&&t.chars().next().is_some_and(|c|c.is_ascii_alphabetic()){"individual"}else{"unknown"}).unwrap_or("unknown")}else{"unknown"};
+  item["payeeKind"]=json!(payee_kind);
+  item["contractOption"]=json!("一般付款 > 有合約／簽呈");
+  item["paymentMethod"]=json!("匯款（請附存摺影本）");
+  if payee_kind=="individual" {item["voucherStatus"]=json!("有，租金計算表");}
+  else if payee_kind=="company"&&item["invoiceTiming"]=="later" {item["voucherStatus"]=json!("無，發票後補");}
+
+  if let (Some(name),Some(start),Some(end))=(item["stationName"].as_str(),item["periodStart"].as_str(),item["periodEnd"].as_str()){let subject=if payee_kind=="company" {item["payee"].as_str().unwrap_or(name).to_string()}else if payee_kind=="individual"{format!("{name}案場")}else{name.to_string()};item["summary"]=json!(format!("支付{subject}租金（{start}～{end}）"));}
   let mut ids=std::collections::BTreeSet::new();
   for key in ["lines","sourceContributions"] {if let Some(rows)=item[key].as_array(){for row in rows {if let Some(id)=row["attachmentId"].as_i64(){ids.insert(id);}}}}
   if let Some(rows)=item["leaseEvidence"]["attachmentIds"].as_array(){for row in rows {if let Some(id)=row.as_i64(){ids.insert(id);}}}

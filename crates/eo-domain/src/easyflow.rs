@@ -59,7 +59,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     if rental_from_subtotal { detail["meterRentalFee"] = subtotal["value"].clone(); }
     // Old bills predate these detail mappings. Preserve explicit corrections, including null.
     let mut canonical_sources = Vec::new();
-    for key in ["purchaseEnergyFee", "businessTax", "electricityFeeTotal", "payableTotal", "usageEnergyFee", "baseEnergyFee", "flowEnergyFee", "powerFactorAdjustmentFee", "electricityAdjustmentAmount", "meterReadingDiscount", "taxBeforeAmount"] {
+    for key in ["purchaseEnergyFee", "businessTax", "electricityFeeTotal", "payableTotal", "usageEnergyFee", "baseEnergyFee", "flowEnergyFee", "powerFactorAdjustmentFee", "electricityAdjustmentAmount", "meterReadingDiscount", "taxBeforeAmount", "latePaymentFee"] {
         let original=&bill["ocrRaw"]["record"]["fields"][key];
         if detail.get(key).is_none() && matches!(original["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")) && amount(&original["value"]).is_some() {
             detail[key]=original["value"].clone();canonical_sources.push(key);
@@ -75,7 +75,6 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("customerNumber","電號",&bill["customerNumberRaw"],"bill.customerNumberRaw"),
         ("siteCode","案場編號",&station["projectCode"],"station.projectCode / imported plantNo"),
         ("siteName","案場名稱",&station["name"],"station.name"),
-        ("companyName","公司名稱",&station["companyName"],"station.spvPayee.name"),
         ("counterpartyTaxId","對象統一編號",counterparty_tax,if retailer {"原單發票買受人統編"}else{"station.invoice.counterpartyTaxId"}),
         // 售電業購售電單：買方是收受發票的購電方，非電廠企業。
         ("buyerTaxId","買方統一編號",&bill["ocrRaw"]["record"]["fields"]["buyerTaxId"]["value"],"bill.ocrRaw.record.fields.buyerTaxId"),
@@ -85,6 +84,10 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         ("nextReadingDate","下期抄表日",&detail["nextReadingDate"],"bill.detailFields.nextReadingDate"),
         ("dueDate","單據繳費期限",&bill["dueDate"],"bill.dueDate"),
     ] { field(&mut fields,key,label,text(v),source); }
+    // 卡 20261126-0214：spv 名字優先；沒有才用案場層設定的 easyflowDefaults.companyName（例如沒帶 spvPayee 的舊案場）。
+    let company_name = text(&station["companyName"]);
+    field(&mut fields,"companyName","公司名稱",company_name.clone().or_else(|| text(&station["easyflowDefaults"]["companyName"])),
+        if company_name.is_some() {"station.spvPayee.name"} else {"station.data.easyflowDefaults.companyName（未設 spvPayee 時備援）"});
     let counterparty = if retailer {text(&bill["ocrRaw"]["record"]["fields"]["buyerName"]["value"])}else{text(&station["counterpartyName"])};
     field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer || kind=="unconfirmed" {None}else{taipower_counterparty(&detail["serviceDepartment"])}),
         if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"依台電原單服務區處整理名稱；已設定的對象主檔優先"});
@@ -120,6 +123,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
             else { format!("station.data.easyflowDefaults.{key}（未設定則待確認）") };
         field(&mut fields,key,label,configured.or(generated),&source);
     }
+    let inverter=matches!(bill["docType"].as_str(),Some("consumptionDevice"|"consumptionDeviceRental"));
     let mut line_items = Vec::new();
     if kind=="payment" && high_voltage {
         for (key,label) in [("baseEnergyFee","基本電費（約定）"),("flowEnergyFee","流動電費"),("powerFactorAdjustmentFee","功率因數調整費"),
@@ -130,11 +134,28 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
             }
         }
     } else if kind=="payment" {
-        for (key,label) in [("meterRentalFee","電表租費"),("usageEnergyFee","設備發電使用電費")] {
+        for (key,label) in [("meterRentalFee","電表租費"),("usageEnergyFee",if inverter {"逆變器使用電費"} else {"設備發電使用電費"}),("latePaymentFee","遲付費用")] {
             if let Some(d)=amount(&detail[key]).and_then(|s|Decimal::from_str(&s).ok()) {
-                line_items.push(json!({"key":key,"description":label,"amount":d.abs().normalize().to_string(),"source":format!("abs(bill.detailFields.{key})")}));
+                line_items.push(json!({"key":key,"description":format!("{}{label}",station["name"].as_str().unwrap_or("")),"currency":"TWD","amount":d.abs().normalize().to_string(),"source":format!("abs(bill.detailFields.{key})")}));
             }
         }
+    }
+    if kind=="payment" {
+        // Payment barcode is distinct from invoice carrier/footer barcodes. Unknown is not absent.
+        let barcode=detail["hasPaymentBarcode"].as_bool().or_else(||{
+            let f=&bill["ocrRaw"]["record"]["fields"]["hasPaymentBarcode"];
+            if matches!(f["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")){f["value"].as_bool()}else{None}
+        });
+        let invoice=text(&detail["invoiceNumber"]);
+        let summary=line_items.iter().filter_map(|l|l["description"].as_str()).collect::<Vec<_>>().join("、");
+        let rules=[
+          ("contractOption",if inverter{Some("無合約".to_string())}else if bill["docType"]=="renewableNoSurplus"{Some("有合約／簽呈".to_string())}else{None}),
+          ("paymentMethod",barcode.map(|yes|if yes{"匯款（請附存摺影本）"}else{"自動扣款"}.to_string())),
+          ("paymentTerms",Some("依公司正常請款規定".to_string())),
+          ("voucherStatus",match barcode{Some(false)=>Some("無，後補".to_string()),Some(true)=>invoice.map(|n|format!("有，電表租費發票{n}")),None=>None}),
+          ("summary",if summary.is_empty(){None}else{Some(summary)}),
+        ];
+        for (key,value) in rules {if text(&station["easyflowDefaults"][key]).is_none(){if let Some(value)=value{if let Some(f)=fields.iter_mut().find(|f|f["key"]==key){f["value"]=json!(value);f["status"]=json!("available");f["source"]=json!("2026-11-25 客戶 EF 填寫規則；單別、已確認付款條碼及費用明細");}}}}
     }
     let line_sum: Decimal = line_items.iter().filter_map(|x|x["amount"].as_str().and_then(|s|Decimal::from_str(s).ok())).sum();
     let total=payment_total.as_deref().and_then(|s|Decimal::from_str(s).ok());
@@ -168,6 +189,38 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
         "billId":bill["id"],"reviewStatus":bill["reviewStatus"],"approvalState":bill["approvalState"],
         "applicationType":kind,"fields":fields,"lineItems":line_items,"lineItemsReconciled":reconciled,"reconciliation":reconciliation,
         "attachments":attachments,"pending":pending})
+}
+
+/// 卡 20261126-0214：只補還是空的 `applicationDate`／`expectedReceiptDate`，已有值（手填或草稿存過）的不覆蓋。
+/// 呼叫端要在 `sourceRevision` 雜湊算完之後才叫這支——否則每天換日都會把既有草稿變成 stale。
+pub fn fill_date_defaults(result: &mut Value, today: chrono::NaiveDate, expected_receipt_days: Option<i64>) {
+    let today_str = today.format("%Y-%m-%d").to_string();
+    let Some(fields) = result["fields"].as_array_mut() else { return };
+    let mut application_date = None;
+    for f in fields.iter_mut() {
+        if f["key"]=="applicationDate" {
+            if f["value"].is_null() {
+                f["value"] = json!(today_str);
+                f["status"] = json!("available");
+                f["source"] = json!("今天（系統預設，台北時區）");
+            }
+            application_date = f["value"].as_str().map(String::from);
+        }
+    }
+    let Some(application_date) = application_date else { return };
+    if result["applicationType"] != "invoice" { return }
+    let Some(days) = expected_receipt_days else { return };
+    let Ok(base) = chrono::NaiveDate::parse_from_str(&application_date, "%Y-%m-%d") else { return };
+    let receipt = (base + chrono::Duration::days(days)).format("%Y-%m-%d").to_string();
+    if let Some(fields) = result["fields"].as_array_mut() {
+        for f in fields.iter_mut() {
+            if f["key"]=="expectedReceiptDate" && f["value"].is_null() {
+                f["value"] = json!(receipt);
+                f["status"] = json!("available");
+                f["source"] = json!(format!("申請日期 + {days} 天（station.data.easyflowDefaults.expectedReceiptDays）"));
+            }
+        }
+    }
 }
 
 /// UTF-8 BOM for Excel. All cells quoted; untrusted text cannot become spreadsheet formulas.

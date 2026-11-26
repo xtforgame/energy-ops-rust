@@ -149,6 +149,40 @@ fn ledger_keeps_template_columns_and_does_not_invent_submission_dates() {
  assert!(csv.contains("\"2026-09-30\",\"2026-10-01\""));
 }
 
+/// 卡 20261126-0214 S2：companyName 優先序。spv 名字優先；沒帶 spvPayee 的案場才用 `data.easyflowDefaults.companyName` 備援。
+#[test]
+fn company_name_prefers_spv_then_easyflow_default() {
+    let bill = json!({"docType":"renewableSurplus","detailFields":{"purchaseEnergyFee":"100"}});
+    // 有 spv 名字：優先用它，即使 easyflowDefaults 也設了一個不同的值。
+    let with_spv = build_application(&bill, &json!({"companyName":"綠順科技股份有限公司","easyflowDefaults":{"companyName":"測試填值-備援公司"}}), &json!([]));
+    assert_eq!(value(&with_spv,"companyName"), "綠順科技股份有限公司");
+    // 沒有 spv 名字：備援到 easyflowDefaults.companyName。
+    let without_spv = build_application(&bill, &json!({"easyflowDefaults":{"companyName":"測試填值-備援公司"}}), &json!([]));
+    assert_eq!(value(&without_spv,"companyName"), "測試填值-備援公司");
+    // 兩者都沒有：維持 None（不猜）。
+    let neither = build_application(&bill, &json!({}), &json!([]));
+    assert_eq!(value(&neither,"companyName"), Value::Null);
+}
+
+/// 卡 20261126-0214 S2：日期預設只補空欄，不覆蓋已存在的值；收款日 = 申請日 + 天數。
+#[test]
+fn fill_date_defaults_only_fills_blank_dates_and_adds_receipt_days() {
+    use eo_domain::easyflow::fill_date_defaults;
+    let today = chrono::NaiveDate::parse_from_str("2026-11-26", "%Y-%m-%d").unwrap();
+    let bill = json!({"docType":"renewableSurplus","detailFields":{"purchaseEnergyFee":"100"}});
+    let mut p = build_application(&bill, &json!({}), &json!([]));
+    assert_eq!(value(&p,"applicationDate"), Value::Null);
+    fill_date_defaults(&mut p, today, Some(30));
+    assert_eq!(value(&p,"applicationDate"), "2026-11-26");
+    assert_eq!(value(&p,"expectedReceiptDate"), "2026-12-26");
+    // 已經有值的欄位不被覆蓋。
+    if let Some(fields) = p["fields"].as_array_mut() {
+        for f in fields { if f["key"]=="applicationDate" { f["value"]=json!("2026-01-01"); } }
+    }
+    fill_date_defaults(&mut p, today, Some(30));
+    assert_eq!(value(&p,"applicationDate"), "2026-01-01");
+}
+
 #[test]
 fn retailer_identity_is_independent_of_taipower_and_other_providers(){
  use eo_domain::business_key::{bill_business_key,source_bill_key};
@@ -172,4 +206,26 @@ fn service_team_is_not_the_invoice_counterparty() {
  assert_eq!(value(&build_application(&other,&json!({}),&json!([])),"counterpartyName"),Value::Null);
  other["docType"]=json!("unclassified");
  assert_eq!(value(&build_application(&other,&json!({}),&json!([])),"counterpartyName"),Value::Null);
+}
+
+#[test]
+fn customer_payment_rules_keep_components_and_unknown_barcode_distinct() {
+ let station=json!({"name":"測試案場"});
+ let mut b=json!({"docType":"consumptionDeviceRental","detailFields":{"meterRentalFee":20,"usageEnergyFee":100,"latePaymentFee":5,"payableTotal":125,"hasPaymentBarcode":true,"invoiceNumber":"BBR123456"}});
+ let p=build_application(&b,&station,&json!([]));
+ assert_eq!(value(&p,"contractOption"),"無合約");
+ assert_eq!(value(&p,"paymentMethod"),"匯款（請附存摺影本）");
+ assert_eq!(value(&p,"paymentTerms"),"依公司正常請款規定");
+ assert_eq!(value(&p,"voucherStatus"),"有，電表租費發票BBR123456");
+ assert_eq!(p["lineItems"].as_array().unwrap().len(),3);
+ assert_eq!(p["lineItems"][1]["description"],"測試案場逆變器使用電費");
+ assert_eq!(p["lineItemsReconciled"],true);
+ b["detailFields"]["hasPaymentBarcode"]=Value::Null;
+ let p=build_application(&b,&station,&json!([]));
+ assert_eq!(value(&p,"paymentMethod"),Value::Null);
+ b["docType"]=json!("renewableNoSurplus");b["detailFields"]["hasPaymentBarcode"]=json!(false);
+ let p=build_application(&b,&station,&json!([]));
+ assert_eq!(value(&p,"contractOption"),"有合約／簽呈");
+ assert_eq!(value(&p,"paymentMethod"),"自動扣款");
+ assert_eq!(value(&p,"voucherStatus"),"無，後補");
 }

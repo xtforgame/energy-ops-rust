@@ -890,6 +890,18 @@ const customEnglishMessages: TranslationMessages = {
         by: 'By: %{who}',
         methodType: { ratio: 'Ratio', fixed: 'Fixed amount', land_area: 'By land area' },
       },
+      easyflowDefaults: {
+        title: 'EasyFlow defaults',
+        companyName: 'Company name',
+        companyCode: 'Company code',
+        applicant: 'Applicant',
+        department: 'Department',
+        expectedReceiptDays: 'Expected receipt days',
+        paymentMethod: 'Payment method',
+        paymentTerms: 'Payment terms',
+        voucherStatus: 'Voucher status',
+        contractOption: 'Contract / memo option',
+      },
       contracts: {
         no: 'Contract no.',
         period: 'Effective period',
@@ -913,6 +925,13 @@ const customEnglishMessages: TranslationMessages = {
         uploadAttachment: 'Upload contract file',
         noAttachments: 'No attachments yet.',
         download: 'Download',
+        // Card 20261125-2334: contract bill/rent-calc/rent-pay codes drive workflow bindings on save.
+        billCodes: 'Bill codes',
+        rentCalcCode: 'Rent calc code',
+        rentPayCode: 'Rent pay code',
+        codes: 'Codes',
+        bindingsCreated: 'Bound %{count} workflow(s) for %{station}',
+        bindingsNoMeter: '%{count} station(s) still have no meter; binding will happen once a meter is added',
       },
       paymentFrequency: {
         monthly: 'Monthly',

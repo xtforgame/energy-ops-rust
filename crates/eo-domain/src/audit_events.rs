@@ -148,7 +148,8 @@ const DEPARTMENT_MEMBER: &[Field] = &[
 /// 合約新增／編輯同一形狀（卡 20261118-0810-a2）。
 const CONTRACT: &[Field] = &[
     req("contractNo", STR),
-    req("landownerId", INT),
+    // 卡 20261126-0210 S1：合約可以先建、之後再補地主，稽核這裡跟著允許 landownerId 是 null。
+    opt("landownerId", INT),
     opt("landownerName", STR),
     opt("changes", CHANGES),
 ];
@@ -669,6 +670,12 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
           req("invoiceTiming", Ty::Enum(&["unknown","before","later"]))],
         "audit.type.station.rentVoucherUpdated", Notable, true,
     ),
+    // 卡 20261126-0214：案場層 EasyFlow 預設值（GET/PUT /stations/{id}/easyflow-defaults）。
+    ev(
+        "station.easyflow_defaults_updated", "energyStation",
+        &[req("before", Ty::Unknown), req("to", Ty::Unknown)],
+        "audit.type.station.easyflowDefaultsUpdated", Notable, true,
+    ),
     // ── 案場座標：要記從哪來，換 geocoder 時才知道哪些該重跑 ──
     ev(
         "station.rent_worksheet_imported", "energyStation",
@@ -767,6 +774,15 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
     // ── 合約（卡 20261118-0810-a2）──
     ev("contract.created", "energyContract", CONTRACT, "audit.type.contract.created", Info, true),
     ev("contract.updated", "energyContract", CONTRACT, "audit.type.contract.updated", Notable, true),
+    // 卡 20261126-0416 S2：R-A 零單據也能存，不經 POST /bills/{id}/rent-payment。
+    ev(
+        "contract.rent_payment_draft_saved",
+        "energyContract",
+        &[req("contractNo", STR), req("periodStart", STR), req("periodEnd", STR), req("baseRent", STR)],
+        "audit.type.contract.rent_payment_draft_saved",
+        Info,
+        true,
+    ),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

@@ -21,6 +21,8 @@ import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './ro
 // 綁定的三個具名動作（`FRONTEND.md §2.84`）——這一頁是動作的家。
 import BindingActions, { type BindingKind } from './BindingActions';
 import RentCycle from './RentCycle';
+import RentApplication from './RentApplication';
+import EasyFlowDefaultsSection from './EasyFlowDefaultsSection';
 
 /** 卡 20261118-0427-a 時區修正：`toISOString()`／`Date` 的 `.slice()` 都是 UTC，顯示給人看要轉本地時間。
  *  後端存的 UTC 不動（`occurredAt` 原樣送 PATCH／顯示其他地方），這裡只管「轉成人看的字串」這一層。 */
@@ -41,7 +43,7 @@ function localDateTime(iso: string): string {
 }
 
 /** 卡 20261118-0427-a S2：電號區（一對多，有效期重疊回 409 `meter_overlap`）。 */
-const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({ orgId, stationId }) => {
+const MetersSection: React.FC<{ orgId?: number | null; stationId: number; onDone?: () => void }> = ({ orgId, stationId, onDone }) => {
   const notify = useNotify();
   const translate = useTranslate();
   const base = energyBase(orgId);
@@ -69,6 +71,8 @@ const MetersSection: React.FC<{ orgId?: number | null; stationId: number }> = ({
       setOpen(false);
       setForm({ customerNumber: '', usage: 'wholesale', validFrom: '', note: '', taipowerContractNo: '', feedInRate: '' });
       load();
+      // 補電號之後有可能自動補上工作流綁定（卡 20261125-2334），讓外層重抓綁定區才看得到。
+      onDone?.();
     } catch (e: any) {
       if (apiErrorCode(e) === 'meter_overlap') {
         notify(translate('energy.meters.overlap'), { type: 'warning' });
@@ -671,9 +675,12 @@ const StationDetailPage: React.FC = () => {
 
       {/* 卡 20261118-0427-a S2／S4：電號區、地主分配區（各自抓自己的資料，不擋其他區塊）。 */}
       {id && <RentPaymentPreview base={base} stationId={Number(id)} />}
-      {id && <MetersSection orgId={orgId} stationId={Number(id)} />}
+      {id && <RentApplication base={base} stationId={Number(id)} />}
+      {id && <MetersSection orgId={orgId} stationId={Number(id)} onDone={() => { loadBindings(); load(); }} />}
       {id && <StationRentRules base={base} stationId={Number(id)} />}
       {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
+      {/* 卡 20261126-0214：使用者裁定畫面放案場層（地主分配區後面）。 */}
+      {id && <EasyFlowDefaultsSection orgId={orgId} stationId={Number(id)} />}
 
       {/* 兩條效期軸 */}
       {renderAxis('energy.stations.workflowAxis', data?.workflowAxis ?? [], 'workflow-axis', 'workflow')}
@@ -711,7 +718,7 @@ const StationDetailPage: React.FC = () => {
                         sx={{ background: jvTokens.primary, color: '#fff', fontWeight: 600, height: 20 }}
                       />
                     )}
-                    <RentCycle base={base} contractId={c.id} stationId={Number(id)} />
+                    <RentCycle base={base} contractId={c.id} stationId={Number(id)} rentCalcCode={c.rentCalcCode} />
                   </TableCell>
                 </TableRow>
               )) : <EmptyRow colSpan={6} />}

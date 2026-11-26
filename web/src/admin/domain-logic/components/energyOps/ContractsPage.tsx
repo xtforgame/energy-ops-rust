@@ -31,7 +31,27 @@ interface ContractRow {
   stations: Array<{ id: number; name: string }>; signedOn: string | null; validFrom: string; validTo: string | null;
   renewalRemindOn: string | null; termsVersion: string | null; paymentFrequency: string | null; paymentTerms: string | null;
   stage: string; attachmentCount: number;
+  billCodes: string[]; rentCalcCode: string | null; rentPayCode: string | null;
 }
+
+interface WorkflowBinding {
+  stationId: number; stationName: string; code: string; docType: string; workflowKey: string;
+  result: 'created' | 'alreadyBound' | 'noMeter' | 'notInstalled';
+}
+
+/** 代號＋名稱，照 `scripts/site-workflow-inventory/代號表.csv`（代號定義是中文文件，名稱不走 i18n，照 CONTRACT_TYPE_SUGGESTIONS 的慣例）。 */
+const BILL_CODE_NAMES: Record<string, string> = {
+  'E-A': '台電開票（有餘電）', 'E-B': '台電付款（有合約）', 'E-C': '轉供開票（天能與其他售電業）', 'E-D': '逆變器（無合約付款）',
+};
+const RENT_CALC_CODE_NAMES: Record<string, string> = {
+  'R-0': '不付租金', 'R-A': '固定金額', 'R-B': '售電收入比例', 'R-C': '級距', 'R-D': '度數×差購費率',
+};
+const RENT_PAY_CODE_NAMES: Record<string, string> = {
+  'RP-1': '一般（公司地主，憑證先附）', 'RP-2': '憑證後補', 'RP-3': '機關（公文加會計師簽證）', 'RP-4': '個人地主',
+};
+const BILL_CODES = Object.keys(BILL_CODE_NAMES);
+const RENT_CALC_CODES = Object.keys(RENT_CALC_CODE_NAMES);
+const RENT_PAY_CODES = Object.keys(RENT_PAY_CODE_NAMES);
 
 interface AttachmentRow {
   id: number; originalFilename: string; size: number; uploadedAt: string;
@@ -45,11 +65,13 @@ interface FormState {
   contractNo: string; contractType: string; landownerIds: number[]; stationIds: number[];
   signedOn: string; validFrom: string; validTo: string; renewalRemindOn: string;
   termsVersion: string; paymentFrequency: string; paymentTerms: string;
+  billCodes: string[]; rentCalcCode: string; rentPayCode: string;
 }
 
 const emptyForm: FormState = {
   contractNo: '', contractType: '', landownerIds: [], stationIds: [],
   signedOn: '', validFrom: '', validTo: '', renewalRemindOn: '', termsVersion: '', paymentFrequency: '', paymentTerms: '',
+  billCodes: [], rentCalcCode: '', rentPayCode: '',
 };
 
 /**
@@ -122,9 +144,26 @@ const ContractsPage: React.FC = () => {
       stationIds: r.stations.map((s) => s.id), signedOn: r.signedOn ?? '', validFrom: r.validFrom, validTo: r.validTo ?? '',
       renewalRemindOn: r.renewalRemindOn ?? '', termsVersion: r.termsVersion ?? '',
       paymentFrequency: r.paymentFrequency ?? '', paymentTerms: r.paymentTerms ?? '',
+      billCodes: r.billCodes ?? [], rentCalcCode: r.rentCalcCode ?? '', rentPayCode: r.rentPayCode ?? '',
     });
     loadAttachments(r.id);
     setOpen(true);
+  };
+
+  /** 使用者 2026-11-25：存檔時依代號建工作流綁定，結果用一句話告訴使用者；noMeter／notInstalled 不算錯誤。 */
+  const summarizeBindings = (bindings: WorkflowBinding[]): string => {
+    const created = bindings.filter((b) => b.result === 'created');
+    const noMeterStationIds = new Set(bindings.filter((b) => b.result === 'noMeter').map((b) => b.stationId));
+    const parts: string[] = [];
+    if (created.length) {
+      const names = Array.from(new Set(created.map((b) => b.stationName)));
+      const label = names.length === 1 ? names[0] : `${names.length} 個案場`;
+      parts.push(translate('energy.contracts.bindingsCreated', { smart_count: created.length, station: label, count: created.length }));
+    }
+    if (noMeterStationIds.size) {
+      parts.push(translate('energy.contracts.bindingsNoMeter', { smart_count: noMeterStationIds.size, count: noMeterStationIds.size }));
+    }
+    return parts.join('；');
   };
 
   const save = async () => {
@@ -137,10 +176,13 @@ const ContractsPage: React.FC = () => {
         signedOn: form.signedOn || undefined, validFrom: form.validFrom, validTo: form.validTo || undefined,
         renewalRemindOn: form.renewalRemindOn || undefined, termsVersion: form.termsVersion || undefined,
         paymentFrequency: form.paymentFrequency || undefined, paymentTerms: form.paymentTerms || undefined,
+        billCodes: form.billCodes, rentCalcCode: form.rentCalcCode || undefined, rentPayCode: form.rentPayCode || undefined,
       };
-      if (form.id) await energyHttp.patch(`${base}/contracts/${form.id}`, body);
-      else await energyHttp.post(`${base}/contracts`, body);
-      notify('ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
+      const { data } = form.id ? await energyHttp.patch(`${base}/contracts/${form.id}`, body) : await energyHttp.post(`${base}/contracts`, body);
+      // 使用者 2026-11-25：存檔結果用一句話告訴使用者；react-admin 一次只顯示一則通知，
+      // 兩則連著發第二則會被排到第一則消失（約 4 秒）後才出現，使用者看不到——改成只發一則。
+      const summary = summarizeBindings(Array.isArray(data?.workflowBindings) ? data.workflowBindings : []);
+      notify(summary || 'ra.notification.updated', { type: 'info', messageArgs: { smart_count: 1 } });
       setOpen(false);
       load();
     } catch (e: any) {
@@ -203,6 +245,7 @@ const ContractsPage: React.FC = () => {
                 <TableCell>{translate('energy.stations.validTo')}</TableCell>
                 <TableCell>{translate('energy.contracts.renewalRemindOn')}</TableCell>
                 <TableCell>{translate('energy.contracts.paymentFrequency')}</TableCell>
+                <TableCell>{translate('energy.contracts.codes')}</TableCell>
                 <TableCell align="right">{translate('energy.contracts.attachmentCount')}</TableCell>
                 <TableCell />
               </TableRow>
@@ -219,6 +262,9 @@ const ContractsPage: React.FC = () => {
                   <TableCell>{r.validTo || '—'}</TableCell>
                   <TableCell>{r.renewalRemindOn || '—'}</TableCell>
                   <TableCell>{r.paymentFrequency ? translate(`energy.paymentFrequency.${r.paymentFrequency}`) : '—'}</TableCell>
+                  <TableCell data-testid="contract-codes">
+                    {[r.billCodes?.join('、'), r.rentCalcCode, r.rentPayCode].filter(Boolean).join('／') || '—'}
+                  </TableCell>
                   <TableCell align="right" data-testid="contract-attachment-count">{r.attachmentCount}</TableCell>
                   <TableCell>
                     <Button size="small" onClick={() => openEdit(r)} data-testid="contract-edit">
@@ -226,7 +272,7 @@ const ContractsPage: React.FC = () => {
                     </Button>
                   </TableCell>
                 </TableRow>
-              )) : <EmptyRow colSpan={11} loading={loading} />}
+              )) : <EmptyRow colSpan={12} loading={loading} />}
             </TableBody>
           </Table>
         </CardContent>
@@ -244,7 +290,7 @@ const ContractsPage: React.FC = () => {
               onInputChange={(_, v) => setForm({ ...form, contractType: v })}
               renderInput={(params) => <TextField {...params} label={translate('energy.contracts.type')} data-testid="contract-form-type" />}
             />
-            <FormControl fullWidth required data-testid="contract-form-landowner">
+            <FormControl fullWidth data-testid="contract-form-landowner">
               <InputLabel>{translate('energy.contracts.landowners')}</InputLabel>
               <Select
                 multiple
@@ -285,6 +331,40 @@ const ContractsPage: React.FC = () => {
               onChange={(e) => setForm({ ...form, renewalRemindOn: e.target.value })} InputLabelProps={{ shrink: true }} data-testid="contract-form-renewal"
             />
             <TextField label={translate('energy.contracts.termsVersion')} value={form.termsVersion} onChange={(e) => setForm({ ...form, termsVersion: e.target.value })} data-testid="contract-form-termsversion" />
+            <FormControl fullWidth data-testid="contract-form-billcodes">
+              <InputLabel>{translate('energy.contracts.billCodes')}</InputLabel>
+              <Select
+                multiple
+                label={translate('energy.contracts.billCodes')}
+                value={form.billCodes}
+                onChange={(e) => setForm({ ...form, billCodes: (e.target.value as string[]) })}
+                renderValue={(codes) => (codes as string[]).join('、')}
+              >
+                {BILL_CODES.map((c) => <MenuItem key={c} value={c}>{`${c} ${BILL_CODE_NAMES[c]}`}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth data-testid="contract-form-rentcalc">
+              <InputLabel>{translate('energy.contracts.rentCalcCode')}</InputLabel>
+              <Select
+                label={translate('energy.contracts.rentCalcCode')}
+                value={form.rentCalcCode}
+                onChange={(e) => setForm({ ...form, rentCalcCode: e.target.value })}
+              >
+                <MenuItem value="">—</MenuItem>
+                {RENT_CALC_CODES.map((c) => <MenuItem key={c} value={c}>{`${c} ${RENT_CALC_CODE_NAMES[c]}`}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth data-testid="contract-form-rentpay">
+              <InputLabel>{translate('energy.contracts.rentPayCode')}</InputLabel>
+              <Select
+                label={translate('energy.contracts.rentPayCode')}
+                value={form.rentPayCode}
+                onChange={(e) => setForm({ ...form, rentPayCode: e.target.value })}
+              >
+                <MenuItem value="">—</MenuItem>
+                {RENT_PAY_CODES.map((c) => <MenuItem key={c} value={c}>{`${c} ${RENT_PAY_CODE_NAMES[c]}`}</MenuItem>)}
+              </Select>
+            </FormControl>
             <FormControl fullWidth data-testid="contract-form-paymentfrequency">
               <InputLabel>{translate('energy.contracts.paymentFrequency')}</InputLabel>
               <Select
@@ -342,7 +422,7 @@ const ContractsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>{translate('ra.action.cancel')}</Button>
-          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || form.landownerIds.length === 0 || !form.validFrom} data-testid="contract-form-save">
+          <Button variant="contained" onClick={save} disabled={saving || !form.contractNo || !form.validFrom} data-testid="contract-form-save">
             {translate('ra.action.save')}
           </Button>
         </DialogActions>

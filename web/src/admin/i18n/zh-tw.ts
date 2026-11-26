@@ -967,6 +967,18 @@ const customChineseTWMessages: TranslationMessages = {
       by: '操作人：%{who}',
       methodType: { ratio: '比例', fixed: '固定金額', land_area: '依土地面積' },
     },
+    easyflowDefaults: {
+      title: 'EasyFlow 預設值',
+      companyName: '公司名稱',
+      companyCode: '公司代碼',
+      applicant: '申請人',
+      department: '申請部門',
+      expectedReceiptDays: '預計收款天數',
+      paymentMethod: '付款方式',
+      paymentTerms: '付款條件',
+      voucherStatus: '憑證狀態',
+      contractOption: '有合約／簽呈選項',
+    },
     contracts: {
       no: '合約編號',
       period: '生效期間',
@@ -991,6 +1003,13 @@ const customChineseTWMessages: TranslationMessages = {
       uploadAttachment: '上傳合約檔',
       noAttachments: '還沒有附件。',
       download: '下載',
+      // 卡 20261125-2334：合約綁電費計算代號／租金算法／付款方式代號，存檔依代號建工作流綁定。
+      billCodes: '電費計算代號',
+      rentCalcCode: '租金算法代號',
+      rentPayCode: '付款方式代號',
+      codes: '代號',
+      bindingsCreated: '已替 %{station} 綁定 %{count} 條工作流',
+      bindingsNoMeter: '%{count} 個案場還沒有電號，補電號後會自動綁',
     },
     paymentFrequency: {
       monthly: '每月',
