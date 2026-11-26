@@ -90,9 +90,8 @@ pub fn validate(p:&Plan)->Result<(),String> {
     }
     Ok(())
 }
-/// 獅甲公證書第五條第二項逐列級距表（每 5 個百分點一階，原文「未滿 X%／逾 A% 未滿 B%」者照 B% 計收；
-/// 95%～105% 不調整照 100% 收，在此以門檻 105→100 表示）。找第一個 ratio < 門檻 的列，回傳對應百分比；
-/// 都不成立（ratio ≥ 200）回 None，由呼叫端轉成「依契約應變更經營年租金，不自動計算」的 issue。
+/// 獅甲 PDF 第4～6頁：開區間往上檔；原文整5%界線有缺口，不猜測。
+/// 第(33)(34)款的170～180%區間印文有疑點，暫待核定；200%以上明文要求變更契約。
 const SCHOOL_ROOF_TIERS:&[(i64,i64)]=&[
     (5,5),(10,10),(15,15),(20,20),(25,25),(30,30),(35,35),(40,40),(45,45),(50,50),
     (55,55),(60,60),(65,65),(70,70),(75,75),(80,80),(85,85),(90,90),(95,95),
@@ -100,11 +99,18 @@ const SCHOOL_ROOF_TIERS:&[(i64,i64)]=&[
     (110,110),(115,115),(120,120),(125,125),(130,130),(135,135),(140,140),(145,145),(150,150),
     (155,155),(160,160),(165,165),(170,170),(175,175),(180,180),(185,185),(190,190),(195,195),(200,200),
 ];
-fn tier_percent(ratio:Decimal)->Option<Decimal> {
-    for (threshold,percent) in SCHOOL_ROOF_TIERS {
-        if ratio<Decimal::from(*threshold) {return Some(Decimal::from(*percent));}
+fn tier_percent(ratio:Decimal)->Result<Decimal,&'static str> {
+    if ratio==Decimal::ZERO {return Err("零收入不能證明已開始售電；請確認是否適用尚未售電不調整條款");}
+    if ratio>=Decimal::from(200) {return Err("依契約應變更經營年租金，不自動計算");}
+    if ratio<Decimal::ZERO {return Err("參考年租金為負，請核對收入與調整單");}
+    if ratio>=Decimal::from(170)&&ratio<Decimal::from(180) {return Err("獅甲合約第（三十三）、（三十四）款170～180%區間印文有疑點，待確認，不自動選檔");}
+    if ratio>Decimal::ZERO && ratio!=Decimal::from(100) && ratio%Decimal::from(5)==Decimal::ZERO {
+        return Err("合約使用逾／未滿，恰等於5%級距界線的歸屬待確認，不自動選檔");
     }
-    None
+    for (threshold,percent) in SCHOOL_ROOF_TIERS {
+        if ratio<Decimal::from(*threshold) {return Ok(Decimal::from(*percent));}
+    }
+    Err("無對應級距，請確認合約")
 }
 pub fn bounds(p:&Plan,start:&str)->Result<(NaiveDate,NaiveDate),String> {
     validate(p)?;
@@ -123,10 +129,10 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
             return Ok(json!({"schemaVersion":"rent-cycle-draft/v1","state":"draft","periodStart":from.to_string(),"periodEnd":to.to_string(),
                 "plan":p,"receipts":rows,"sources":{"taipower":{"status":"notRequired","amount":null,"kwh":null,"billIds":[]},
                 "transfer":{"status":if p.transfer {"notRequired"}else{"notApplicable"},"amount":null,"kwh":null,"billIds":[]}},
-                "issues":[],"baseRent":Decimal::ZERO.to_string(),"lines":[],"referenceRent":null,"ratioPercent":null,"tierPercent":null,"monthlyBreakdown":[],
-                "feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":"notStarted",
+                "issues":[],"baseRent":if p.kind=="annualTiered" {number(p.annual_amount.as_deref())?.round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero).to_string()}else{Decimal::ZERO.to_string()},"lines":[],"referenceRent":null,"ratioPercent":null,"tierPercent":null,"monthlyBreakdown":[],
+                "feeKind":p.fee_kind.as_deref().unwrap_or("rent"),"chargeStatus":if p.kind=="annualTiered" {"annualBaselineBeforeSales"}else{"notStarted"},
                 "taxStatus":"pendingConfirmation","netPayable":null,"paymentAllowed":false,"invoiceDirection":"receiveLandlordInvoice",
-                "note":"整期在正式併聯發電日前，不計費；不是零收入單據，也不啟動付款。"}));
+                "note":if p.kind=="annualTiered" {"本期尚未併聯售電，不適用級距調整；依契約生效後年租金基準試算，非免租。契約生效日與結算期間仍須核對。"}else{"整期在正式併聯發電日前，不計費；不是零收入單據，也不啟動付款。"}}));
         }
         if operation>from {return Err("首次併聯落在本期內；首月及不完整週期計費方式待確認，不自動按日分攤或套整月保底".into());}
     }
@@ -231,12 +237,12 @@ pub fn preview(p:&Plan,start:&str,rows:&[Receipt])->Result<Value,String> {
         let ratio=if baseline>Decimal::ZERO {line_total.checked_mul(Decimal::from(100)).and_then(|n|n.checked_div(baseline)).ok_or("計算金額超出範圍")?}else{Decimal::ZERO};
         ratio_percent=Some(ratio);
         match tier_percent(ratio) {
-            Some(tier)=>{
+            Ok(tier)=>{
                 tier_percent_out=Some(tier);
                 Some(baseline.checked_mul(tier).and_then(|n|n.checked_div(Decimal::from(100))).ok_or("計算金額超出範圍")?
                     .round_dp_with_strategy(0,RoundingStrategy::MidpointAwayFromZero))
             },
-            None=>{issues.push("依契約應變更經營年租金，不自動計算".into());None},
+            Err(reason)=>{issues.push(reason.into());None},
         }
     } else {
         let raw=match p.kind.as_str() {

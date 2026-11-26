@@ -241,3 +241,43 @@ fn shijia_116_percent_uses_120_not_115() {
  let v=run(&p,vec![receipt(1,"taipower","2026-07-01","2027-06-30","1160000")]);
  assert_eq!(v["tierPercent"],"120");assert_eq!(v["baseRent"],"120000");
 }
+
+#[test]
+fn shijia_literal_gaps_and_typo_ranges_do_not_guess_amounts() {
+ let p=tier_plan("100000","10");
+ for ratio in [5,10,90,95,105,110,115,165,170,171,175,179,180,195] {
+  let amount=(ratio*10000).to_string();
+  let v=run(&p,vec![receipt(1,"taipower","2026-07-01","2027-06-30",&amount)]);
+  assert_eq!(v["baseRent"],Value::Null,"ratio={ratio}");
+  assert!(!v["issues"].as_array().unwrap().is_empty());
+ }
+}
+#[test]
+fn shijia_before_sale_keeps_contract_annual_rent_not_zero() {
+ let mut p=tier_plan("64419","10");p.commercial_operation_date=Some("2028-01-01".into());
+ let v=run(&p,vec![]);assert_eq!(v["baseRent"],"64419");
+}
+#[test]
+fn shijia_real_baseline_with_synthetic_income_matches_clear_interval() {
+ let p=tier_plan("64419","10");
+ let v=run(&p,vec![receipt(1,"taipower","2026-07-01","2027-06-30","747260")]);
+ assert_eq!(v["tierPercent"],"120");assert_eq!(v["baseRent"],"77303");
+}
+
+#[test]
+fn shijia_zero_income_does_not_prove_sale_has_started() {
+ let p=tier_plan("64419","10");
+ let v=run(&p,vec![receipt(1,"taipower","2026-07-01","2027-06-30","0")]);
+ assert_eq!(v["baseRent"],Value::Null);
+ assert!(v["issues"].to_string().contains("售電"));
+}
+#[test]
+fn shijia_all_clear_open_intervals_follow_original_upper_tiers() {
+ let p=tier_plan("100000","10");
+ for ratio in (1..200).filter(|n| n%5!=0 && !((170..180).contains(n))) {
+  let amount=(ratio*10000).to_string();
+  let v=run(&p,vec![receipt(1,"taipower","2026-07-01","2027-06-30",&amount)]);
+  let tier=if ratio>95 && ratio<105 {100}else{((ratio/5)+1)*5};
+  assert_eq!(v["baseRent"],(tier*1000).to_string(),"ratio={ratio}");
+ }
+}
