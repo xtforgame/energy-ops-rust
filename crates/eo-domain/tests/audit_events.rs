@@ -74,13 +74,14 @@ fn declares_only_types_that_are_written() {
         "strategy.binding_created", "strategy.binding_switched", "strategy.binding_ended",
         "flow.binding_created", "flow.binding_switched", "flow.binding_ended",
         "station.geocoded", "station.rent_sources_updated", "station.rent_voucher_updated", "station.rent_worksheet_imported",
+        "station.easyflow_defaults_updated",
         "ingest.batch_classified",
     ];
     let mut actual = audit_event_types();
     expected.sort();
     actual.sort();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 67);
+    assert_eq!(actual.len(), 69);
 }
 
 /// 來源：auditEvents.test.ts「lookup helpers behave」

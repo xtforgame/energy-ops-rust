@@ -890,6 +890,18 @@ const customEnglishMessages: TranslationMessages = {
         by: 'By: %{who}',
         methodType: { ratio: 'Ratio', fixed: 'Fixed amount', land_area: 'By land area' },
       },
+      easyflowDefaults: {
+        title: 'EasyFlow defaults',
+        companyName: 'Company name',
+        companyCode: 'Company code',
+        applicant: 'Applicant',
+        department: 'Department',
+        expectedReceiptDays: 'Expected receipt days',
+        paymentMethod: 'Payment method',
+        paymentTerms: 'Payment terms',
+        voucherStatus: 'Voucher status',
+        contractOption: 'Contract / memo option',
+      },
       contracts: {
         no: 'Contract no.',
         period: 'Effective period',

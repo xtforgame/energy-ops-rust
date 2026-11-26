@@ -134,6 +134,40 @@ fn ledger_keeps_template_columns_and_does_not_invent_submission_dates() {
  assert!(csv.contains("\"2026-09-30\",\"2026-10-01\""));
 }
 
+/// 卡 20261126-0214 S2：companyName 優先序。spv 名字優先；沒帶 spvPayee 的案場才用 `data.easyflowDefaults.companyName` 備援。
+#[test]
+fn company_name_prefers_spv_then_easyflow_default() {
+    let bill = json!({"docType":"renewableSurplus","detailFields":{"purchaseEnergyFee":"100"}});
+    // 有 spv 名字：優先用它，即使 easyflowDefaults 也設了一個不同的值。
+    let with_spv = build_application(&bill, &json!({"companyName":"綠順科技股份有限公司","easyflowDefaults":{"companyName":"測試填值-備援公司"}}), &json!([]));
+    assert_eq!(value(&with_spv,"companyName"), "綠順科技股份有限公司");
+    // 沒有 spv 名字：備援到 easyflowDefaults.companyName。
+    let without_spv = build_application(&bill, &json!({"easyflowDefaults":{"companyName":"測試填值-備援公司"}}), &json!([]));
+    assert_eq!(value(&without_spv,"companyName"), "測試填值-備援公司");
+    // 兩者都沒有：維持 None（不猜）。
+    let neither = build_application(&bill, &json!({}), &json!([]));
+    assert_eq!(value(&neither,"companyName"), Value::Null);
+}
+
+/// 卡 20261126-0214 S2：日期預設只補空欄，不覆蓋已存在的值；收款日 = 申請日 + 天數。
+#[test]
+fn fill_date_defaults_only_fills_blank_dates_and_adds_receipt_days() {
+    use eo_domain::easyflow::fill_date_defaults;
+    let today = chrono::NaiveDate::parse_from_str("2026-11-26", "%Y-%m-%d").unwrap();
+    let bill = json!({"docType":"renewableSurplus","detailFields":{"purchaseEnergyFee":"100"}});
+    let mut p = build_application(&bill, &json!({}), &json!([]));
+    assert_eq!(value(&p,"applicationDate"), Value::Null);
+    fill_date_defaults(&mut p, today, Some(30));
+    assert_eq!(value(&p,"applicationDate"), "2026-11-26");
+    assert_eq!(value(&p,"expectedReceiptDate"), "2026-12-26");
+    // 已經有值的欄位不被覆蓋。
+    if let Some(fields) = p["fields"].as_array_mut() {
+        for f in fields { if f["key"]=="applicationDate" { f["value"]=json!("2026-01-01"); } }
+    }
+    fill_date_defaults(&mut p, today, Some(30));
+    assert_eq!(value(&p,"applicationDate"), "2026-01-01");
+}
+
 #[test]
 fn retailer_identity_is_independent_of_taipower_and_other_providers(){
  use eo_domain::business_key::{bill_business_key,source_bill_key};

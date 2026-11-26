@@ -21,6 +21,7 @@ import { billRoute, executionListRoute, landownerRoute, myWorkRoute } from './ro
 import BindingActions, { type BindingKind } from './BindingActions';
 import RentCycle from './RentCycle';
 import RentApplication from './RentApplication';
+import EasyFlowDefaultsSection from './EasyFlowDefaultsSection';
 
 /** 卡 20261118-0427-a 時區修正：`toISOString()`／`Date` 的 `.slice()` 都是 UTC，顯示給人看要轉本地時間。
  *  後端存的 UTC 不動（`occurredAt` 原樣送 PATCH／顯示其他地方），這裡只管「轉成人看的字串」這一層。 */
@@ -677,6 +678,8 @@ const StationDetailPage: React.FC = () => {
       {id && <RentApplication base={base} stationId={Number(id)} />}
       {id && <MetersSection orgId={orgId} stationId={Number(id)} onDone={() => { loadBindings(); load(); }} />}
       {id && <AllocationsSection orgId={orgId} stationId={Number(id)} />}
+      {/* 卡 20261126-0214：使用者裁定畫面放案場層（地主分配區後面）。 */}
+      {id && <EasyFlowDefaultsSection orgId={orgId} stationId={Number(id)} />}
 
       {/* 兩條效期軸 */}
       {renderAxis('energy.stations.workflowAxis', data?.workflowAxis ?? [], 'workflow-axis', 'workflow')}

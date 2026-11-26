@@ -50,9 +50,14 @@ JSON：`schemaVersion=easyflow.application.v1`，包含 `billId`、`organization
 沿用既有 `/imports/stations` 的「發電案場清單」15 欄格式，**沒有宣稱可直接匯入任意超強表格工作表**。
 本次增加保存「發票開立單的收款對象」「統一編號」到案場 data.invoice。舊資料若沒有這兩欄，請先用既有 dry-run 檢查，再重匯正確主檔或補資料；不依模糊名稱猜對象。
 
-可由既有案場 data 設定 `easyflowDefaults`，支援：companyCode、applicant、department、applicationDate、summary、expectedReceiptDate、paymentMethod、paymentTerms、voucherStatus、contractOption。
-只把已確認規則寫入，不預設當天為申請日、不預設某位人員、不自算工作天。
-日期等逐筆變動欄位若使用設定值，需要由整合端更新；目前沒有規則編輯 UI，也不會自動把範例日期套到下一期。
+案場詳情頁「地主分配」下方有「EasyFlow 預設值」卡（卡 20261126-0214），對應 `GET`／`PUT /orgs/{orgId}/energy/stations/{stationId}/easyflow-defaults`，寫入 `data.easyflowDefaults`。
+PUT 要有 `energy:master:manage` 權限，只收 9 個 key：companyName、companyCode、applicant、department、expectedReceiptDays、paymentMethod、paymentTerms、voucherStatus、contractOption。
+字串上限 200 字；`expectedReceiptDays` 必須是 0～365 的整數（天數，不是固定日期）。其他 key 或值不合規回 400。
+每次 PUT 整包取代（不是逐欄 patch），並寫一筆稽核 `station.easyflow_defaults_updated`。
+
+草稿帶入規則：`companyName` 以案場綁定的 spv 受款對象名字優先，沒有才用 `easyflowDefaults.companyName` 備援；`applicationDate` 沒有存草稿、也沒有手填時用「今天」（台北時區）；開立類單據（invoice）且設定了 `expectedReceiptDays` 時，`expectedReceiptDate` = `applicationDate` + 天數。這兩個日期是在來源雜湊（`sourceRevision`）算完之後才補的，換日不會讓既有草稿變成 `needs_recheck`；已經存過的值不會被日期預設覆蓋。
+
+**電費單的審核流程完成（`completed`）之後，EasyFlow 申請草稿不會被鎖成唯讀或 `needs_recheck`**：仍可重新存檔、重新確認，直到 `missingHandoffFields` 清空為止。只有原始金額等來源資料真的被改掉，草稿才會變成待重新核對（`stale`／`needs_recheck`），這跟流程本身有沒有跑完是兩件事。
 
 ## 本次驗證與未驗證邊界
 
