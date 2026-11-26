@@ -1,0 +1,48 @@
+{
+  "pdfPath": "/absolute/path/to/your/sample-bill.pdf",
+  "station": {
+    "name": "示範案場"
+  },
+  "landowner": {
+    "name": "示範地主",
+    "partyType": "機關"
+  },
+  "contract": {
+    "no": "00-XX-000-0000",
+    "signedOn": "2020-01-01",
+    "validFrom": "2020-01-01",
+    "validTo": "2030-12-31"
+  },
+  "easyflowDefaults": {
+    "companyName": "示範公司",
+    "companyCode": "00000000",
+    "applicant": "測試填值-applicant",
+    "department": "測試填值-department",
+    "paymentMethod": "測試填值-paymentMethod",
+    "paymentTerms": "測試填值-paymentTerms",
+    "voucherStatus": "測試填值-voucherStatus",
+    "contractOption": "測試填值-contractOption"
+  },
+  "match": {
+    "customerNumberHint": "00-00-0000-00-0",
+    "searchTerm": "示範",
+    "stationFullName": "示範案場"
+  },
+  "rentCycle": {
+    "anchorDate": "2024-01-01",
+    "startDate": "2024-01-01",
+    "annualAmount": "200000",
+    "expectedBaseRent": 200000,
+    "expectedTotal": 200000
+  },
+  "sources": {
+    "env": "本機測試環境，已清空重建",
+    "station": "（填：這個案場名稱查得到的來源，例如哪份表格第幾列第幾欄）",
+    "landowner": "（填：這個地主名稱查得到的來源）",
+    "contract": "（填：這個合約編號查得到的來源）",
+    "easyflow": "（填：companyName／companyCode 查得到的來源，其餘欄位查不到就寫「填測試值」）",
+    "upload": "（填：上傳的這張 PDF 是什麼單據）",
+    "match": "（填：這張單解析出的電號跟疑似缺陷查證的依據）",
+    "rentCycle": "（填：年額這個數字查得到的來源）"
+  }
+}

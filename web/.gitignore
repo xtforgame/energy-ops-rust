@@ -3,3 +3,4 @@ dist/
 *.log
 e2e/.tmp/
 e2e/shots/
+e2e/real-run.local.json
