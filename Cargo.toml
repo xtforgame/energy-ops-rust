@@ -71,6 +71,7 @@ chrono.workspace = true
 actix-http = "3"
 bytes.workspace = true
 rand.workspace = true
+rust_decimal.workspace = true
 
 [[test]]
 name = "all"

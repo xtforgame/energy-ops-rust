@@ -823,6 +823,7 @@ const customEnglishMessages: TranslationMessages = {
         projectCodeIncomplete: 'Incomplete',
         siteType: 'Type',
         spv: 'Holding subsidiary',
+        region: 'Region',
         serviceDistrict: 'District office',
         capacityKw: 'Capacity (kW)',
         gridDate: 'Grid connection date',
@@ -865,6 +866,7 @@ const customEnglishMessages: TranslationMessages = {
       coreTableImport: {
         title: 'Core table import',
         chooseFile: 'Choose file',
+        chooseAssetFile: 'Asset management list (optional)',
         preview: 'Preview',
         confirm: 'Confirm write',
         stations: 'Stations',

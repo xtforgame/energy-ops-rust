@@ -44,11 +44,12 @@ const CoreTableImportDialog: React.FC<Props> = ({ open, onClose, base, onDone })
   const notify = useNotify();
   const translate = useTranslate();
   const [file, setFile] = React.useState<File | null>(null);
+  const [assetFile, setAssetFile] = React.useState<File | null>(null);
   const [result, setResult] = React.useState<ImportResult | null>(null);
   const [filter, setFilter] = React.useState<'all' | 'updated' | 'pending'>('all');
   const [busy, setBusy] = React.useState(false);
 
-  const reset = () => { setFile(null); setResult(null); setFilter('all'); };
+  const reset = () => { setFile(null); setAssetFile(null); setResult(null); setFilter('all'); };
 
   const run = async (dryRun: boolean) => {
     if (!file) return;
@@ -56,6 +57,7 @@ const CoreTableImportDialog: React.FC<Props> = ({ open, onClose, base, onDone })
     try {
       const data = new FormData();
       data.append('file', file, file.name);
+      if (assetFile) data.append('assetFile', assetFile, assetFile.name);
       data.append('dryRun', dryRun ? '1' : '0');
       if (result?.planHash) data.append('planHash', result.planHash);
       const { data: out } = await energyHttp.post(`${base}/imports/core-table`, data);
@@ -112,6 +114,16 @@ const CoreTableImportDialog: React.FC<Props> = ({ open, onClose, base, onDone })
               hidden
               accept=".xlsx"
               onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
+            />
+          </Button>
+
+          <Button variant="outlined" component="label" data-testid="core-table-import-choose-asset">
+            {assetFile ? assetFile.name : translate('energy.coreTableImport.chooseAssetFile')}
+            <input
+              type="file"
+              hidden
+              accept=".xlsx"
+              onChange={(e) => { setAssetFile(e.target.files?.[0] ?? null); setResult(null); }}
             />
           </Button>
 

@@ -99,6 +99,8 @@ struct CoreRow {
     station_status: String,
     project_code: Option<String>,
     data_id: String,
+    /// 「公司／SPV」欄（S5）：只對既有子公司，不新建。
+    subsidiary_name: Option<String>,
 }
 
 /// 這一列「電號能用來比對案場」的正規化鍵：11 碼數字，而且這個案場不標「共用電號，待綁案場」
@@ -133,6 +135,7 @@ fn read_core_rows(bytes: &[u8]) -> ApiResult<Vec<CoreRow>> {
     let need = |name: &str| idx(name).ok_or_else(|| err_d(400, "missing_column", json!({ "column": name })));
     let c_meter = need("電號")?;
     let c_station = need("案場")?;
+    let c_subsidiary = idx("公司／SPV");
     let c_landowner = need("地主（土地所有權人）")?;
     let c_lessor = need("出租方／租金對象")?;
     let c_formula = need("公式類型")?;
@@ -167,9 +170,58 @@ fn read_core_rows(bytes: &[u8]) -> ApiResult<Vec<CoreRow>> {
             station_status: get(c_status).unwrap_or_default(),
             project_code: get(c_project),
             data_id,
+            subsidiary_name: c_subsidiary.and_then(|c| get(c)),
         });
     }
     Ok(out)
+}
+
+const ASSET_SHEET_NAME: &str = "0. 資產及義務項目清單";
+
+struct AssetRow {
+    region: Option<String>,
+    capacity_raw: Option<String>,
+}
+
+enum AssetEntry {
+    Unique(AssetRow),
+    Duplicate,
+}
+
+/// S6：資產管理清單（可選的第二個檔）。表頭不寫死在第 3 列——跟 `read_core_rows` 一樣動態找，
+/// 前次 calamine 列號偏移的教訓。回 `project_code -> AssetEntry`；`#N/A`／空的專案編號略過；
+/// 同一個專案編號出現兩次就是 `Duplicate`（那個專案編號列進待補，不拿來補案場）。
+fn read_asset_rows(bytes: &[u8]) -> ApiResult<HashMap<String, AssetEntry>> {
+    let cursor = Cursor::new(bytes.to_vec());
+    let mut wb = open_workbook_from_rs::<Xlsx<_>, _>(cursor).map_err(|e| err_d(400, "bad_excel", json!({ "message": e.to_string() })))?;
+    let range = wb
+        .worksheet_range(ASSET_SHEET_NAME)
+        .map_err(|_| err_d(400, "bad_excel", json!({ "message": format!("找不到「{ASSET_SHEET_NAME}」頁") })))?;
+    let grid: Vec<Vec<String>> = range.rows().map(|row| row.iter().map(cell_to_string).collect()).collect();
+    let header_idx = grid
+        .iter()
+        .position(|row| row.iter().any(|c| c.trim() == "專案編號") && row.iter().any(|c| c.trim() == "設置容量kWp"))
+        .ok_or_else(|| err_d(400, "bad_excel", json!({ "message": "找不到資產清單表頭（專案編號／設置容量kWp）" })))?;
+    let header = &grid[header_idx];
+    let idx = |name: &str| header.iter().position(|h| h.trim() == name);
+    let need = |name: &str| idx(name).ok_or_else(|| err_d(400, "missing_column", json!({ "column": name })));
+    let c_project = need("專案編號")?;
+    let c_region = idx("設置區域");
+    let c_capacity = need("設置容量kWp")?;
+
+    let mut grouped: HashMap<String, Vec<AssetRow>> = HashMap::new();
+    for row in grid.iter().skip(header_idx + 1) {
+        let get = |c: usize| row.get(c).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let Some(pc) = get(c_project) else { continue };
+        if pc == "#N/A" {
+            continue;
+        }
+        grouped.entry(pc).or_default().push(AssetRow { region: c_region.and_then(|c| get(c)), capacity_raw: get(c_capacity) });
+    }
+    Ok(grouped
+        .into_iter()
+        .map(|(pc, mut rows)| if rows.len() == 1 { (pc, AssetEntry::Unique(rows.pop().unwrap())) } else { (pc, AssetEntry::Duplicate) })
+        .collect())
 }
 
 enum StationMatch {
@@ -246,6 +298,42 @@ async fn match_landowner(tx: &mut Tx<'_>, org: i64, name: &str) -> ApiResult<Nam
     })
 }
 
+enum SpvMatch {
+    None,
+    One(i64),
+    Ambiguous,
+}
+
+/// 「公司／SPV」欄（S5）：只對既有子公司，不新建（跟 station_import.rs:98-119 的
+/// find_or_create_subsidiary 不同）。先比名字，比不到再比代碼（子公司簡稱），兩邊都要唯一。
+async fn match_subsidiary(tx: &mut Tx<'_>, org: i64, name: &str) -> ApiResult<SpvMatch> {
+    let by_name: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM tbl_energy_landowner WHERE organization_id = $1 AND party_type = 'subsidiary' AND btrim(name) = $2 AND deleted_at IS NULL",
+    )
+    .bind(org)
+    .bind(name)
+    .fetch_all(&mut **tx)
+    .await?;
+    if !by_name.is_empty() {
+        return Ok(match by_name.len() {
+            1 => SpvMatch::One(by_name[0]),
+            _ => SpvMatch::Ambiguous,
+        });
+    }
+    let by_code: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM tbl_energy_landowner WHERE organization_id = $1 AND party_type = 'subsidiary' AND code = $2 AND deleted_at IS NULL",
+    )
+    .bind(org)
+    .bind(name)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(match by_code.len() {
+        0 => SpvMatch::None,
+        1 => SpvMatch::One(by_code[0]),
+        _ => SpvMatch::Ambiguous,
+    })
+}
+
 /// 租金試算設定（`rentCycleDraft.kind`）跟新代號是否還合——規則照 `rent_cycle.rs:52-58`。
 fn rent_kind_ok(code: &str, kind: &str) -> bool {
     match code {
@@ -280,7 +368,12 @@ struct Summary {
 
 /// 整批跑一次：永遠執行建立／覆蓋（照 `station_import.rs` 的 dryRun 回滾寫法，由呼叫端決定
 /// commit 還是 rollback）。回 `(summary, rows, planHash)`。
-async fn run_import(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[CoreRow]) -> ApiResult<(Value, Vec<Value>, String)> {
+async fn run_import(
+    tx: &mut Tx<'_>,
+    ctx: &Ctx,
+    rows: &[CoreRow],
+    asset_map: &Option<HashMap<String, AssetEntry>>,
+) -> ApiResult<(Value, Vec<Value>, String)> {
     let org = ctx.org_id();
     let mut summary = Summary::default();
     let mut row_results = Vec::new();
@@ -337,9 +430,56 @@ async fn run_import(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[CoreRow]) -> ApiResult<(
         }
 
         // ── Phase B：確定不歧義，開始寫 ──
+        // 公司／SPV（S5）：只對既有子公司，不新建；對不到或同名不只一個，不動那欄、列進待補。
+        let spv_id: Option<i64> = match &row.subsidiary_name {
+            Some(name) => match match_subsidiary(tx, org, name).await? {
+                SpvMatch::One(id) => Some(id),
+                SpvMatch::None | SpvMatch::Ambiguous => {
+                    pending.push("子公司對不到".into());
+                    None
+                }
+            },
+            None => None,
+        };
+        // 區域／容量（S6）：第二個檔「資產管理清單」可選；沒選就是 None，region_new/capacity_new
+        // 一律是 None，案場那段照舊，跟現在一模一樣。
+        let (region_new, capacity_new): (Option<String>, Option<Decimal>) = match (asset_map, &row.project_code) {
+            (Some(map), Some(pc)) => match map.get(pc) {
+                Some(AssetEntry::Duplicate) => {
+                    pending.push("資產清單專案編號重複".into());
+                    (None, None)
+                }
+                Some(AssetEntry::Unique(a)) => {
+                    let region = a.region.clone();
+                    let capacity = match &a.capacity_raw {
+                        None => None,
+                        Some(s) => match s.parse::<Decimal>() {
+                            Ok(d) => Some(d),
+                            Err(_) => {
+                                pending.push("容量不是數字".into());
+                                None
+                            }
+                        },
+                    };
+                    (region, capacity)
+                }
+                None => (None, None),
+            },
+            _ => (None, None),
+        };
         let (station_id, station_action, station_changes) = match station_match {
             StationMatch::New => {
-                let id = create_station(tx, ctx, &json!({ "name": row.station_name })).await?;
+                let mut body = json!({ "name": row.station_name });
+                if let Some(sid) = spv_id {
+                    body["spvPayeeId"] = json!(sid);
+                }
+                if let Some(r) = &region_new {
+                    body["region"] = json!(r);
+                }
+                if let Some(c) = capacity_new {
+                    body["capacityKw"] = json!(c.to_string());
+                }
+                let id = create_station(tx, ctx, &body).await?;
                 if let Some(pc) = &row.project_code {
                     sqlx::query("UPDATE tbl_energy_station SET project_code = $2 WHERE id = $1 AND organization_id = $3")
                         .bind(id)
@@ -364,7 +504,10 @@ async fn run_import(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[CoreRow]) -> ApiResult<(
             }
             StationMatch::Found(id) => {
                 let existing: StationFull = station_in_org(tx, &ctx.access, id).await?;
-                hash_snapshots.push(json!({ "station": id, "name": existing.name, "projectCode": existing.project_code }));
+                hash_snapshots.push(json!({
+                    "station": id, "name": existing.name, "projectCode": existing.project_code, "spvPayeeId": existing.spv_payee_id,
+                    "region": existing.region, "capacityKw": existing.capacity_kw.map(|d| d.to_string()),
+                }));
                 let mut changes = Map::new();
                 if existing.name != row.station_name {
                     changes.insert("name".into(), json!({ "from": existing.name, "to": row.station_name }));
@@ -374,11 +517,33 @@ async fn run_import(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[CoreRow]) -> ApiResult<(
                         changes.insert("projectCode".into(), json!({ "from": existing.project_code, "to": pc }));
                     }
                 }
+                if let Some(sid) = spv_id {
+                    if existing.spv_payee_id != Some(sid) {
+                        changes.insert("spvPayeeId".into(), json!({ "from": existing.spv_payee_id, "to": sid }));
+                    }
+                }
+                if let Some(r) = &region_new {
+                    if existing.region.as_deref() != Some(r.as_str()) {
+                        changes.insert("region".into(), json!({ "from": existing.region, "to": r }));
+                    }
+                }
+                if let Some(c) = capacity_new {
+                    if existing.capacity_kw != Some(c) {
+                        changes.insert("capacityKw".into(), json!({ "from": existing.capacity_kw.map(|d| d.to_string()), "to": c.to_string() }));
+                    }
+                }
                 if !changes.is_empty() {
-                    sqlx::query("UPDATE tbl_energy_station SET name = $2, project_code = COALESCE($3, project_code) WHERE id = $1 AND organization_id = $4 AND deleted_at IS NULL")
+                    sqlx::query(
+                        "UPDATE tbl_energy_station SET name = $2, project_code = COALESCE($3, project_code), spv_payee_id = COALESCE($4, spv_payee_id),
+                           region = COALESCE($5, region), capacity_kw = COALESCE($6, capacity_kw)
+                           WHERE id = $1 AND organization_id = $7 AND deleted_at IS NULL",
+                    )
                         .bind(id)
                         .bind(&row.station_name)
                         .bind(&row.project_code)
+                        .bind(spv_id)
+                        .bind(&region_new)
+                        .bind(capacity_new)
                         .bind(org)
                         .execute(&mut **tx)
                         .await?;
@@ -606,9 +771,20 @@ async fn run_import(tx: &mut Tx<'_>, ctx: &Ctx, rows: &[CoreRow]) -> ApiResult<(
 
     let file_marker = json!({ "snapshots": hash_snapshots });
     let plan_hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&file_marker).unwrap()));
-    let summary_json = json!({
+    let mut summary_json = json!({
         "stations": summary.stations.json(), "landowners": summary.landowners.json(), "contracts": summary.contracts.json(),
     });
+    // 沒選第二個檔（assetFile）時完全不加這個鍵，結果跟沒有 S6 之前一模一樣。
+    if let Some(map) = asset_map {
+        let core_codes: std::collections::HashSet<&str> = rows.iter().filter_map(|r| r.project_code.as_deref()).collect();
+        let unique_codes: Vec<&String> = map.iter().filter_map(|(pc, e)| matches!(e, AssetEntry::Unique(_)).then_some(pc)).collect();
+        let matched = unique_codes.iter().filter(|pc| core_codes.contains(pc.as_str())).count();
+        summary_json["assetFile"] = json!({
+            "rows": map.len(),
+            "matchedProjectCodes": matched,
+            "unmatchedProjectCodes": map.len() - matched,
+        });
+    }
     Ok((summary_json, row_results, plan_hash))
 }
 
@@ -630,8 +806,13 @@ pub async fn import_handler(
     let client_plan_hash = form.field("planHash").map(|v| v.to_string());
 
     let rows = read_core_rows(&file.bytes)?;
+    // 資產管理清單（S6）：可選的第二個檔；沒帶就是 None，案場那段完全不受影響。
+    let asset_map = match form.take_file("assetFile") {
+        Some(asset_file) => Some(read_asset_rows(&asset_file.bytes)?),
+        None => None,
+    };
     let mut tx = core.pool.begin().await?;
-    let (summary, rows_out, plan_hash) = run_import(&mut tx, &ctx, &rows).await?;
+    let (summary, rows_out, plan_hash) = run_import(&mut tx, &ctx, &rows, &asset_map).await?;
 
     let stale = client_plan_hash.as_deref().is_some_and(|h| h != plan_hash);
     if stale {

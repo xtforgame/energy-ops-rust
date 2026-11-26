@@ -9,6 +9,7 @@ use eo_energy::workbench;
 use eo_energy::workflow::model::TaskRow;
 use eo_energy::workflow::views;
 use reqwest::Method;
+use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::fs;
 
@@ -606,6 +607,15 @@ async fn core_table_import() {
     app.landowner(org, "地主重複").await;
     app.landowner(org, "地主重複").await;
 
+    // S5：D001 的「公司／SPV」＝「測試子公司甲」要對到這個既有子公司。
+    let subsidiary1: i64 = sqlx::query_scalar(
+        "INSERT INTO tbl_energy_landowner (organization_id, name, party_type, status) VALUES ($1, '測試子公司甲', 'subsidiary', 'active') RETURNING id",
+    )
+    .bind(org)
+    .fetch_one(&app.core.pool)
+    .await
+    .unwrap();
+
     let before_stations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_station WHERE organization_id = $1").bind(org).fetch_one(&app.core.pool).await.unwrap();
     let before_contracts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tbl_energy_contract WHERE organization_id = $1").bind(org).fetch_one(&app.core.pool).await.unwrap();
 
@@ -630,6 +640,8 @@ async fn core_table_import() {
     assert!(row_for("D006")["pending"].as_array().unwrap().iter().any(|p| p == "共用電號"), "{:?}", row_for("D006"));
     assert!(row_for("D007")["pending"].as_array().unwrap().iter().any(|p| p == "多位地主沒有比例"), "{:?}", row_for("D007"));
     assert!(row_for("D009")["pending"].as_array().unwrap().iter().any(|p| p == "沒有出租方"), "{:?}", row_for("D009"));
+    // S5：D010 的子公司「查無這家子公司」對不到既有子公司，列進待補，但不擋案場本身建立。
+    assert!(row_for("D010")["pending"].as_array().unwrap().iter().any(|p| p == "子公司對不到"), "{:?}", row_for("D010"));
     // S4：同名地主歧義，整列不寫。
     let d008 = row_for("D008");
     assert_eq!(d008["skipped"], true, "{d008:?}");
@@ -688,6 +700,14 @@ async fn core_table_import() {
         .unwrap();
     assert_eq!(rb_code, Some("R-B".to_string()));
 
+    // S5：D001 的 spv_payee_id 要對到既有子公司「測試子公司甲」。
+    let d001_spv: Option<i64> = sqlx::query_scalar("SELECT spv_payee_id FROM tbl_energy_station WHERE organization_id = $1 AND project_code = '113R0A0001'")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(d001_spv, Some(subsidiary1), "公司／SPV 要對到既有子公司");
+
     // D008 整列真的沒被寫：組織裡還是只有先前建好的那兩個「地主重複」，沒有多出一個新案場。
     let d008_station: Option<i64> = sqlx::query_scalar("SELECT id FROM tbl_energy_station WHERE organization_id = $1 AND name LIKE '%同名地主歧義%'")
         .bind(org)
@@ -704,6 +724,8 @@ async fn core_table_import() {
     let (s, preview2) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/core-table")).multipart(form)).await;
     assert_eq!(s.as_u16(), 200, "{preview2}");
     assert_eq!(preview2["summary"]["stations"]["unchanged"], 11, "{preview2}");
+    // S6：不選第二個檔，結果要跟現在一模一樣——回應裡不該出現 assetFile 這個鍵。
+    assert!(preview2["summary"].get("assetFile").is_none(), "沒選第二個檔不該多出 assetFile 鍵：{preview2}");
 
     let mut form = reqwest::multipart::Form::new();
     form = form.part("file", reqwest::multipart::Part::bytes(bytes2).file_name("core.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
@@ -711,6 +733,56 @@ async fn core_table_import() {
     form = form.text("planHash", preview2["planHash"].as_str().unwrap().to_string());
     let (s, _) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/core-table")).multipart(form)).await;
     assert_eq!(s.as_u16(), 200, "照新預覽的 planHash 確認寫入，資料沒再變過，應該通過");
+
+    // S6：這次選了第二個檔「資產管理清單」，用 project_code 補 region／capacity_kw。
+    let bytes3 = fs::read(format!("{fixtures}/core-table-import-fake.xlsx")).unwrap();
+    let asset_bytes = fs::read(format!("{fixtures}/core-table-asset-fake.xlsx")).expect("先跑 evidence/gen-asset-fixture.py 產生 tests/fixtures");
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(bytes3.clone()).file_name("core.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.part("assetFile", reqwest::multipart::Part::bytes(asset_bytes.clone()).file_name("asset.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "1");
+    let (s, preview3) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/core-table")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{preview3}");
+    assert!(preview3["summary"]["assetFile"]["rows"].as_i64().unwrap() >= 1, "{preview3}");
+    let rows3 = preview3["rows"].as_array().unwrap();
+    let row3_for = |data_id: &str| rows3.iter().find(|r| r["dataId"] == data_id).unwrap_or_else(|| panic!("找不到 {data_id}：{rows3:?}"));
+    // D001：對得到的資產列，region／capacityKw 都進差異。
+    assert!(row3_for("D001")["stationChanges"].get("region").is_some(), "{:?}", row3_for("D001"));
+    assert!(row3_for("D001")["stationChanges"].get("capacityKw").is_some(), "{:?}", row3_for("D001"));
+    // D003：容量「不是數字」，列進待補，不覆蓋。
+    assert!(row3_for("D003")["pending"].as_array().unwrap().iter().any(|p| p == "容量不是數字"), "{:?}", row3_for("D003"));
+    assert!(row3_for("D003")["stationChanges"].get("capacityKw").is_none(), "{:?}", row3_for("D003"));
+
+    let mut form = reqwest::multipart::Form::new();
+    form = form.part("file", reqwest::multipart::Part::bytes(bytes3).file_name("core.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.part("assetFile", reqwest::multipart::Part::bytes(asset_bytes).file_name("asset.xlsx").mime_str("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").unwrap());
+    form = form.text("dryRun", "0");
+    form = form.text("planHash", preview3["planHash"].as_str().unwrap().to_string());
+    let (s, applied3) = TestApp::send(app.req(Some(&owner), Method::POST, &format!("{base}/imports/core-table")).multipart(form)).await;
+    assert_eq!(s.as_u16(), 200, "{applied3}");
+
+    let (region1, cap1): (Option<String>, Option<Decimal>) =
+        sqlx::query_as("SELECT region, capacity_kw FROM tbl_energy_station WHERE organization_id = $1 AND project_code = '113R0A0001'")
+            .bind(org)
+            .fetch_one(&app.core.pool)
+            .await
+            .unwrap();
+    assert_eq!(region1.as_deref(), Some("測試區域A"));
+    assert_eq!(cap1, Some(Decimal::new(5005, 1)));
+
+    // D002：資產清單這一列的 region 是空格，不覆蓋（既有值維持原樣，這裡是 None）；capacity 照樣覆蓋。
+    let (region2, cap2): (Option<String>, Option<Decimal>) =
+        sqlx::query_as("SELECT region, capacity_kw FROM tbl_energy_station WHERE id = $1").bind(st2).fetch_one(&app.core.pool).await.unwrap();
+    assert_eq!(region2, None, "空格不該覆蓋 region");
+    assert_eq!(cap2, Some(Decimal::new(300, 0)));
+
+    // D003：容量不是數字，不覆蓋，capacity_kw 還是空的。
+    let cap3: Option<Decimal> = sqlx::query_scalar("SELECT capacity_kw FROM tbl_energy_station WHERE organization_id = $1 AND project_code = '113R0A0003'")
+        .bind(org)
+        .fetch_one(&app.core.pool)
+        .await
+        .unwrap();
+    assert_eq!(cap3, None, "容量不是數字不該覆蓋");
 }
 
 /// 來源：masterDataOverview.test.ts「landownerOverview 呼叫得到（這條就是在擋 ReferenceError 型的 500）」

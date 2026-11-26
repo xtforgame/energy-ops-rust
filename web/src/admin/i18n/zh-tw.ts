@@ -898,6 +898,7 @@ const customChineseTWMessages: TranslationMessages = {
       projectCodeIncomplete: '缺資料',
       siteType: '型別',
       spv: '持有子公司',
+      region: '區域',
       serviceDistrict: '區處',
       capacityKw: '容量 (kW)',
       gridDate: '併網日',
@@ -942,6 +943,7 @@ const customChineseTWMessages: TranslationMessages = {
     coreTableImport: {
       title: '核心大表匯入',
       chooseFile: '選擇檔案',
+      chooseAssetFile: '資產管理清單（可選）',
       preview: '預覽',
       confirm: '確認寫入',
       stations: '案場',

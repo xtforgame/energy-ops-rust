@@ -228,6 +228,7 @@ const StationsPage: React.FC = () => {
                 <TableCell>{translate('energy.stations.name')}</TableCell>
                 <TableCell>{translate('energy.stations.siteType')}</TableCell>
                 <TableCell>{translate('energy.stations.spv')}</TableCell>
+                <TableCell>{translate('energy.stations.region')}</TableCell>
                 <TableCell>{translate('energy.stations.serviceDistrict')}</TableCell>
                 <TableCell align="right">{translate('energy.stations.capacityKw')}</TableCell>
                 <TableCell>{translate('energy.stations.gridDate')}</TableCell>
@@ -260,6 +261,7 @@ const StationsPage: React.FC = () => {
                   </TableCell>
                   <TableCell>{r.siteType ? translate(`energy.siteType.${r.siteType}`) : '—'}</TableCell>
                   <TableCell>{landowners.find((l) => l.id === r.spvPayeeId)?.name ?? '—'}</TableCell>
+                  <TableCell>{r.region ?? '—'}</TableCell>
                   <TableCell>{r.serviceDistrict ?? '—'}</TableCell>
                   <TableCell align="right">{r.capacityKw ?? '—'}</TableCell>
                   <TableCell>{r.gridDate ?? '—'}</TableCell>
@@ -326,6 +328,7 @@ const StationsPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            <TextField label={translate('energy.stations.region')} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} data-testid="station-form-region" />
             <TextField label={translate('energy.stations.serviceDistrict')} value={form.serviceDistrict} onChange={(e) => setForm({ ...form, serviceDistrict: e.target.value })} data-testid="station-form-district" />
             <TextField label={translate('energy.stations.capacityKw')} value={form.capacityKw} onChange={(e) => setForm({ ...form, capacityKw: e.target.value })} data-testid="station-form-capacity" />
             <FormControlLabel
