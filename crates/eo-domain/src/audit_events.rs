@@ -783,6 +783,11 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
         Info,
         true,
     ),
+    // ── 核心資料大表匯入（卡 20261126-2300）：既有資源被覆蓋，但 station.* / landowner 本來沒有通用的
+    // 「更新／建立」稽核事件可以掛，這裡各加一個最小的、只記 changes 的事件。──
+    ev("station.core_table_updated", "energyStation", &[req("changes", CHANGES)], "audit.type.station.coreTableUpdated", Notable, true),
+    ev("landowner.core_table_created", "energyLandowner", &[req("changes", CHANGES)], "audit.type.landowner.coreTableCreated", Info, true),
+    ev("meter.core_table_updated", "energyStationMeter", &[req("changes", CHANGES)], "audit.type.meter.coreTableUpdated", Notable, true),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

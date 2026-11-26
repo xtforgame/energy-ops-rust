@@ -17,6 +17,7 @@ import {
 } from './shared';
 import { stationRoute } from './routes';
 import OnboardDialog from './OnboardDialog';
+import CoreTableImportDialog from './CoreTableImportDialog';
 
 interface StationRow {
   id: number; name: string; status: string; projectCode: string | null; siteType: string | null;
@@ -69,6 +70,7 @@ const StationsPage: React.FC = () => {
   } | null>(null);
   const [importing, setImporting] = React.useState(false);
   const [onboardOpen, setOnboardOpen] = React.useState(false);
+  const [coreTableImportOpen, setCoreTableImportOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!orgId) { setRows([]); setDenied(false); return; }
@@ -204,6 +206,9 @@ const StationsPage: React.FC = () => {
           </Tooltip>
           <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={openImport} data-testid="station-import-open">
             {translate('energy.stations.importExcel')}
+          </Button>
+          <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => setCoreTableImportOpen(true)} data-testid="core-table-import-open">
+            {translate('energy.coreTableImport.title')}
           </Button>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOnboardOpen(true)} data-testid="station-onboard-open">
             {translate('energy.stations.onboard')}
@@ -424,6 +429,13 @@ const StationsPage: React.FC = () => {
         base={base}
         landowners={landowners}
         onCreated={() => { load(); loadLandowners(); }}
+      />
+
+      <CoreTableImportDialog
+        open={coreTableImportOpen}
+        onClose={() => setCoreTableImportOpen(false)}
+        base={base}
+        onDone={() => { load(); loadLandowners(); }}
       />
     </EnergyPageFrame>
   );

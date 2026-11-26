@@ -10,6 +10,7 @@ mod rent_cycle;
 mod meters;
 mod overview;
 mod station_import;
+mod core_table_import;
 
 use crate::audit::{self, AuditInput};
 use crate::common::{day, day_opt, err, err_d, parse_day, Ctx, RequestMeta, Tx};
@@ -79,6 +80,7 @@ impl AppPlugin for MasterDataPlugin {
         cfg.post(&path("/contracts/{contractId}/rent-cycle/payment-draft"), web::post().to(rent_cycle::payment_draft));
         cfg.get(&path("/stations/{stationId}/rent-application"), web::get().to(rent_cycle::station_application));
         cfg.post(&path("/imports/stations"), web::post().to(station_import::import_handler));
+        cfg.post(&path("/imports/core-table"), web::post().to(core_table_import::import_handler));
     }
 }
 
