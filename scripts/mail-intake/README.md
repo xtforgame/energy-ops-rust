@@ -1,5 +1,28 @@
 # 收信資料夾 → 電號主檔 → EasyFlow 待審表
 
+## 2026-11-26：兩種表單與拆單
+
+- 一份 PDF 拆成多張電費單時，各張都輸出電費申請表；同案場、同規則、同期間的租金預覽只輸出一次。
+- `last-run.json` 的 `bills`、`rentForms` 分別列出表單路徑與審核連結；`forms/*-missing.json` 保留案場、期間及缺項。
+- `prepared` 只表示表單已產出，不表示所有金額都有答案、已審核或已送 EF。`partial` 表示仍有拆出的單據辨識中或失敗；下輪沿用批次，不能重新上傳。
+- 舊版已完成狀態會補產租金表，不重傳原始 PDF。HTML 是快照，後續審核以平台最新內容為準。
+- 付款八項與租金九項直接共用平台欄位產生器；修改前端欄位後執行 `node scripts/mail-intake/build-forms.mjs`，提交生成檔。現場不需安裝 npm 套件。
+
+### 串接既有 Outlook 收件工具
+
+將本資料夾完整放到遠端（不含測試帳密），沿用已有的 Outlook 工具與 Node：
+
+```powershell
+.\Collect-And-Import.ps1 -CollectorDirectory 'C:\實際的收信工具目錄' -BaseUrl 'http://127.0.0.1:11950' -OrgId 1
+# 確認單輪成功後才加 -Watch，每輪結束後等待30分鐘。
+```
+
+啟動時輸入平台帳號，僅本次程序使用。不要同時啟動原 Outlook 選單4或另一個收信排程。維持原本登入／遠端桌面執行限制；此整合腳本未在雲豹信箱環境實跑，不代表已驗證長時間無人值守。
+
+### EF 停止點
+
+雲豹 IT 已確認無法走鼎新 API，後續走 RPA 填欄位及附件，停在送出前。此工具只收件、匯入與產出表單，不自動代替人審核，也不點擊 EF 送出。RPA 對真實 EF 畫面的控制項仍待有權限的環境驗證。
+
 沿用 Outlook 工具下載的 `ready/日期/原始檔名.pdf`，此工具遞迴掃描 PDF，透過平台既有上傳與辨識 API 產生單據，再取得 EasyFlow 待審表。主檔對應與金額計算全部由平台負責，不另寫第二套規則。沒有送出 EF、工作流核准、寄信或刪除來源檔的動作。
 
 ## 前置
@@ -22,7 +45,7 @@ node .\ingest-folder.mjs --folder 'C:\EnergyOps\WebMailInbox\ready' --state 'C:\
 ## 產出與復原
 
 - `last-run.json`：每份檔案的結果、批次／單據 ID、直接開啟平台審核畫面的網址。
-- `forms/<內容雜湊>.html`：可閱讀、可列印的申請表快照。原始 PDF 不改名、不搬移。
+- `forms/<內容雜湊>-bill-<單據ID>.html` 與 `forms/<內容雜湊>-rent-<期間識別>.html`：可閱讀、可列印的申請表快照。原始 PDF 不改名、不搬移。
 - `state.json`：內容 SHA256＋目標平台／組織去重。同一內容改檔名或出現在其他日期也不重複匯入。**請備份且不要刪除**；換目標資料庫時使用新狀態目錄。
 - `still_downloading`：檔案最後修改不到 30 秒，本輪略過；下輪再掃。
 - `recognizing`：辨識尚未完成，下一輪沿用相同批次查詢，不重新上傳。
@@ -42,3 +65,5 @@ node .\ingest-folder.mjs --folder 'C:\EnergyOps\WebMailInbox\ready' --state 'C:\
 - `rental_prepared` 表示已有租金試算草稿；`needs_rule` 表示缺對應案場／既有規則，並非付款完成。
 - `scan.lock` 會記錄 PID、主機與開始時間。異常終止後先確認同一主機的該程序確實不存在，再備份並移除這個鎖檔；不能僅因超時就自動刪除，避免兩個排程同時匯入。
 - 已下載 HTML 是當時快照；審核請回到平台讀取最新來源與狀態。
+
+人工確認後若要更新已下載快照，加 `--refresh-forms`。只重讀既有批次與表單，不重新上傳 PDF。

@@ -4,6 +4,30 @@ use eo_platform::{auth::CurrentUser,core::CoreRef,error::ApiResult};
 use crate::{gates,common::{err,err_d,Ctx,RequestMeta},audit::{self,AuditInput}};
 use serde_json::{Value,json};
 type Core=web::Data<CoreRef>;
+/// Re-uploading identical bytes is not a second rental income. Only collapse a
+/// known document page with identical extracted values; revisions remain visible.
+fn unique_document_sources(rows:Vec<Value>)->Vec<Value>{
+ let mut seen=std::collections::HashSet::new();
+ rows.into_iter().filter(|r|{
+  if !r["sourceHash"].as_str().is_some_and(|h|!h.is_empty()) || !r["page"].as_i64().is_some_and(|p|p>0){return true;}
+  let key=serde_json::to_string(&json!([r["sourceHash"],r["page"],r["docType"],r["start"],r["end"],r["electricityFeeTotal"],r["purchaseEnergyFee"],r["kwh"]])).unwrap();
+  seen.insert(key)
+ }).collect()
+}
+
+#[cfg(test)] mod duplicate_source_tests {
+ use super::*;
+ #[test] fn identical_document_page_counts_once_but_changed_values_and_pages_stay() {
+  let first=json!({"id":1,"attachmentId":10,"sourceHash":"same","page":2,"docType":"retailerSale","start":"2026-10-01","end":"2026-10-31","electricityFeeTotal":"149069","purchaseEnergyFee":"141970","kwh":"28394"});
+  let mut duplicate=first.clone();duplicate["id"]=json!(2);duplicate["attachmentId"]=json!(20);
+  let mut changed=duplicate.clone();changed["electricityFeeTotal"]=json!("149070");
+  let mut next_page=duplicate.clone();next_page["page"]=json!(4);
+  let mut no_page=duplicate.clone();no_page["page"]=Value::Null;
+  let sources=unique_document_sources(vec![first,duplicate,changed,next_page,no_page.clone(),no_page]);
+  assert_eq!(sources.len(),5);
+  assert_eq!(sources[0]["id"],1);
+ }
+}
 pub async fn list(core:Core,user:CurrentUser,path:web::Path<(i64,i64)>)->ApiResult<HttpResponse>{
  let(org,sid)=path.into_inner();core.rbac.authorize_org(&user,org,gates::FLOW_VIEW).await?;
  let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tbl_energy_station WHERE id=$1 AND organization_id=$2 AND deleted_at IS NULL)").bind(sid).bind(org).fetch_one(&core.pool).await?;if !exists{return Err(err(404,"station_not_found"))}
@@ -42,11 +66,15 @@ pub async fn append(core:&CoreRef,org:i64,sid:i64,station:&Value,items:&mut Vec<
  let rules=load(core,org,sid).await?;
  let bills:Vec<BillRow>=sqlx::query_as(&format!("SELECT {BILL_COLS} FROM tbl_energy_bill b WHERE organization_id=$1 AND station_id=$2 AND deleted_at IS NULL AND (NOT EXISTS(SELECT 1 FROM tbl_energy_ingest_item i WHERE i.organization_id=b.organization_id AND i.bill_id=b.id) OR EXISTS(SELECT 1 FROM tbl_energy_ingest_item i WHERE i.organization_id=b.organization_id AND i.bill_id=b.id AND i.deleted_at IS NULL AND i.status<>'discarded')) ORDER BY billing_period_start,id")).bind(org).bind(sid).fetch_all(&core.pool).await?;
  let mut sources=Vec::new();
+ let attachment_ids:Vec<i64>=bills.iter().filter_map(|b|b.source_attachment_id).collect();
+ let hashes:std::collections::HashMap<i64,String>=sqlx::query_as::<_,(i64,String)>("SELECT id,hash FROM tbl_energy_attachment WHERE organization_id=$1 AND id=ANY($2) AND deleted_at IS NULL AND status='active'").bind(org).bind(&attachment_ids).fetch_all(&core.pool).await?.into_iter().collect();
  for b in &bills{
   let attached=if let Some(id)=b.source_attachment_id{let mut tx=core.pool.begin().await?;crate::attachments::service::attachment_in_org(&mut tx,org,id).await.is_ok()}else{false};
   let page=eo_domain::taipower_extractor::as_canonical_record(&b.ocr_raw).and_then(|record|record.fields.get("electricityFeeTotal").or_else(||record.fields.get("purchaseEnergyFee")).and_then(|f|f.evidence.as_ref()).and_then(|ev|ev.page_number)).filter(|p|*p>0);
   sources.push(json!({"id":b.id,"page":page,"docType":b.effective_doc_type().as_str(),"start":b.billing_period_start,"end":b.billing_period_end,"electricityFeeTotal":b.field_value("electricityFeeTotal"),"purchaseEnergyFee":b.field_value("purchaseEnergyFee"),"kwh":if b.generation_kwh.is_some(){b.field_value("generationKwh")}else{b.field_value("purchaseKwh")},"attachmentId":if attached{b.source_attachment_id}else{None}}));
  }
+ for source in &mut sources{source["sourceHash"]=source["attachmentId"].as_i64().and_then(|id|hashes.get(&id)).map(|h|json!(h)).unwrap_or(Value::Null);}
+ let sources=unique_document_sources(sources);
  for row in &rules{
  let rule=&row["rule"];let saved_dates=station["data"]["rentApplications"].as_array().into_iter().flatten().filter(|app|app["ruleId"]==row["id"]).filter_map(|app|app["periodStart"].as_str().and_then(|day|chrono::NaiveDate::parse_from_str(day,"%Y-%m-%d").ok()));
  let cycles=candidate_cycles(rule,bills.iter().filter_map(|bill|bill.billing_period_start).chain(saved_dates),filter);

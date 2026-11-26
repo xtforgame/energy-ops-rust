@@ -3,9 +3,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import {paymentFormHtml,rentApplicationHtml,rentPreviewFields,rentCalculationDescription,rentDocumentChecklistHtml} from './form-fields.generated.mjs';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const fieldNames={applicant:'申請人',department:'申請部門',paymentDate:'指定付款日',companyCode:'公司代碼',companyName:'公司名稱'};
+function rentGaps(r){return [...new Set([...(r.issues??[]),...(r.sourceBlockers??[]),...(r.requirements??[]),...(r.warnings??[]),...(r.application?.missingFields??[]).map(k=>`尚缺${fieldNames[k]??k}`)])];}
 async function files(root) {
   const result = [];
   for (const entry of await fs.readdir(root, { withFileTypes:true })) {
@@ -16,7 +19,14 @@ async function files(root) {
   return result.sort();
 }
 export function readableForm(application) {
-  return `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>EasyFlow 待審申請表</title><style>body{font:16px "Microsoft JhengHei",sans-serif;max-width:960px;margin:32px auto;color:#302440}h1{color:#654389}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid #ddd;text-align:left}.pending{background:#fff4ce}</style><h1>EasyFlow ${application.applicationType==='invoice'?'開立發票':application.applicationType==='payment'?'付款':'類型待確認'}申請表</h1><p>待人工審核・尚未送出 EasyFlow。黃色為待補資料。</p><table>${application.fields.map(f=>`<tr class="${f.value===null?'pending':''}"><th>${escape(f.label)}</th><td>${escape(f.value??'待補資料')}</td></tr>`).join('')}</table><h2>來源附件</h2><ul>${application.attachments.map(a=>`<li>${escape(a.originalFilename)}</li>`).join('')}</ul><h2>待確認</h2><ul>${application.pending.map(p=>`<li>${escape(p.message)}</li>`).join('')}</ul></html>`;
+  const main=paymentFormHtml(application);
+  return `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>EasyFlow 待審申請表</title><style>body{font:16px "Microsoft JhengHei",sans-serif;max-width:960px;margin:32px auto;color:#302440}h1{color:#654389}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid #ddd;text-align:left}.pending{background:#fff4ce}</style><h1>EasyFlow ${application.applicationType==='invoice'?'開立發票':application.applicationType==='payment'?'付款':'類型待確認'}申請表</h1><p>待人工審核・尚未送出 EasyFlow。黃色為待補資料。</p>${main}<table>${application.fields.map(f=>`<tr class="${f.value===null?'pending':''}"><th>${escape(f.label)}</th><td>${escape(f.value??'待補資料')}</td></tr>`).join('')}</table><h2>來源附件</h2><ul>${application.attachments.map(a=>`<li>${escape(a.originalFilename)}</li>`).join('')}</ul><h2>待確認</h2><ul>${application.pending.map(p=>`<li>${escape(p.message)}</li>`).join('')}</ul></html>`;
+}
+
+export function readableRent(r){
+ r={issues:[],lines:[],...r};
+ const f={...r.application?.fields,amount:r.grossRent,subtotal:r.grossRent,payee:r.payee,currency:'TWD',expenseDescription:rentCalculationDescription(r),paymentDeadline:r.paymentDeadline};
+ return `<!doctype html><meta charset="utf-8"><title>租金付款預覽</title><style>body{font:16px/1.7 sans-serif;max-width:1000px;margin:40px auto;color:#34243e}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:10px;text-align:left}</style><h1>${escape(r.stationName)}｜租金付款預覽</h1><p>尚未送出EasyFlow；請至平台核對最新資料與審核。</p>${rentApplicationHtml({...r.application,fields:f})}<table>${rentPreviewFields(r).map(([k,v])=>`<tr><th>${escape(k)}</th><td>${escape(v??'待補資料')}</td></tr>`).join('')}</table>${rentDocumentChecklistHtml(r,r.invoiceTiming??'unknown')}<h2>尚缺資料</h2><ul>${rentGaps(r).map(s=>`<li>${escape(s)}</li>`).join('')}</ul><h2>規則資料備註</h2><ul>${(r.notes??[]).map(s=>`<li>${escape(s)}</li>`).join('')}</ul>`;
 }
 
 /** One bounded scan. Reuses persisted batch IDs; never submits/approves or changes source files. */
@@ -56,7 +66,7 @@ export async function ingestFolder(config, fetcher = fetch) {
       if(afterRead.size!==stat.size||afterRead.mtimeMs!==stat.mtimeMs){report.push({name,status:'still_downloading'});continue;}
       if(!bytes.subarray(0,1024).includes(Buffer.from('%PDF-'))){report.push({name,status:'not_pdf'});continue;}
       let entry=state.files[hash];
-      if(entry?.status==='ready'){report.push({name,status:'already_prepared',billId:entry.billId,reviewUrl:entry.reviewUrl});continue;}
+      if(entry?.status==='ready'&&entry.formsVersion===2&&!config.refreshForms){report.push({name,status:'already_prepared',billId:entry.billId,reviewUrl:entry.reviewUrl,bills:entry.bills,rentForms:entry.rentForms});continue;}
       if(entry?.status==='creating'){report.push({name,status:'needs_reconciliation',reason:'上次建立批次的回應不明，請核對平台後處理，避免重複上傳'});continue;}
       try {
         if(!entry){
@@ -73,22 +83,57 @@ export async function ingestFolder(config, fetcher = fetch) {
           entry.status='uploaded';await persist();
           batch=await request('GET',`/ingest-batches/${entry.batchId}`);
         }
-        if(batch.items.length!==1 || batch.items[0].originalFilename!==path.basename(entry.name))throw Error('批次內容不符，請人工核對，未繼續');
-        let item=batch.items[0];
+        const original=batch.items.find(i=>i.originalFilename===path.basename(entry.name));
+        if(!original || batch.items.some(i=>i.attachmentId && original.attachmentId && i.attachmentId!==original.attachmentId))throw Error('批次內容不符，請人工核對，未繼續');
+        let item=original;
         if(!item.billId && item.status==='uploaded')await request('POST',`/ingest-batches/${entry.batchId}/recognize`,{});
         const until=Date.now()+(config.waitMs??120000);
-        while(!item.billId && !item.rentalWorksheet && !['failed','unclassified','discarded','duplicate'].includes(item.status) && Date.now()<until){
+        const waiting=()=>batch.items.some(i=>['uploaded','recognizing'].includes(i.status));
+        while(waiting() && Date.now()<until){
           await sleep(config.pollMs??2000);
           batch=await request('GET',`/ingest-batches/${entry.batchId}`);item=batch.items[0];
         }
-        if(item.rentalWorksheet){entry.status=item.rentPayment?'ready':'needs_rule';entry.reviewUrl=`${base.origin}/admin/#/energyIngestConsole/${entry.batchId}?item=${item.id}&org=${config.orgId}`;await persist();report.push({name,status:item.rentPayment?'rental_prepared':'needs_rule',batchId:entry.batchId,reviewUrl:entry.reviewUrl,message:item.classifyReason});continue;}
-        if(!item.billId){entry.status=item.status;await persist();report.push({name,status:item.status,batchId:entry.batchId});continue;}
-        const application=await request('GET',`/bills/${item.billId}/easyflow-application`);
+        const billItems=batch.items.filter(i=>i.billId);
+        if(!billItems.length && item.rentalWorksheet){
+          entry.status=item.rentPayment?'ready':'needs_rule';entry.formsVersion=2;
+          entry.reviewUrl=`${base.origin}/admin/#/energyIngestConsole/${entry.batchId}?item=${item.id}&org=${config.orgId}`;
+          const rentForms=[];
+          if(item.rentPayment){
+            const rent=await request('GET',`/stations/${item.rentPayment.stationId}/rent-payment`);
+            const output=path.join(config.stateDir,'forms');await fs.mkdir(output,{recursive:true});
+            for(const [n,r] of (rent.items??[]).entries()){
+              const html=path.join(output,`${hash}-worksheet-${n}.html`);await fs.writeFile(html,readableRent(r));
+              rentForms.push({stationName:r.stationName,periodStart:r.periodStart,periodEnd:r.periodEnd,html,amount:r.grossRent??null});
+            }
+            if(!rentForms.length)entry.status='needs_rule';
+          }
+          entry.rentForms=rentForms;await persist();report.push({name,status:entry.status==='ready'?'rental_prepared':'needs_rule',batchId:entry.batchId,reviewUrl:entry.reviewUrl,rentForms,message:item.classifyReason});continue;
+        }
+        if(!billItems.length){entry.status=item.status;await persist();report.push({name,status:item.status,batchId:entry.batchId});continue;}
         const output=path.join(config.stateDir,'forms');await fs.mkdir(output,{recursive:true});
-        await fs.writeFile(path.join(output,`${hash}.html`),readableForm(application));
-        entry.status='ready';entry.billId=item.billId;
-        entry.reviewUrl=`${base.origin}/admin/#/energyIngestConsole/${entry.batchId}?item=${item.id}&org=${config.orgId}`;
-        await persist();report.push({name,status:'prepared',billId:item.billId,reviewUrl:entry.reviewUrl,html:path.join(output,`${hash}.html`)});
+        const bills=[],rentForms=[],seen=new Set(),missing=[];
+        for(const billItem of billItems){
+          const application=await request('GET',`/bills/${billItem.billId}/easyflow-application`);
+          const html=path.join(output,`${hash}-bill-${billItem.billId}.html`);
+          await fs.writeFile(html,readableForm(application));
+          const reviewUrl=`${base.origin}/admin/#/energyIngestConsole/${entry.batchId}?item=${billItem.id}&org=${config.orgId}`;
+          bills.push({billId:billItem.billId,html,reviewUrl});
+          const rent=await request('GET',`/bills/${billItem.billId}/rent-payment`);
+          const station=application.fields.find(f=>f.key==='siteName')?.value??'未對應案場';
+          if(!rent.items?.length)missing.push({station,billId:billItem.billId,missing:['尚無對應租金規則或期間資料'],reviewUrl});
+          for(const r of rent.items??[]){
+            const key=JSON.stringify([r.stationId,r.ruleId,r.periodStart,r.periodEnd]);if(seen.has(key))continue;seen.add(key);
+            const file=path.join(output,`${hash}-rent-${createHash('sha256').update(key).digest('hex').slice(0,16)}.html`);
+            await fs.writeFile(file,readableRent(r));
+            const gaps=rentGaps(r);
+            rentForms.push({stationId:r.stationId,stationName:r.stationName,periodStart:r.periodStart,periodEnd:r.periodEnd,amount:r.grossRent??null,html:file,missing:gaps,reviewState:r.application?.state??'draft'});
+            if(gaps.length)missing.push({station:r.stationName,periodStart:r.periodStart,periodEnd:r.periodEnd,missing:gaps,reviewUrl});
+          }
+        }
+        const unresolved=batch.items.filter(i=>!i.billId&&['failed','unclassified','uploaded','recognizing'].includes(i.status));
+        entry.status=unresolved.length?'partial':'ready';entry.formsVersion=2;entry.billId=bills[0].billId;entry.bills=bills;entry.rentForms=rentForms;entry.reviewUrl=bills[0].reviewUrl;
+        await fs.writeFile(path.join(output,`${hash}-missing.json`),JSON.stringify({source:name,missing,unresolved},null,2));
+        await persist();report.push({name,status:unresolved.length?'partial':'prepared',batchId:entry.batchId,billId:entry.billId,reviewUrl:entry.reviewUrl,html:bills[0].html,bills,rentForms,missing,unresolved});
       } catch(e) {report.push({name,status:'error',batchId:entry?.batchId,message:e.message});}
     }
     await fs.writeFile(path.join(config.stateDir,'last-run.json'),JSON.stringify({at:new Date().toISOString(),report},null,2));
@@ -100,7 +145,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
   const args=process.argv.slice(2),get=k=>args[args.indexOf(k)+1];
   const required=['--folder','--state','--base-url','--org-id'];
   if(required.some(k=>!args.includes(k)))throw Error('用法：node ingest-folder.mjs --folder <ready目錄> --state <狀態目錄> --base-url <平台網址> --org-id <組織ID>');
-  ingestFolder({folder:get('--folder'),stateDir:get('--state'),baseUrl:get('--base-url'),orgId:Number(get('--org-id')),username:process.env.EO_INTAKE_USER,password:process.env.EO_INTAKE_PASSWORD})
-    .then(r=>{console.log(JSON.stringify(r,null,2));if(r.some(x=>['error','needs_reconciliation','failed','unclassified','too_large','not_pdf','needs_rule'].includes(x.status)))process.exitCode=1;})
+  ingestFolder({folder:get('--folder'),stateDir:get('--state'),baseUrl:get('--base-url'),orgId:Number(get('--org-id')),refreshForms:args.includes('--refresh-forms'),username:process.env.EO_INTAKE_USER,password:process.env.EO_INTAKE_PASSWORD})
+    .then(r=>{console.log(JSON.stringify(r,null,2));if(r.some(x=>['error','needs_reconciliation','failed','unclassified','too_large','not_pdf','needs_rule','partial'].includes(x.status)))process.exitCode=1;})
     .catch(e=>{console.error(e.message);process.exitCode=1;});
 }
