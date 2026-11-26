@@ -2,6 +2,7 @@
 //! 開機時另外負責示範資料（`EO_DEMO_SEED=1`）。
 
 pub mod bills;
+mod station_names;
 pub mod handlers;
 pub mod recognition;
 pub mod rent_payment;

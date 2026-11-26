@@ -3,6 +3,27 @@ use crate::support::energy::{date, TaskLite};
 use serde_json::json;
 
 #[actix_web::test]
+async fn no_meter_alias_matches_database_and_preserves_defaults_and_manual_choice(){
+    let app=TestApp::new().await;let(admin,org)=app.energy_org("name-fallback").await;
+    let lo=app.landowner(org,"測試公司").await;
+    let sid=app.station(org,lo,"18-44-2189-03-6","測試春源案場").await;
+    sqlx::query("UPDATE tbl_energy_station SET spv_payee_id=$1,data=$2 WHERE id=$3").bind(lo).bind(json!({"sourceImports":{"test":{"station":{"assetSources":[{"name":"春源鋼鐵"}]}}},"easyflowDefaults":{"companyCode":"TEST","paymentMethod":"已設定付款方式"}})).bind(sid).execute(&app.core.pool).await.unwrap();
+    let raw=json!({"status":"succeeded","sourceFileId":"test","sourceFileName":"controlled-name-test.pdf","issues":[],"record":{"templateId":"retailer_inventec","fields":{"siteName":{"value":"春源鋼鐵","rawValue":"春源鋼鐵","status":"extracted"},"purchaseEnergyFee":{"value":100,"rawValue":"100","status":"extracted"},"billingStartDate":{"value":"2026-10-01","status":"extracted"},"billingEndDate":{"value":"2026-10-31","status":"extracted"}},"sourcePages":[]}});
+    let ctx=eo_energy::common::Ctx::system(&app.core,org);
+    let mut tx=app.core.pool.begin().await.unwrap();
+    let ids=eo_energy::ingest::bills::ingest(&mut tx,&ctx,&raw,None,None,Some("retailerSale")).await.unwrap();let id=ids.bill_ids[0];tx.commit().await.unwrap();
+    let v=expect_status!(app.get(&admin,&app.e(org,&format!("/bills/{id}"))).await,200);
+    assert_eq!(v["stationId"],sid);assert!(v["customerNumberRaw"].is_null());assert_eq!(v["stationNameMatch"]["method"],"siteName");
+    let app_url=app.e(org,&format!("/bills/{id}/easyflow-application"));
+    sqlx::query("UPDATE tbl_energy_bill SET data=data || $1 WHERE id=$2").bind(json!({"easyflowApplication":{"values":{"companyCode":null,"paymentMethod":""}}})).bind(id).execute(&app.core.pool).await.unwrap();
+    let v=expect_status!(app.get(&admin,&app_url).await,200);
+    for(k,want)in [("companyCode","TEST"),("paymentMethod","已設定付款方式"),("companyName","測試公司")] {assert_eq!(v["fields"].as_array().unwrap().iter().find(|f|f["key"]==k).unwrap()["value"],want);}
+    let mut tx=app.core.pool.begin().await.unwrap();let row=eo_energy::ingest::bills::rematch(&mut tx,&ctx,id).await.unwrap();assert_eq!(row.station_id,Some(sid));tx.rollback().await.unwrap();
+    let sid2=app.station(org,lo,"11-72-8007-94-7","春源鋼鐵").await;assert_ne!(sid,sid2);
+    let mut tx=app.core.pool.begin().await.unwrap();let ids=eo_energy::ingest::bills::ingest(&mut tx,&ctx,&raw,None,None,Some("retailerSale")).await.unwrap();let row=eo_energy::ingest::bills::bill_in_org(&mut tx,org,ids.bill_ids[0],false).await.unwrap();assert_eq!(row.station_id,None);assert_eq!(row.data["stationNameMatch"]["status"],"ambiguous");tx.rollback().await.unwrap();
+}
+
+#[actix_web::test]
 async fn easyflow_draft_is_org_scoped_read_only_and_does_not_need_landlord_contract() {
     let app = TestApp::new().await;
     let (admin,org)=app.energy_org("ef-draft").await;

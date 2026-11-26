@@ -1,0 +1,33 @@
+--- a/src/parsing/modernRenewableBillParser.ts
++++ b/src/parsing/modernRenewableBillParser.ts
+@@ -290,6 +290,8 @@
+   assign(record, 'carrierBarcode2', carrierComposite?.text, method);
+   assign(record, 'carrierBarcode3', carrierCheck?.text, method);
+ 
++  const paymentDirections = page.tokens.filter(t => /匯款至|匯款到|臨櫃繳/u.test(normalizeText(t.text))).map(t => t.text).join(' ');
++  assign(record, 'paymentNote', paymentDirections || undefined, method);
+   markNotApplicable(record, ['billNumber', 'siteName']);
+   if (!invoiceNumber) markNotApplicable(record, ['rentalInvoiceNumber']);
+   if (!carrierType || !carrierComposite) {
+--- a/tests/modernRenewableBillParser.test.ts
++++ b/tests/modernRenewableBillParser.test.ts
+@@ -136,3 +136,8 @@
+   });
+ 
+ });
++
++it('retains explicit payment directions instead of relying on absent barcode detection',()=>{
++ const r=parseModernRenewableBill('payment.pdf',[modernPage([...BASE_ROWS,['備註：表租132元請臨櫃繳納或匯款至本處',0.48,0.45]])],'hash','pdf_text');
++ expect(r.fields.paymentNote.value).toContain('匯款至本處');
++});
+--- a/tests/processBill.test.ts
++++ b/tests/processBill.test.ts
+@@ -108,7 +108,7 @@
+     const result=await processBill(pdfFile(),{extractTextRegions:vi.fn().mockResolvedValue(selected),extractPaddleDocument:paddle});
+     expect(paddle).toHaveBeenCalledOnce();expect(released).toBe(true);
+     expect(result.record.sourcePageCount).toBe(202);expect(result.record.sourceScope).toBe('rentalWorksheetFirstPage');
+-    expect(result.record.sourcePages?.[0].text).toBe(text);
++    expect(result.record.sourcePages?.[0]?.text).toBe(text);
+   });
+ 
+   it('uses Paddle for image input and keeps its values without a second-engine decision', async () => {

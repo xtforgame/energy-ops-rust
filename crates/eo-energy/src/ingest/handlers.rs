@@ -207,15 +207,7 @@ async fn application_snapshot(tx: &mut Tx<'_>,ctx:&Ctx,bill_id:i64)->ApiResult<V
     let saved = &bill.data["easyflowApplication"];
     result["draftRevision"] = json!(format!("{:x}", Sha256::digest(serde_json::to_vec(saved).unwrap())));
     let stale = saved.is_object() && saved["sourceRevision"] != revision;
-    if let Some(fields) = result["fields"].as_array_mut() {
-        for f in fields {
-            if let Some(value) = saved["values"].get(f["key"].as_str().unwrap_or("")) {
-                f["value"] = if value.as_str().is_some_and(|s| !s.trim().is_empty()) { value.clone() } else { Value::Null };
-                f["status"] = json!(if f["value"].is_null() { "pending" } else { "available" });
-                f["source"] = json!("承辦人填寫（申請草稿）");
-            }
-        }
-    }
+    eo_domain::easyflow::apply_saved_values(&mut result,saved);
     // 雜湊算完、saved 值套用之後才補日期預設：只補還是空的 applicationDate／expectedReceiptDate，已存的值不覆蓋。
     eo_domain::easyflow::fill_date_defaults(&mut result, ctx.today(), expected_receipt_days);
     result["sourceRevision"] = json!(revision);
@@ -366,7 +358,10 @@ pub async fn match_candidates(core: Core, user: CurrentUser, meta: RequestMeta, 
     let bill = bills::bill_in_org(&mut tx, ctx.org_id(), bill_id, false).await?;
     let business_date = bill.business_date(ctx.today());
     let q = q.into_inner();
-    let items = bills::match_candidates(&mut tx, ctx.org_id(), business_date, q_str(&q, "q").as_deref()).await?;
+    let mut items = bills::match_candidates(&mut tx, ctx.org_id(), business_date, q_str(&q, "q").as_deref()).await?;
+    let suggested:Vec<i64>=bill.data["stationNameMatch"]["candidates"].as_array().into_iter().flatten().filter_map(|v|v["id"].as_i64()).collect();
+    for item in &mut items {item["nameMatchSuggested"]=json!(item["id"].as_i64().is_some_and(|id|suggested.contains(&id)));}
+    items.sort_by_key(|i|!i["nameMatchSuggested"].as_bool().unwrap_or(false));
     Ok(HttpResponse::Ok().json(json!({ "items": items })))
 }
 

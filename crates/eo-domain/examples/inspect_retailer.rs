@@ -1,0 +1,1 @@
+fn main(){let p=std::env::args().nth(1).expect("PDF path");let b=std::fs::read(&p).unwrap();let r=eo_domain::retailer_bills::recognize_retailer_pdf(&b,"local-check",&p).expect("supported retailer PDF");println!("{}",serde_json::to_string_pretty(&r).unwrap());}

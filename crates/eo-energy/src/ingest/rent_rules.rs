@@ -72,6 +72,9 @@ fn decorate(item:&mut Value,row:&Value,sid:i64,station:&Value){
  for key in ["payee","basis","percent","taxPercent","taxMode","rounding","ruleSource","invoiceTiming","paymentDeadline","calculationType","notes","rentRequired"] {
   if item[key].is_null(){item[key]=rule[key].clone();}
  }
+ if !item["paymentDeadline"].as_str().is_some_and(|s|!s.trim().is_empty()) {
+  if let Some(s)=rule["sourceValues"]["BD"].as_str().filter(|s|!s.trim().is_empty()&&*s!="N/A"){item["paymentDeadline"]=json!(s);}
+ }
  if item["lines"].is_null(){item["lines"]=json!([]);}
  if item["issues"].is_null(){item["issues"]=json!([]);}
  item["customerNumber"]=station["customerNumber"].clone();

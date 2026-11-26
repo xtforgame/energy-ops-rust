@@ -1,0 +1,17 @@
+{
+  "version": "20261126-payment-eight",
+  "files": [
+    {
+      "path": "src/parsing/modernRenewableBillParser.ts",
+      "sha256Utf8Lf": "e82c3554c3051190c2338366b71bb3f31f038878dd5e332d6462cd255931e547"
+    },
+    {
+      "path": "tests/modernRenewableBillParser.test.ts",
+      "sha256Utf8Lf": "2dfb4f84d30f895fc2f0bb2505b19184e827ba2fcae3555c4d70eb1f21380069"
+    },
+    {
+      "path": "tests/processBill.test.ts",
+      "sha256Utf8Lf": "9da74608608769fe2b1860f61c7dc9a75509c7603287983052c4e21d4ab1844a"
+    }
+  ]
+}

@@ -1,5 +1,12 @@
 import {expect,it} from 'vitest';
 import {rentPreviewFields,rentCalculationDescription} from './rentPreviewFields';
+it('preserves a known summary without inventing a missing rental period',()=>{
+ const fields=Object.fromEntries(rentPreviewFields({stationName:'春源鋼鐵',annualRentReference:'700000',periodAllocationUnknown:true,application:{fields:{summary:'支付春源鋼鐵租金（計算期間待確認）'}}} as any));
+ expect(fields['申請摘要']).toBe('支付春源鋼鐵租金（計算期間待確認）');
+ expect(fields['計算期間']).toBe('待確認');
+ expect(fields['已知年租金']).toBe('700000');
+ expect(JSON.stringify(fields)).not.toContain('undefined');
+});
 it('keeps all expense terms when formula summary is provided',()=>{
  const text=rentCalculationDescription({formulaSummary:'收入 × 8%，最低 200 / cycle',calculationType:'percentageFloor',basis:'untaxed',percent:'8',minimumRent:'200',minimumUnit:'cycle',rounding:'total',taxPercent:'5',taxMode:'included',paymentDeadline:'2026-12-01'} as any);
  for(const term of ['未稅售電收入','8%','200','四捨五入','內含','5%','2026-12-01'])expect(text).toContain(term);

@@ -21,6 +21,19 @@ pub fn missing_handoff_fields(application: &Value) -> Vec<String> {
     missing
 }
 use std::str::FromStr;
+pub fn apply_saved_values(result:&mut Value,saved:&Value) {
+ if let Some(fields)=result["fields"].as_array_mut(){for f in fields{
+  if let Some(value)=saved["values"].get(f["key"].as_str().unwrap_or("")).filter(|v|v.as_str().is_some_and(|s|!s.trim().is_empty())){
+   f["value"]=value.clone();f["status"]=json!("available");f["source"]=json!("承辦人填寫（申請草稿）");
+  }
+ }}
+}
+
+#[cfg(test)]mod known_field_tests {
+ use super::*;
+ #[test]fn blank_draft_does_not_erase_master_values(){let mut r=json!({"fields":[{"key":"companyCode","value":"002"},{"key":"summary","value":"自動摘要"}]});apply_saved_values(&mut r,&json!({"values":{"companyCode":" ","summary":"手動摘要"}}));assert_eq!(r["fields"][0]["value"],"002");assert_eq!(r["fields"][1]["value"],"手動摘要");}
+ #[test]fn unmatched_bill_keeps_printed_seller(){let b=json!({"docType":"retailerSale","ocrRaw":{"record":{"fields":{"sellerName":{"value":"京承能源股份有限公司","status":"extracted"}}}}});let r=build_application(&b,&Value::Null,&json!([]));assert_eq!(r["fields"].as_array().unwrap().iter().find(|f|f["key"]=="companyName").unwrap()["value"],"京承能源股份有限公司");}
+}
 
 fn text(v: &Value) -> Option<String> {
     match v { Value::String(s) if !s.trim().is_empty() => Some(s.trim().into()), Value::Number(n) => Some(n.to_string()), _ => None }
@@ -33,7 +46,7 @@ fn amount(v: &Value) -> Option<String> {
 fn taipower_counterparty(v: &Value) -> Option<String> {
     let raw = text(v)?;
     let district = raw.trim_start_matches("服務部門").trim_start_matches([':', '：']).trim();
-    let end = district.find("區營業處")? + "區營業處".len();
+    let end = ["區營業處", "分處", "服務所"].iter().find_map(|suffix|district.find(suffix).map(|i|i+suffix.len()))?;
     let district = district[..end].trim();
     Some(if district.starts_with("台灣電力") { district.to_string() }
         else { format!("台灣電力股份有限公司{district}") })
@@ -86,8 +99,9 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     ] { field(&mut fields,key,label,text(v),source); }
     // 卡 20261126-0214：spv 名字優先；沒有才用案場層設定的 easyflowDefaults.companyName（例如沒帶 spvPayee 的舊案場）。
     let company_name = text(&station["companyName"]);
-    field(&mut fields,"companyName","公司名稱",company_name.clone().or_else(|| text(&station["easyflowDefaults"]["companyName"])),
-        if company_name.is_some() {"station.spvPayee.name"} else {"station.data.easyflowDefaults.companyName（未設 spvPayee 時備援）"});
+    let configured_company=text(&station["easyflowDefaults"]["companyName"]);
+    field(&mut fields,"companyName","公司名稱",company_name.clone().or(configured_company.clone()).or_else(||text(&bill["ocrRaw"]["record"]["fields"]["sellerName"]["value"])),
+        if company_name.is_some() {"station.spvPayee.name"} else if configured_company.is_some(){"station.data.easyflowDefaults.companyName"}else{"原單賣方公司名稱（不代表案場已對應）"});
     let counterparty = if retailer {text(&bill["ocrRaw"]["record"]["fields"]["buyerName"]["value"])}else{text(&station["counterpartyName"])};
     field(&mut fields,"counterpartyName","收款／付款對象",counterparty.clone().or_else(|| if retailer || kind=="unconfirmed" {None}else{taipower_counterparty(&detail["serviceDepartment"])}),
         if retailer {"原單發票買受人名稱（缺值不沿用台電對象）"}else if counterparty.is_some() {"station.invoice.counterpartyName"} else {"依台電原單服務區處整理名稱；已設定的對象主檔優先"});
@@ -146,16 +160,21 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
             let f=&bill["ocrRaw"]["record"]["fields"]["hasPaymentBarcode"];
             if matches!(f["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")){f["value"].as_bool()}else{None}
         });
-        let invoice=text(&detail["invoiceNumber"]);
+        let known=|key:&str| {let f=&bill["ocrRaw"]["record"]["fields"][key];if matches!(f["status"].as_str(),Some("extracted"|"ocr_extracted"|"confirmed")){text(&f["value"])}else{None}};
+        let invoice=text(&detail["invoiceNumber"]).or_else(||known("rentalInvoiceNumber"));
+        let proxy=known("proxyAccount").is_some();
+        let note=known("paymentNote").unwrap_or_default();
+        let method=if note.contains("匯款至")||note.contains("匯款到"){Some("匯款（請附存摺影本）".to_string())}else if proxy{Some("自動扣款".to_string())}else{barcode.map(|yes|if yes{"匯款（請附存摺影本）"}else{"自動扣款"}.to_string())};
+        let voucher=invoice.map(|n|format!("有，電表租費發票{n}")).or_else(||if barcode==Some(false)||(proxy&&bill["ocrRaw"]["record"]["fields"]["rentalInvoiceNumber"]["status"]=="not_applicable"){Some("無，後補".to_string())}else{None});
         let summary=line_items.iter().filter_map(|l|l["description"].as_str()).collect::<Vec<_>>().join("、");
         let rules=[
           ("contractOption",if inverter{Some("無合約".to_string())}else if bill["docType"]=="renewableNoSurplus"{Some("有合約／簽呈".to_string())}else{None}),
-          ("paymentMethod",barcode.map(|yes|if yes{"匯款（請附存摺影本）"}else{"自動扣款"}.to_string())),
+          ("paymentMethod",method),
           ("paymentTerms",Some("依公司正常請款規定".to_string())),
-          ("voucherStatus",match barcode{Some(false)=>Some("無，後補".to_string()),Some(true)=>invoice.map(|n|format!("有，電表租費發票{n}")),None=>None}),
+          ("voucherStatus",voucher),
           ("summary",if summary.is_empty(){None}else{Some(summary)}),
         ];
-        for (key,value) in rules {if text(&station["easyflowDefaults"][key]).is_none(){if let Some(value)=value{if let Some(f)=fields.iter_mut().find(|f|f["key"]==key){f["value"]=json!(value);f["status"]=json!("available");f["source"]=json!("2026-11-25 客戶 EF 填寫規則；單別、已確認付款條碼及費用明細");}}}}
+        for (key,value) in rules {if text(&station["easyflowDefaults"][key]).is_none(){if let Some(value)=value{if let Some(f)=fields.iter_mut().find(|f|f["key"]==key){f["value"]=json!(value);f["status"]=json!("available");f["source"]=json!("2026-11-25 客戶 EF 填寫規則；原單付款說明、代繳帳號、發票或已確認付款條碼及費用明細");}}}}
     }
     let line_sum: Decimal = line_items.iter().filter_map(|x|x["amount"].as_str().and_then(|s|Decimal::from_str(s).ok())).sum();
     let total=payment_total.as_deref().and_then(|s|Decimal::from_str(s).ok());
@@ -169,6 +188,20 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     let reconciled = kind=="payment" && !line_items.is_empty() && if high_voltage {
         required_present && !explicit_missing && tax_reconciled && total.is_some_and(|d|d==rounded_sum)
     } else {total.is_some_and(|d|d.abs()==line_sum)};
+    // EF expense categories are separate from the source bill reconciliation lines.
+    // Group only after every original charge and the tax breakdown reconcile.
+    let mut payment_lines=if high_voltage {Vec::new()}else{line_items.clone()};
+    if kind=="payment" && high_voltage && inverter && reconciled {
+        let rental=amount(&detail["meterRentalFee"]).and_then(|s|Decimal::from_str(&s).ok()).unwrap_or(Decimal::ZERO);
+        let late=amount(&detail["latePaymentFee"]).and_then(|s|Decimal::from_str(&s).ok()).unwrap_or(Decimal::ZERO);
+        let usage=total.unwrap()-rental-late;
+        for(key,label,n)in [("usageEnergyFee","逆變器使用電費",usage),("meterRentalFee","電表租費",rental),("latePaymentFee","遲付費用",late)]{
+            if n!=Decimal::ZERO{payment_lines.push(json!({"key":key,"description":format!("{}{label}",station["name"].as_str().unwrap_or("")),"currency":"TWD","amount":n.normalize().to_string(),"source":"原單明細及稅額核對通過後，按付款總額拆分使用費、租費及遲付費；整元差額納入使用費"}));}
+        }
+        if text(&station["easyflowDefaults"]["summary"]).is_none(){if let Some(f)=fields.iter_mut().find(|f|f["key"]=="summary"){
+            f["value"]=json!(payment_lines.iter().filter_map(|l|l["description"].as_str()).collect::<Vec<_>>().join("、"));
+        }}
+    }
     let reconciliation=if high_voltage {json!({"basis":"signed_bill_charges_including_tax","lineSum":line_sum.normalize().to_string(),
        "roundedLineSum":rounded_sum.normalize().to_string(),"roundingDifference":(rounded_sum-line_sum).normalize().to_string(),
        "taxBreakdownReconciled":tax_reconciled,"message":"依原單計費項目保留正負號加總，按整元核對總額；稅前總額＋營業稅另行驗算，營業稅不重複加入明細。"})}else{Value::Null};
@@ -187,7 +220,7 @@ pub fn build_application(bill: &Value, station: &Value, attachments: &Value) -> 
     if attachments.as_array().is_none_or(|a| a.is_empty()) { pending.push(json!({"key":"sourceAttachment","message":"尚未取得來源附件，請補上原始單據。"})); }
     json!({"schemaVersion":"easyflow.application.v1","state":"draft","submissionAllowed":false,
         "billId":bill["id"],"reviewStatus":bill["reviewStatus"],"approvalState":bill["approvalState"],
-        "applicationType":kind,"fields":fields,"lineItems":line_items,"lineItemsReconciled":reconciled,"reconciliation":reconciliation,
+        "applicationType":kind,"fields":fields,"lineItems":line_items,"paymentLineItems":payment_lines,"lineItemsReconciled":reconciled,"reconciliation":reconciliation,
         "attachments":attachments,"pending":pending})
 }
 
@@ -251,9 +284,25 @@ pub fn application_csv(p: &Value) -> String {
         let row=[key.to_string(),label.to_string(),text(&p[key]).unwrap_or_default(),"草稿，未送出".into(),"platform".into()];
         out.push_str(&row.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","));out.push_str("\r\n");
     }
-    for (section,label) in [("pending","待確認事項"),("attachments","來源附件清單"),("lineItems","費用明細"),("reconciliation","明細對帳與整元差額")] {
+    for (section,label) in [("pending","待確認事項"),("attachments","來源附件清單"),("lineItems","原單費用明細"),("paymentLineItems","EF申請分項"),("reconciliation","明細對帳與整元差額")] {
         let row=[section.to_string(),label.to_string(),p[section].to_string(),"草稿，未送出".into(),"platform".into()];
         out.push_str(&row.iter().map(|s|cell(s)).collect::<Vec<_>>().join(","));out.push_str("\r\n");
     }
     out
+}
+
+#[cfg(test)] mod payment_eight_tests {
+ use super::*;
+ fn value(r:&Value,k:&str)->Value{r["fields"].as_array().unwrap().iter().find(|f|f["key"]==k).unwrap()["value"].clone()}
+ #[test] fn inverter_groups_only_reconciled_charges_and_keeps_originals(){
+ let b=json!({"docType":"consumptionDeviceRental","templateId":"high_voltage","detailFields":{"baseEnergyFee":514.2,"flowEnergyFee":2711.2,"powerFactorAdjustmentFee":-49.2,"meterReadingDiscount":-10,"meterRentalFee":1549,"electricityAdjustmentAmount":54.8,"taxBeforeAmount":4543,"businessTax":227,"payableTotal":4770,"serviceDepartment":"豐原分處"},"ocrRaw":{"record":{"fields":{"proxyAccount":{"status":"extracted","value":"00266035******"},"rentalInvoiceNumber":{"status":"not_applicable","value":null}}}}});
+ let r=build_application(&b,&json!({"name":"八方夜市","companyName":"京承能源"}),&json!([]));
+ assert_eq!(r["paymentLineItems"][0]["amount"],"3221");assert_eq!(r["paymentLineItems"][1]["amount"],"1549");assert_eq!(r["lineItems"].as_array().unwrap().len(),6);
+ assert_eq!(value(&r,"summary"),"八方夜市逆變器使用電費、八方夜市電表租費");assert_eq!(value(&r,"paymentMethod"),"自動扣款");assert_eq!(value(&r,"voucherStatus"),"無，後補");assert_eq!(value(&r,"contractOption"),"無合約");assert_eq!(value(&r,"counterpartyName"),"台灣電力股份有限公司豐原分處");
+ let mut bad=b.clone();bad["detailFields"]["payableTotal"]=json!(5000);assert!(build_application(&bad,&json!({}),&json!([]))["paymentLineItems"].as_array().unwrap().is_empty());
+ }
+ #[test] fn payment_note_and_real_invoice_are_used_without_fabricating_bbr(){
+ let b=json!({"docType":"renewableNoSurplus","detailFields":{"meterRentalFee":-132,"payableTotal":-132},"ocrRaw":{"record":{"fields":{"paymentNote":{"status":"extracted","value":"表租132元請臨櫃繳納或匯款至本處"},"rentalInvoiceNumber":{"status":"extracted","value":"UJ28211985"}}}}});
+ let r=build_application(&b,&json!({"name":"三爺"}),&json!([]));assert_eq!(value(&r,"paymentMethod"),"匯款（請附存摺影本）");assert_eq!(value(&r,"voucherStatus"),"有，電表租費發票UJ28211985");
+ }
 }

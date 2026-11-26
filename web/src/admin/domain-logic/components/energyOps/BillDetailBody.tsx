@@ -1173,7 +1173,11 @@ const BillDetailBody: React.FC<BillDetailBodyProps> = ({ billId, onBack, queue }
                     </Button>
                   ) : undefined}
                 >
-                  {translate('energy.review.needsMatch')}
+                  {bill?.stationNameMatch?.status === 'ambiguous'
+                    ? `原單未提供電號，名稱對應到 ${bill.stationNameMatch.candidates.length} 個案場，請選擇；不會自動猜測。`
+                    : bill?.stationNameMatch?.status === 'unmatched'
+                      ? '原單未提供電號，名稱未找到唯一對應案場。已保留辨識資料，請指定案場。'
+                      : translate('energy.review.needsMatch')}
                 </Alert>
               )}
             </Stack>

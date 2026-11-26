@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 const FIELDS: &[&str] = &["companyCode","companyName","applicant","department","applicationDate","summary","paymentMethod","paymentDate","contractOption","voucherStatus"];
 fn same_cycle(a:&Value,b:&Value)->bool { ["ruleId","periodStart","periodEnd"].iter().all(|k|a[k]==b[k]) }
-fn revision(item:&Value,defaults:&Value)->String {let mut source=item.clone();if let Some(o)=source.as_object_mut(){o.remove("voucherAttachments");}format!("{:x}",Sha256::digest(serde_json::to_vec(&json!([source,defaults])).unwrap()))}
+fn revision(item:&Value,defaults:&Value)->String {let mut source=item.clone();if let Some(o)=source.as_object_mut(){o.remove("voucherAttachments");}format!("{:x}",Sha256::digest(serde_json::to_vec(&json!(["rental-form.v2",source,defaults])).unwrap()))}
 fn voucher_revision(v:&Value)->String {format!("{:x}",Sha256::digest(serde_json::to_vec(v).unwrap()))}
 async fn attach_vouchers(ctx:&Ctx,item:&mut Value,data:&Value)->ApiResult<()> {
  let ids:Vec<i64>=data["rentApplications"].as_array().and_then(|a|a.iter().find(|d|same_cycle(item,d))).and_then(|d|d["voucherAttachmentIds"].as_array()).map(|a|a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
@@ -16,16 +16,36 @@ async fn attach_vouchers(ctx:&Ctx,item:&mut Value,data:&Value)->ApiResult<()> {
 fn apply(item:&mut Value,data:&Value,can_review:bool){
  let source=revision(item,&data["easyflowDefaults"]);
  let saved=data["rentApplications"].as_array().and_then(|a|a.iter().find(|d|same_cycle(item,d))).cloned().unwrap_or(Value::Null);
+ let timing=saved["invoiceTiming"].as_str().filter(|s|!s.trim().is_empty()).or(item["invoiceTiming"].as_str()).unwrap_or("unknown").to_string();
+ // A declared invoice arrangement is evidence in its own right; a missing tax ID
+ // must not hide a known "invoice later" instruction.
+ let voucher=if item["payeeKind"]=="individual" {json!("有，租金計算表")}
+  else if timing=="later" {json!("無，發票後補")}
+  else if saved["invoiceTiming"].as_str().is_some_and(|s|Some(s)!=item["invoiceTiming"].as_str()) {Value::Null}
+  else {item["voucherStatus"].clone()};
  let mut fields=serde_json::Map::new();
- for &key in FIELDS {let value=saved["fields"].get(key).or_else(||data["easyflowDefaults"].get(key)).or_else(||item.get(key)).cloned().unwrap_or(Value::Null);fields.insert(key.into(),value);}
+ for &key in FIELDS {
+  let generated=if key=="voucherStatus" {Some(&voucher)}else{item.get(key)};
+  let value=[saved["fields"].get(key),data["easyflowDefaults"].get(key),generated].into_iter().flatten()
+   .find(|v|v.as_str().is_some_and(|s|!s.trim().is_empty())).cloned().unwrap_or(Value::Null);
+  fields.insert(key.into(),value);
+ }
  let missing:Vec<_>=FIELDS.iter().filter(|k|!fields[**k].as_str().is_some_and(|v|!v.trim().is_empty())).copied().collect();
  let stale=saved.is_object()&&(saved["sourceRevision"]!=source || (saved["voucherRevision"].is_string()&&saved["voucherRevision"]!=voucher_revision(&item["voucherAttachments"])));
- let timing=saved["invoiceTiming"].as_str().or(item["invoiceTiming"].as_str()).unwrap_or("unknown").to_string();
  let vouchers_available=saved["voucherAttachmentIds"].as_array().into_iter().flatten().all(|id|item["voucherAttachments"].as_array().is_some_and(|rows|rows.iter().any(|r|r["id"]==*id&&r["status"]=="active")));
  let mut confirmation_blockers=Vec::new();if !confirmable(item){confirmation_blockers.push("租金規則、金額或來源尚未確認");}if !vouchers_available{confirmation_blockers.push("憑證附件缺漏或已換版");}
  item["invoiceTiming"]=json!(timing);
  item["application"]=json!({"fields":fields,"missingFields":missing,"sourceRevision":source,"draftRevision":saved["draftRevision"].as_u64().unwrap_or(0),"state":if stale{"stale"}else{saved["state"].as_str().unwrap_or("draft")},"stale":stale,"canReview":can_review,"canConfirm":can_review&&confirmable(item)&&vouchers_available,"confirmationBlockers":confirmation_blockers,"invoiceTiming":timing,"voucherAttachmentIds":saved["voucherAttachmentIds"].as_array().cloned().unwrap_or_default(),"confirmedBy":if stale{Value::Null}else{saved["confirmedBy"].clone()},"confirmedAt":if stale{Value::Null}else{saved["confirmedAt"].clone()},"paymentAllowed":false});
  item["paymentAllowed"]=json!(false);
+}
+fn apply_for_today(item:&mut Value,data:&Value,can_review:bool,today:chrono::NaiveDate){
+ apply(item,data,can_review);
+ // Date defaults are applied after the source hash, matching electricity drafts.
+ // A new calendar day alone must not invalidate a saved confirmation.
+ if item["application"]["fields"]["applicationDate"].is_null(){
+  item["application"]["fields"]["applicationDate"]=json!(today.to_string());
+  if let Some(missing)=item["application"]["missingFields"].as_array_mut(){missing.retain(|v|v!="applicationDate");}
+ }
 }
 async fn can_review(ctx:&Ctx)->ApiResult<bool>{
  if !ctx.has("energy:flow:act").await? {return Ok(false)}
@@ -35,7 +55,7 @@ async fn can_review(ctx:&Ctx)->ApiResult<bool>{
 }
 pub async fn decorate_items(ctx:&Ctx,_sid:i64,station:&Value,items:&mut [Value])->ApiResult<()> {
  let review=can_review(ctx).await?;
- for item in items {attach_vouchers(ctx,item,&station["data"]).await?;apply(item,&station["data"],review)}
+ for item in items {attach_vouchers(ctx,item,&station["data"]).await?;apply_for_today(item,&station["data"],review,ctx.today())}
  Ok(())
 }
 fn confirmable(item:&Value)->bool {
@@ -60,7 +80,7 @@ pub async fn save(core:web::Data<CoreRef>,user:CurrentUser,meta:RequestMeta,path
  let items=super::rent_payment::station_items(&core,org,sid,&station,Some((from,to))).await?;
  let mut item=items.into_iter().find(|i|same_cycle(i,&body)).ok_or_else(||err(404,"rent_cycle_not_found"))?;
  if !item["periodStart"].is_string()||!item["periodEnd"].is_string(){return Err(err(422,"rent_cycle_required"))}
- attach_vouchers(&ctx,&mut item,&station["data"]).await?;let mut raw=item.clone();apply(&mut item,&station["data"],review);
+ attach_vouchers(&ctx,&mut item,&station["data"]).await?;let mut raw=item.clone();apply_for_today(&mut item,&station["data"],review,ctx.today());
  if body["sourceRevision"]!=item["application"]["sourceRevision"]{return Err(err(409,"application_source_changed"))}
  if body["draftRevision"]!=item["application"]["draftRevision"]{return Err(err(409,"application_draft_changed"))}
  if action=="confirm"&&!confirmable(&raw){return Err(err_d(422,"rent_sources_incomplete",json!({"issues":raw["issues"],"sourceBlockers":raw["sourceBlockers"]})))}
@@ -77,11 +97,38 @@ pub async fn save(core:web::Data<CoreRef>,user:CurrentUser,meta:RequestMeta,path
  sqlx::query("UPDATE tbl_energy_station SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{rentApplications}',$1,true),updated_at=clock_timestamp() WHERE id=$2 AND organization_id=$3").bind(json!(drafts)).bind(sid).bind(org).execute(&mut *tx).await?;
  audit::record(&mut tx,&ctx,AuditInput::new("station.rent_application_saved",sid,"儲存租金交接資料（非 EF 送出或付款核可）").payload(json!({"action":action,"before":before,"application":saved}))).await?;
  tx.commit().await?;
- station["data"]["rentApplications"]=json!(drafts);item=raw;apply(&mut item,&station["data"],review);
+ station["data"]["rentApplications"]=json!(drafts);item=raw;apply_for_today(&mut item,&station["data"],review,ctx.today());
  Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).json(item))
 }
 #[cfg(test)]mod tests{
  use super::*;
+ #[test]fn known_invoice_arrangement_does_not_require_tax_id(){
+  let mut item=json!({"ruleId":16,"periodStart":"a","periodEnd":"b","invoiceTiming":"later","payeeKind":"unknown"});
+  apply(&mut item,&json!({}),true);
+  assert_eq!(item["application"]["fields"]["voucherStatus"],"無，發票後補");
+ }
+ #[test]fn rental_application_date_is_generated_but_saved_date_is_preserved(){
+  let mut item=json!({"ruleId":16,"periodStart":"a","periodEnd":"b"});
+  let today=chrono::NaiveDate::from_ymd_opt(2026,11,26).unwrap();
+  apply_for_today(&mut item,&json!({}),true,today);
+  assert_eq!(item["application"]["fields"]["applicationDate"],"2026-11-26");
+  assert!(!item["application"]["missingFields"].as_array().unwrap().contains(&json!("applicationDate")));
+  let data=json!({"rentApplications":[{"ruleId":16,"periodStart":"a","periodEnd":"b","fields":{"applicationDate":"2026-10-28"}}]});
+  apply_for_today(&mut item,&data,true,today);
+  assert_eq!(item["application"]["fields"]["applicationDate"],"2026-10-28");
+ }
+ #[test]fn blank_legacy_draft_uses_known_defaults_without_overwriting_edits(){
+  let mut item=json!({"ruleId":16,"periodStart":"2026-10-01","periodEnd":"2026-10-31","contractOption":"一般付款 > 有合約／簽呈","paymentMethod":"匯款（請附存摺影本）","voucherStatus":"無，發票後補","summary":"自動摘要"});
+  let data=json!({"easyflowDefaults":{"paymentMethod":null,"companyCode":"002"},"rentApplications":[{"ruleId":16,"periodStart":"2026-10-01","periodEnd":"2026-10-31","fields":{"contractOption":null,"paymentMethod":"  ","voucherStatus":"","companyCode":null,"summary":"承辦已修訂摘要"}}]});
+  apply(&mut item,&data,true);
+  let f=&item["application"]["fields"];
+  assert_eq!(f["contractOption"],"一般付款 > 有合約／簽呈");
+  assert_eq!(f["paymentMethod"],"匯款（請附存摺影本）");
+  assert_eq!(f["voucherStatus"],"無，發票後補");
+  assert_eq!(f["companyCode"],"002");
+  assert_eq!(f["summary"],"承辦已修訂摘要");
+  assert!(f["applicant"].is_null());
+ }
  #[test]fn source_change_invalidates_confirmation_without_losing_fields(){let original=json!({"ruleId":1,"periodStart":"2026-01-01","periodEnd":"2026-12-31","grossRent":"100"});let mut i=original.clone();apply(&mut i,&json!({}),true);let data=json!({"rentApplications":[{"ruleId":1,"periodStart":"2026-01-01","periodEnd":"2026-12-31","sourceRevision":i["application"]["sourceRevision"],"draftRevision":1,"state":"dataConfirmed","fields":{"applicant":"王"}}]});let mut current=original.clone();apply(&mut current,&data,true);assert_eq!(current["application"]["state"],"dataConfirmed");let mut changed=original;changed["grossRent"]=json!("101");apply(&mut changed,&data,true);assert_eq!(changed["application"]["state"],"stale");assert_eq!(changed["application"]["fields"]["applicant"],"王");assert_eq!(changed["paymentAllowed"],false);}
  #[test]fn removed_voucher_invalidates_confirmation(){
  let mut raw=json!({"ruleId":1,"periodStart":"a","periodEnd":"b","grossRent":"100","voucherAttachments":[{"id":7,"hash":"abc","status":"active"}]});

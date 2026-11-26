@@ -416,6 +416,8 @@ struct ParsedFields {
     /// 買方。
     buyer_tax_id: Option<String>,
     buyer_name: Option<String>,
+    seller_name: Option<String>,
+    site_name: Option<String>,
 }
 
 /// 陽光伏特家「電廠電費單」：主單 1–3 頁，附件（4–17 台電費用清單）不讀。
@@ -452,6 +454,7 @@ fn parse_sunshine_volt(pages: &PageTokens) -> ParsedFields {
     f.company_tax_id = value_after(pages, 1..=1, "企業統編").and_then(first_tax_id);
     f.buyer_tax_id = value_after(pages, 3..=3, "統編:").and_then(first_tax_id);
     f.buyer_name = value_after(pages, 3..=3, "公司全名:").and_then(company_name);
+    f.site_name = site_after_meter(pages,2);
     f
 }
 
@@ -479,6 +482,8 @@ fn parse_apollo(pages: &PageTokens) -> ParsedFields {
     f.buyer_tax_id = buyer;
     f.company_tax_id = seller;
     f.buyer_name = pages.iter().filter(|r|r.page==1).take_while(|r|!r.text.contains("供應商資訊")).find_map(|r|company_name(&r.text));
+    f.seller_name = pages.iter().filter(|r|r.page==1).skip_while(|r|!r.text.contains("供應商資訊")).find_map(|r|company_name(&r.text));
+    f.site_name = site_after_meter(pages,2);
     f
 }
 
@@ -523,6 +528,10 @@ fn parse_inventec(pages: &PageTokens) -> ParsedFields {
     // 「用電戶名稱」是表頭（這一列只有欄名、沒有值），買方公司名稱＋統編在下一列。
     f.buyer_tax_id = tax_id_near_label(pages, MAIN, "用電戶名稱");
     f.buyer_name = row_and_next_containing(pages, MAIN, "用電戶名稱").and_then(|(same,next)|company_name(&same).or_else(||next.and_then(|s|company_name(&s))));
+    let sellers:std::collections::BTreeSet<String>=pages.iter().filter(|r|r.page==1).filter_map(|r|company_name(r.text.strip_prefix("戶名").unwrap_or(&r.text))).filter(|n|Some(n)!=f.buyer_name.as_ref()).collect();
+    // Match the remittance account label, not the substring in 用電戶名稱 (the buyer).
+    f.seller_name=pages.iter().filter(|r|r.page==1).filter_map(|r|r.text.strip_prefix("戶名")).find_map(company_name).filter(|n|Some(n)!=f.buyer_name.as_ref());
+    if f.seller_name.is_none()&&sellers.len()==1 {f.seller_name=sellers.into_iter().next();}
     for row in pages.iter().filter(|r| MAIN.contains(&r.page)) {
         if row.text.contains("統一編號") && !row.text.contains("用電戶名稱") {
             if let Some(id) = first_tax_id(&row.text) {
@@ -574,6 +583,12 @@ fn field_text(v: Option<String>) -> CanonicalField {
     }
 }
 
+fn site_after_meter(pages:&PageTokens,page:u32)->Option<String>{
+    let re=regex::Regex::new(r"\d{11}\s*([\p{Han}A-Za-z][\p{Han}A-Za-z\s]*?)(?:\s*\d|$)").unwrap();
+    let names:std::collections::BTreeSet<String>=pages.iter().filter(|r|r.page==page).filter_map(|r|re.captures(&r.text).map(|c|c[1].trim().to_string())).collect();
+    if names.len()==1 {names.into_iter().next()}else{None}
+}
+
 fn field_number(v: Option<f64>) -> CanonicalField {
     match v.and_then(serde_json::Number::from_f64) {
         Some(n) => CanonicalField {
@@ -606,6 +621,8 @@ fn to_canonical(template: RetailerTemplate, fields: &ParsedFields, source_file_i
     map.insert("companyTaxId".to_string(), field_text(fields.company_tax_id.clone()));
     map.insert("buyerTaxId".to_string(), field_text(fields.buyer_tax_id.clone()));
     map.insert("buyerName".to_string(), field_text(fields.buyer_name.clone()));
+    map.insert("sellerName".to_string(), field_text(fields.seller_name.clone()));
+    map.insert("siteName".to_string(), field_text(fields.site_name.clone()));
 
     let record = CanonicalRecord {
         source_pages: Vec::new(),
@@ -642,6 +659,13 @@ pub fn recognize_retailer_pdf(bytes: &[u8], source_file_id: &str, source_file_na
 mod tests {
     use super::*;
     use crate::taipower_extractor::as_canonical_document;
+    #[test]
+    fn no_meter_keeps_seller_separate_from_buyer_for_matching(){
+        let pages=vec![row(1,1.0,"京承能源股份有限公司"),row(1,2.0,"用電戶名稱 統一編號"),row(1,3.0,"英業達股份有限公司 04322046"),row(1,4.0,"戶名京承能源股份有限公司計費期間115年1月1日至")];
+        let c=to_canonical(RetailerTemplate::Inventec,&parse_inventec(&pages),"1","a.pdf");
+        assert_eq!(c["record"]["fields"]["sellerName"]["value"],"京承能源股份有限公司");
+        assert_eq!(c["record"]["fields"]["buyerName"]["value"],"英業達股份有限公司");
+    }
 
     #[test]
     fn mixed_packet_selects_bill_pages_without_cover_or_calculation_and_keeps_provenance() {

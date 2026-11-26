@@ -161,6 +161,7 @@ pub fn to_view(b: &BillRow) -> Value {
     json!({
         "id": b.id,
         "stationId": b.station_id,
+        "stationNameMatch": b.data["stationNameMatch"],
         "customerNumberRaw": b.customer_number_raw,
         "sourceAttachmentId": b.source_attachment_id,
         "ocrExtracted": b.ocr_extracted,
@@ -362,6 +363,18 @@ pub async fn resolve_match(
     }
 }
 
+async fn resolve_name_match(tx:&mut Tx<'_>,org:i64,raw:&Value,date:NaiveDate)->ApiResult<(MatchOutcome,Value)>{
+    let stations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'name',s.name,'customerNumber',s.customer_number,'data',s.data,'companyName',p.name) FROM tbl_energy_station s LEFT JOIN tbl_energy_landowner p ON p.id=s.spv_payee_id AND p.organization_id=s.organization_id AND p.deleted_at IS NULL WHERE s.organization_id=$1 AND s.deleted_at IS NULL ORDER BY s.id")
+        .bind(org).fetch_all(&mut **tx).await?;
+    let evidence=super::station_names::candidates(&stations,raw,None);
+    let outcome=if evidence["status"]=="matched" {
+        let id=evidence["candidates"][0]["id"].as_i64().unwrap();
+        let station=station_by_id(tx,org,id).await?.ok_or_else(||err(404,"station_not_found"))?;
+        resolve_contract_for_station(tx,org,station,None,date).await?
+    }else{MatchOutcome::NoStation};
+    Ok((outcome,evidence))
+}
+
 fn decimal_of(v: f64) -> Option<Decimal> {
     if !v.is_finite() {
         return None;
@@ -403,9 +416,13 @@ pub async fn ingest(
         let business_key =
             bill_business_key(one.customer_number.as_deref(), one.billing_period_start.as_deref(), one.billing_period_end.as_deref());
         let business_date = date_of(one.billing_period_end.as_deref()).unwrap_or(today);
-        let outcome = match one.customer_number.as_deref() {
-            Some(cn) if !cn.is_empty() => resolve_match(tx, ctx.org_id(), cn, business_date).await?,
-            _ => MatchOutcome::NoStation,
+        let mut name_match = Value::Null;
+        let outcome = match one.customer_number.as_deref().map(str::trim).filter(|s|!s.is_empty()) {
+            Some(cn) => resolve_match(tx, ctx.org_id(), cn, business_date).await?,
+            None => {
+                let (outcome,evidence)=resolve_name_match(tx,ctx.org_id(),&ocr_raw,business_date).await?;
+                name_match=evidence;outcome
+            },
         };
         let review_status = outcome.review_status();
         // 「配到了」在收件台的意義是「找到案場」—— 找得到案場但沒有生效合約，
@@ -452,6 +469,10 @@ pub async fn ingest(
         .fetch_one(&mut **tx)
         .await?;
         out.bill_ids.push(id);
+        if !name_match.is_null(){
+            sqlx::query("UPDATE tbl_energy_bill SET data=data || jsonb_build_object('stationNameMatch',$1::jsonb) WHERE id=$2 AND organization_id=$3")
+                .bind(&name_match).bind(id).bind(ctx.org_id()).execute(&mut **tx).await?;
+        }
         let keys: Vec<String> = extracted_json.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
         let label = one.customer_number.clone().unwrap_or_else(|| "(無電號)".into());
         let input = match &outcome {
@@ -481,6 +502,7 @@ pub async fn ingest(
                 "extractedFields": keys,
                 "sourceAttachmentId": source_attachment_id,
                 "ingestBatchId": ingest_batch_id,
+                "stationNameMatch": name_match,
             })),
         )
         .await?;
@@ -546,7 +568,17 @@ pub async fn rematch(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64) -> ApiResult<Bill
     let business_date = bill.business_date(ctx.today());
     let outcome = match bill.customer_number_raw.as_deref().filter(|s| !s.is_empty()) {
         Some(cn) => resolve_match(tx, ctx.org_id(), cn, business_date).await?,
-        None => MatchOutcome::NoStation,
+        None => {
+            // A deliberate human assignment remains authoritative for documents without a meter.
+            if let Some(id)=bill.station_id {
+                let station=station_by_id(tx,ctx.org_id(),id).await?.ok_or_else(||err(404,"station_not_found"))?;
+                resolve_contract_for_station(tx,ctx.org_id(),station,None,business_date).await?
+            }else{
+                let (outcome,evidence)=resolve_name_match(tx,ctx.org_id(),&bill.ocr_raw,business_date).await?;
+                sqlx::query("UPDATE tbl_energy_bill SET data=data || jsonb_build_object('stationNameMatch',$1::jsonb) WHERE id=$2 AND organization_id=$3").bind(evidence).bind(bill_id).bind(ctx.org_id()).execute(&mut **tx).await?;
+                outcome
+            }
+        },
     };
     let before_status = bill.review_status.clone();
     let after_status =
@@ -710,8 +742,13 @@ pub async fn correct(tx: &mut Tx<'_>, ctx: &Ctx, bill_id: i64, input: &CorrectBi
         }
         .unwrap_or_else(|| ctx.today());
         let outcome = match &raw {
-            Some(r) => resolve_match(tx, ctx.org_id(), r, business_date).await?,
-            None => MatchOutcome::NoStation,
+            Some(r) if !r.trim().is_empty() => resolve_match(tx, ctx.org_id(), r, business_date).await?,
+            _ => {
+                if let Some(id)=bill.station_id.filter(|_|!patched_json.contains_key("customerNumberRaw")) {
+                    let station=station_by_id(tx,ctx.org_id(),id).await?.ok_or_else(||err(404,"station_not_found"))?;
+                    resolve_contract_for_station(tx,ctx.org_id(),station,None,business_date).await?
+                }else{resolve_name_match(tx,ctx.org_id(),&bill.ocr_raw,business_date).await?.0}
+            },
         };
         let after = outcome.station_id();
         if bill.station_id != after {
