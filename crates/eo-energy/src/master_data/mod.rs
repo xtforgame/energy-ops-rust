@@ -76,6 +76,8 @@ impl AppPlugin for MasterDataPlugin {
         cfg.post(&path("/contracts/{contractId}/rent-cycle"), web::post().to(rent_cycle::save));
         cfg.get(&path("/contracts/{contractId}/rent-cycle/bills"), web::get().to(rent_cycle::bills));
         cfg.post(&path("/contracts/{contractId}/rent-cycle/preview"), web::post().to(rent_cycle::preview));
+        cfg.post(&path("/contracts/{contractId}/rent-cycle/payment-draft"), web::post().to(rent_cycle::payment_draft));
+        cfg.get(&path("/stations/{stationId}/rent-application"), web::get().to(rent_cycle::station_application));
         cfg.post(&path("/imports/stations"), web::post().to(station_import::import_handler));
     }
 }

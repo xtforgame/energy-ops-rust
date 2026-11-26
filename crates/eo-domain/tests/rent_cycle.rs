@@ -1,4 +1,4 @@
-use eo_domain::rent_cycle::{preview, Plan, Receipt};
+use eo_domain::rent_cycle::{application, preview, ApplicationEntryInput, Plan, Receipt};
 use serde_json::{json, Value};
 
 fn plan(transfer: bool) -> Plan {
@@ -188,4 +188,49 @@ fn bimonthly_bill_fully_inside_period_is_accepted_but_crossing_period_needs_conf
     let v2=run(&p,vec![crossing]);
     assert_eq!(v2["baseRent"],Value::Null);
     assert!(v2["issues"].as_array().unwrap().iter().any(|i|i.as_str().unwrap().contains("與 PM 11/25 確認不符")));
+}
+
+// ── 卡 20261126-0416 S1／S3：`application()` 純函式，合成數字（金額只用來驗加總，不是真資料）──
+fn entry(contract_no:&str, tax_id:Option<&str>, invoice_timing:Option<&str>, base_rent:Option<&str>, has_issue:bool) -> ApplicationEntryInput {
+    ApplicationEntryInput {
+        contract_no: contract_no.into(), rent_calc_code: Some("R-A".into()), kind: "fixedAnnual".into(),
+        landowner_names: vec![format!("地主-{contract_no}")],
+        landowner_tax_id: tax_id.map(String::from),
+        invoice_timing: invoice_timing.map(String::from),
+        base_rent: base_rent.map(String::from), has_issue,
+    }
+}
+
+#[test]
+fn two_landowners_same_period_merge_into_one_application_with_two_rows() {
+    let company=entry("C-1",Some("12345678"),Some("before"),Some("1000"),false);
+    let individual=entry("C-2",Some("A123456789"),None,Some("2000"),false);
+    let v=application("測試案場","002","測試公司","2026-07-01","2026-09-30",&[company,individual]);
+    assert_eq!(v["summary"],"支付測試案場租金（2026-07-01～2026-09-30）");
+    assert_eq!(v["entries"].as_array().unwrap().len(),2);
+    assert_eq!(v["total"],"3000");
+    assert_eq!(v["state"],"draft");
+    assert_eq!(v["paymentAllowed"],false);
+}
+
+#[test]
+fn voucher_text_covers_company_three_timings_and_individual_and_unknown() {
+    let before=entry("C-1",Some("12345678"),Some("before"),Some("100"),false);
+    let later=entry("C-2",Some("12345678"),Some("later"),Some("100"),false);
+    let unknown_timing=entry("C-3",Some("12345678"),Some("unknown"),Some("100"),false);
+    let individual=entry("C-4",Some("A123456789"),None,Some("100"),false);
+    let no_tax_id=entry("C-5",None,None,Some("100"),false);
+    let v=application("測試案場","待補","待補","2026-07-01","2026-09-30",
+        &[before,later,unknown_timing,individual,no_tax_id]);
+    let vouchers:Vec<&str>=v["entries"].as_array().unwrap().iter().map(|e|e["voucher"].as_str().unwrap()).collect();
+    assert_eq!(vouchers,vec!["有，發票","無，後補","待確認","有，租金計算表","地主類型待確認"]);
+}
+
+#[test]
+fn any_entry_with_issue_blanks_the_whole_total_and_marks_needs_review() {
+    let ok=entry("C-1",Some("12345678"),Some("before"),Some("1000"),false);
+    let broken=entry("C-2",Some("A123456789"),None,None,true);
+    let v=application("測試案場","002","測試公司","2026-07-01","2026-09-30",&[ok,broken]);
+    assert_eq!(v["total"],Value::Null);
+    assert_eq!(v["state"],"needsReview");
 }

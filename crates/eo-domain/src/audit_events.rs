@@ -764,6 +764,15 @@ pub static ENERGY_AUDIT_EVENTS: &[AuditEventDef] = &[
     // ── 合約（卡 20261118-0810-a2）──
     ev("contract.created", "energyContract", CONTRACT, "audit.type.contract.created", Info, true),
     ev("contract.updated", "energyContract", CONTRACT, "audit.type.contract.updated", Notable, true),
+    // 卡 20261126-0416 S2：R-A 零單據也能存，不經 POST /bills/{id}/rent-payment。
+    ev(
+        "contract.rent_payment_draft_saved",
+        "energyContract",
+        &[req("contractNo", STR), req("periodStart", STR), req("periodEnd", STR), req("baseRent", STR)],
+        "audit.type.contract.rent_payment_draft_saved",
+        Info,
+        true,
+    ),
 ];
 
 /// 取事件定義；找不到回 None（寫入端據此拒絕未註冊的 type）。

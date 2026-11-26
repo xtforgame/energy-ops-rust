@@ -165,8 +165,9 @@ pub async fn station_overview(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64) -> Ap
     .bind(st.id)
     .fetch_all(&mut **tx)
     .await?;
-    let contracts: Vec<(i64, String, String, NaiveDate, Option<NaiveDate>, Option<NaiveDate>, Option<NaiveDate>)> = sqlx::query_as(
-        "SELECT c.id, c.contract_no, c.stage, c.valid_from, c.valid_to, c.signed_on, c.renewal_remind_on FROM tbl_energy_contract c
+    // S3（卡 20261126-0416）：帶 rentCalcCode，讓畫面能認出 R-0（業主自建案）不需付款。
+    let contracts: Vec<(i64, String, String, NaiveDate, Option<NaiveDate>, Option<NaiveDate>, Option<NaiveDate>, Option<String>)> = sqlx::query_as(
+        "SELECT c.id, c.contract_no, c.stage, c.valid_from, c.valid_to, c.signed_on, c.renewal_remind_on, c.rent_calc_code FROM tbl_energy_contract c
           WHERE c.organization_id = $1 AND c.deleted_at IS NULL AND c.id IN (
             SELECT contract_id FROM mn_energy_contract_station WHERE station_id = $2 AND deleted_at IS NULL)
           ORDER BY c.id",
@@ -221,7 +222,7 @@ pub async fn station_overview(tx: &mut Tx<'_>, ctx: &Ctx, station_id: i64) -> Ap
         .map(|c| json!({
             "id": c.0, "contractNo": c.1, "stage": c.2, "validFrom": day(c.3), "validTo": day_opt(c.4),
             "signedOn": day_opt(c.5), "renewalRemindOn": day_opt(c.6),
-            "active": in_effect(c.3, c.4, today),
+            "active": in_effect(c.3, c.4, today), "rentCalcCode": c.7,
         }))
         .collect::<Vec<_>>());
     out["upcomingEvents"] = json!(upcoming
