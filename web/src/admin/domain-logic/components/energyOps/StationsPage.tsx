@@ -17,6 +17,7 @@ import {
 } from './shared';
 import { stationRoute } from './routes';
 import OnboardDialog from './OnboardDialog';
+import CoreTableImportDialog from './CoreTableImportDialog';
 
 interface StationRow {
   id: number; name: string; status: string; projectCode: string | null; siteType: string | null;
@@ -69,6 +70,7 @@ const StationsPage: React.FC = () => {
   } | null>(null);
   const [importing, setImporting] = React.useState(false);
   const [onboardOpen, setOnboardOpen] = React.useState(false);
+  const [coreTableImportOpen, setCoreTableImportOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!orgId) { setRows([]); setDenied(false); return; }
@@ -205,6 +207,9 @@ const StationsPage: React.FC = () => {
           <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={openImport} data-testid="station-import-open">
             {translate('energy.stations.importExcel')}
           </Button>
+          <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => setCoreTableImportOpen(true)} data-testid="core-table-import-open">
+            {translate('energy.coreTableImport.title')}
+          </Button>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOnboardOpen(true)} data-testid="station-onboard-open">
             {translate('energy.stations.onboard')}
           </Button>
@@ -223,6 +228,7 @@ const StationsPage: React.FC = () => {
                 <TableCell>{translate('energy.stations.name')}</TableCell>
                 <TableCell>{translate('energy.stations.siteType')}</TableCell>
                 <TableCell>{translate('energy.stations.spv')}</TableCell>
+                <TableCell>{translate('energy.stations.region')}</TableCell>
                 <TableCell>{translate('energy.stations.serviceDistrict')}</TableCell>
                 <TableCell align="right">{translate('energy.stations.capacityKw')}</TableCell>
                 <TableCell>{translate('energy.stations.gridDate')}</TableCell>
@@ -255,6 +261,7 @@ const StationsPage: React.FC = () => {
                   </TableCell>
                   <TableCell>{r.siteType ? translate(`energy.siteType.${r.siteType}`) : '—'}</TableCell>
                   <TableCell>{landowners.find((l) => l.id === r.spvPayeeId)?.name ?? '—'}</TableCell>
+                  <TableCell>{r.region ?? '—'}</TableCell>
                   <TableCell>{r.serviceDistrict ?? '—'}</TableCell>
                   <TableCell align="right">{r.capacityKw ?? '—'}</TableCell>
                   <TableCell>{r.gridDate ?? '—'}</TableCell>
@@ -321,6 +328,7 @@ const StationsPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            <TextField label={translate('energy.stations.region')} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} data-testid="station-form-region" />
             <TextField label={translate('energy.stations.serviceDistrict')} value={form.serviceDistrict} onChange={(e) => setForm({ ...form, serviceDistrict: e.target.value })} data-testid="station-form-district" />
             <TextField label={translate('energy.stations.capacityKw')} value={form.capacityKw} onChange={(e) => setForm({ ...form, capacityKw: e.target.value })} data-testid="station-form-capacity" />
             <FormControlLabel
@@ -424,6 +432,13 @@ const StationsPage: React.FC = () => {
         base={base}
         landowners={landowners}
         onCreated={() => { load(); loadLandowners(); }}
+      />
+
+      <CoreTableImportDialog
+        open={coreTableImportOpen}
+        onClose={() => setCoreTableImportOpen(false)}
+        base={base}
+        onDone={() => { load(); loadLandowners(); }}
       />
     </EnergyPageFrame>
   );
